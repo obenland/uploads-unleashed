@@ -1,0 +1,21 @@
+{
+  "name": "resumable-uploads",
+  "version": "0.1.0",
+  "description": "TUS protocol support for resumable media uploads in WordPress",
+  "author": "Konstantin Obenland",
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "wp-env": "wp-env",
+    "start": "wp-env start",
+    "stop": "wp-env stop",
+    "destroy": "wp-env destroy",
+    "cli": "wp-env run cli",
+    "lint:js": "wp-scripts lint-js",
+    "lint:js:fix": "wp-scripts lint-js --fix",
+    "lint:pkg-json": "wp-scripts lint-pkg-json"
+  },
+  "devDependencies": {
+    "@wordpress/env": "^10.38.0",
+    "@wordpress/scripts": "^31.3.0"
+  }
+}
