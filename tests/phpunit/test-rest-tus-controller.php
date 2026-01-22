@@ -278,7 +278,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$this->assertSame( '512', (string) $headers['Upload-Offset'] );
 
 		// Verify session was updated.
-		$upload  = ( new TUS_Upload_Session() )->get( $upload_id );
+		$upload = ( new TUS_Upload_Session() )->get( $upload_id );
 		$this->assertSame( 512, (int) $upload['offset'] );
 	}
 
@@ -322,6 +322,54 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$this->assertSame( 'attachment', $attachment->post_type );
 		$this->assertSame( 'text/plain', $attachment->post_mime_type );
+
+		// Cleanup.
+		wp_delete_attachment( $data['id'], true );
+	}
+
+	/**
+	 * Test complete upload returns REST API format.
+	 *
+	 * Verifies the response matches WP_REST_Attachments_Controller format,
+	 * not wp_prepare_attachment_for_js() format.
+	 */
+	public function test_complete_upload_returns_rest_api_format() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+		$data     = $response->get_data();
+
+		// REST API format uses snake_case keys.
+		$this->assertArrayHasKey( 'source_url', $data );
+		$this->assertArrayHasKey( 'alt_text', $data );
+		$this->assertArrayHasKey( 'mime_type', $data );
+		$this->assertArrayHasKey( 'media_type', $data );
+		$this->assertArrayHasKey( 'media_details', $data );
+
+		// REST API format has nested title/caption objects.
+		$this->assertIsArray( $data['title'] );
+		$this->assertArrayHasKey( 'raw', $data['title'] );
+		$this->assertArrayHasKey( 'rendered', $data['title'] );
+
+		$this->assertIsArray( $data['caption'] );
+		$this->assertArrayHasKey( 'raw', $data['caption'] );
+		$this->assertArrayHasKey( 'rendered', $data['caption'] );
+
+		// Should NOT have wp_prepare_attachment_for_js() format keys.
+		$this->assertArrayNotHasKey( 'url', $data );
+		$this->assertArrayNotHasKey( 'alt', $data );
+		$this->assertArrayNotHasKey( 'mime', $data );
+		$this->assertArrayNotHasKey( 'filename', $data );
+		$this->assertArrayNotHasKey( 'filesizeInBytes', $data );
+
+		// Verify correct values.
+		$this->assertSame( 'text/plain', $data['mime_type'] );
+		$this->assertSame( 'file', $data['media_type'] );
 
 		// Cleanup.
 		wp_delete_attachment( $data['id'], true );

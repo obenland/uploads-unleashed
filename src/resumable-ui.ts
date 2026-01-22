@@ -9,26 +9,7 @@
 
 import { sprintf, __ } from '@wordpress/i18n';
 import './resumable-ui.css';
-
-interface PluploadFile {
-	name: string;
-	size: number;
-}
-
-interface PluploadInstance {
-	bind: ( event: string, callback: ( uploader: PluploadInstance, files: PluploadFile[] ) => void ) => void;
-}
-
-declare global {
-	interface Window {
-		resumableUploads?: {
-			endpoint: string;
-			nonce: string;
-		};
-		uploader?: PluploadInstance;
-		jQuery?: ( callback: () => void ) => void;
-	}
-}
+import type { PluploadFile, PluploadInstance } from './wordpress-types';
 
 interface PendingUpload {
 	key: string;
@@ -82,6 +63,9 @@ function parsePendingUploads(): PendingUpload[] {
 
 /**
  * Formats file size for display.
+ *
+ * @param bytes File size in bytes.
+ * @return Formatted file size string.
  */
 function formatFileSize( bytes: number ): string {
 	if ( bytes < 1024 ) {
@@ -95,6 +79,8 @@ function formatFileSize( bytes: number ): string {
 
 /**
  * Cancels the server-side upload session.
+ *
+ * @param uploadUrl TUS upload URL to cancel.
  */
 async function cancelServerUpload( uploadUrl: string ): Promise< void > {
 	try {
@@ -109,6 +95,9 @@ async function cancelServerUpload( uploadUrl: string ): Promise< void > {
 
 /**
  * Discards an upload by canceling server-side and removing from localStorage.
+ *
+ * @param key       LocalStorage key for the upload.
+ * @param uploadUrl TUS upload URL to cancel.
  */
 async function discardUpload(
 	key: string,
@@ -124,6 +113,9 @@ async function discardUpload(
 /**
  * Prompts user to re-select a file for resuming upload.
  * Uses File System Access API if available, falls back to file input.
+ *
+ * @param upload Pending upload metadata.
+ * @return True if upload was resumed, false if cancelled.
  */
 async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 	let file: File | null = null;
@@ -131,7 +123,13 @@ async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 	// Try File System Access API first (Chrome/Edge)
 	if ( 'showOpenFilePicker' in window ) {
 		try {
-			const [ handle ] = await ( window as Window & { showOpenFilePicker: ( options: object ) => Promise< FileSystemFileHandle[] > } ).showOpenFilePicker( {
+			const [ handle ] = await (
+				window as Window & {
+					showOpenFilePicker: (
+						options: object
+					) => Promise< FileSystemFileHandle[] >;
+				}
+			 ).showOpenFilePicker( {
 				types: [
 					{
 						description: upload.filename,
@@ -167,7 +165,10 @@ async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 		alert(
 			sprintf(
 				/* translators: 1: filename, 2: file size */
-				__( 'Please select the original file: %1$s (%2$s)', 'resumable-uploads' ),
+				__(
+					'Please select the original file: %1$s (%2$s)',
+					'resumable-uploads'
+				),
 				upload.filename,
 				formatFileSize( upload.size )
 			)
@@ -212,11 +213,19 @@ function renderPendingUploads(): void {
 		.map(
 			( upload ) => `
 		<li data-key="${ upload.key }" data-url="${ upload.uploadUrl }"
-			data-filename="${ upload.filename }" data-filetype="${ upload.filetype }" data-size="${ upload.size }">
+			data-filename="${ upload.filename }" data-filetype="${
+				upload.filetype
+			}" data-size="${ upload.size }">
 			<span class="filename">${ upload.filename }</span>
 			<span class="filesize">(${ formatFileSize( upload.size ) })</span>
-			<button type="button" class="button resume-upload">${ __( 'Resume', 'resumable-uploads' ) }</button>
-			<button type="button" class="button discard-upload">${ __( 'Discard', 'resumable-uploads' ) }</button>
+			<button type="button" class="button resume-upload">${ __(
+				'Resume',
+				'resumable-uploads'
+			) }</button>
+			<button type="button" class="button discard-upload">${ __(
+				'Discard',
+				'resumable-uploads'
+			) }</button>
 		</li>
 	`
 		)
@@ -268,6 +277,9 @@ function renderPendingUploads(): void {
 
 /**
  * Removes a pending upload entry from the UI by filename and size.
+ *
+ * @param filename File name to match.
+ * @param size     File size to match.
  */
 function removePendingEntry( filename: string, size: number ): void {
 	const container = document.getElementById( 'resumable-uploads-pending' );
@@ -299,7 +311,8 @@ function hookPlupload(): void {
 		return;
 	}
 
-	uploader.bind( 'FilesAdded', ( _up, files ) => {
+	uploader.bind( 'FilesAdded', ( ...args: unknown[] ) => {
+		const files = args[ 1 ] as PluploadFile[];
 		files.forEach( ( file ) => {
 			removePendingEntry( file.name, file.size );
 		} );

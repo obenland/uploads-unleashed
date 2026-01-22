@@ -199,8 +199,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @param WP_REST_Request $request Full details about the request.
 	 *
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
-	 *@since 0.1.0
-	 *
+	 * @since 0.1.0
 	 */
 	public function method_override_permissions_check( WP_REST_Request $request ) {
 		$override_method = $request->get_header( 'X-HTTP-Method-Override' );
@@ -702,8 +701,8 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		/** This action is documented in includes/class-rest-tus-controller.php */
 		do_action( 'resumable_uploads_upload_complete', $attachment_id, $upload_id, $upload_data );
 
-		// Get attachment data in the format WordPress media library expects.
-		$attachment_data = wp_prepare_attachment_for_js( $attachment_id );
+		// Get attachment data in REST API format.
+		$attachment_data = $this->prepare_attachment_for_response( $attachment_id );
 
 		/**
 		 * Filters the attachment data returned after finalization.
@@ -712,11 +711,33 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 *
 		 * @since 0.1.0
 		 *
-		 * @param array $attachment_data The attachment data from wp_prepare_attachment_for_js().
+		 * @param array $attachment_data The attachment data in REST API format.
 		 * @param int   $attachment_id   The attachment ID.
 		 * @param array $upload_data     The upload session data.
 		 */
 		return apply_filters( 'resumable_uploads_attachment_data', $attachment_data, $attachment_id, $upload_data );
+	}
+
+	/**
+	 * Prepares attachment data in REST API format.
+	 *
+	 * Uses WP_REST_Attachments_Controller to ensure consistent format
+	 * with the standard /wp/v2/media endpoint.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param int $attachment_id The attachment ID.
+	 * @return array Attachment data in REST API format.
+	 */
+	protected function prepare_attachment_for_response( int $attachment_id ): array {
+		$controller = new WP_REST_Attachments_Controller( 'attachment' );
+		$post       = get_post( $attachment_id );
+		$request    = new WP_REST_Request( 'GET' );
+		$request->set_param( 'context', 'edit' );
+
+		$response = $controller->prepare_item_for_response( $post, $request );
+
+		return $response->get_data();
 	}
 
 	/**

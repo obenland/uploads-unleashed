@@ -9,76 +9,76 @@
  * - plupload-handlers dependency: handlers.js jQuery ready runs before ours
  */
 
-import { createUpload } from './index';
-
-declare global {
-	interface Window {
-		wp: {
-			Uploader: WpUploaderConstructor & {
-				queue: BackboneCollection;
-			};
-		};
-		plupload?: {
-			Uploader: new ( settings: unknown ) => PluploadInstance;
-		};
-		// Global functions from wp-admin/includes/js/handlers.js (media-new.php)
-		uploadSuccess?: ( fileObj: PluploadFile, serverData: string ) => void;
-		wpFileError?: ( fileObj: PluploadFile, message: string ) => void;
-		jQuery?: JQueryStatic;
-	}
-}
-
-interface JQueryStatic {
-	( callback: () => void ): void;
-	( document: Document ): {
-		ready: ( callback: () => void ) => void;
-	};
-}
-
-interface WpUploaderInstance {
-	uploader: PluploadInstance;
-}
-
-interface WpUploaderConstructor {
-	new ( options: unknown ): WpUploaderInstance;
-	prototype: WpUploaderInstance;
-}
-
-interface BackboneCollection {
-	on: ( event: string, callback: ( model: BackboneModel ) => void ) => void;
-	off: ( event: string, callback?: ( model: BackboneModel ) => void ) => void;
-}
-
-interface BackboneModel {
-	get: ( attr: string ) => unknown;
-	set: ( attrs: Record< string, unknown > ) => void;
-}
-
-interface PluploadFile {
-	id: string;
-	name: string;
-	size: number;
-	loaded: number;
-	percent: number;
-	status: number;
-	type: string;
-	getNative?: () => File;
-	attachment?: BackboneModel;
-}
-
-interface PluploadInstance {
-	id: string;
-	state: number;
-	files: PluploadFile[];
-	bind: ( event: string, callback: ( ...args: unknown[] ) => void ) => void;
-	trigger: ( event: string, ...args: unknown[] ) => void;
-	removeFile: ( file: PluploadFile ) => void;
-	stop: () => void;
-	start: () => void;
-}
+import { createUpload, AttachmentData } from './index';
+import type {
+	PluploadFile,
+	PluploadInstance,
+	WpUploaderConstructor,
+	WpUploaderInstance,
+} from './wordpress-types';
 
 // Track which files we're handling via TUS to prevent duplicate uploads
 const tusHandledFiles = new Set< string >();
+
+/**
+ * Transforms REST API attachment format to wp_prepare_attachment_for_js() format.
+ *
+ * WordPress core's Media Library expects the legacy format with camelCase keys.
+ * The TUS endpoint returns REST API format, so we transform it here.
+ *
+ * @param attachment Attachment data in REST API format.
+ * @return Attachment in legacy format.
+ */
+function toAttachmentForJs(
+	attachment: AttachmentData
+): Record< string, unknown > {
+	const sizes = attachment.media_details?.sizes;
+
+	return {
+		id: attachment.id,
+		title: attachment.title?.raw || '',
+		filename: attachment.media_details?.file || '',
+		url: attachment.source_url,
+		link: attachment.link,
+		alt: attachment.alt_text || '',
+		author: String( attachment.author ),
+		description: ( attachment.description as { raw?: string } )?.raw || '',
+		caption: attachment.caption?.raw || '',
+		name: attachment.slug,
+		status: attachment.status,
+		uploadedTo: ( attachment.post as number ) || 0,
+		date: new Date( attachment.date ).getTime(),
+		modified: new Date( attachment.modified ).getTime(),
+		menuOrder: 0,
+		mime: attachment.mime_type,
+		type: attachment.media_type,
+		subtype: attachment.mime_type?.split( '/' )[ 1 ] || '',
+		icon: '',
+		dateFormatted: attachment.date,
+		nonces: {},
+		editLink: ( attachment._links?.self as { href: string }[] )?.[ 0 ]
+			?.href,
+		meta: false,
+		authorName: '',
+		authorLink: '',
+		filesizeInBytes: ( attachment.media_details?.filesize as number ) || 0,
+		filesizeHumanReadable: '',
+		width: attachment.media_details?.width,
+		height: attachment.media_details?.height,
+		sizes: sizes
+			? Object.fromEntries(
+					Object.entries( sizes ).map( ( [ key, size ] ) => [
+						key,
+						{
+							url: size.source_url,
+							width: size.width,
+							height: size.height,
+						},
+					] )
+			  )
+			: {},
+	};
+}
 
 // Track hooked plupload instances
 const hookedUploaders = new WeakSet< PluploadInstance >();
@@ -172,6 +172,9 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 				file.percent = 100;
 				file.status = 5; // plupload.DONE
 
+				// Transform REST API format to legacy format for WordPress core
+				const legacyAttachment = toAttachmentForJs( attachment );
+
 				// For media-new.php (check for #media-items which only exists there)
 				if (
 					typeof window.uploadSuccess === 'function' &&
@@ -184,7 +187,7 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 					uploader.trigger( 'FileUploaded', file, {
 						response: JSON.stringify( {
 							success: true,
-							data: attachment,
+							data: legacyAttachment,
 						} ),
 					} );
 				}
@@ -267,9 +270,7 @@ function wrapWpUploader(): void {
  * registers its ready callback first, so window.uploader exists when we run.
  */
 function hookGlobalUploader(): void {
-	const globalUploader = (
-		window as unknown as { uploader?: PluploadInstance }
-	 ).uploader;
+	const globalUploader = window.uploader;
 
 	if ( globalUploader && ! hookedUploaders.has( globalUploader ) ) {
 		hookedUploaders.add( globalUploader );

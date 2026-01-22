@@ -96,6 +96,17 @@ function resumable_uploads_register_scripts() {
 		$uploader_asset['version'],
 		true
 	);
+
+	// Register block editor integration.
+	$media_utils_asset = require RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/media-utils.asset.php';
+
+	wp_register_script(
+		'resumable-uploads-media-utils',
+		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/media-utils.js',
+		array_merge( $media_utils_asset['dependencies'], array( 'resumable-uploads', 'wp-api-fetch' ) ),
+		$media_utils_asset['version'],
+		true
+	);
 }
 add_action( 'init', 'resumable_uploads_register_scripts' );
 
@@ -120,6 +131,16 @@ function resumable_uploads_enqueue_ui() {
 	wp_enqueue_style( 'resumable-uploads-ui' );
 }
 add_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_ui' );
+
+/**
+ * Enqueues the TUS integration for the block editor.
+ *
+ * @since 0.1.0
+ */
+function resumable_uploads_enqueue_block_editor() {
+	wp_enqueue_script( 'resumable-uploads-media-utils' );
+}
+add_action( 'enqueue_block_editor_assets', 'resumable_uploads_enqueue_block_editor' );
 
 /**
  * Renders the pending uploads UI container.

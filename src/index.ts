@@ -16,39 +16,36 @@ declare global {
 }
 
 /**
- * Attachment data returned by wp_prepare_attachment_for_js().
+ * Attachment data in REST API format (from WP_REST_Attachments_Controller).
  */
 export interface AttachmentData {
 	id: number;
-	title: string;
-	filename: string;
-	url: string;
-	link: string;
-	alt: string;
-	author: string;
-	description: string;
-	caption: string;
-	name: string;
+	date: string;
+	date_gmt: string;
+	modified: string;
+	modified_gmt: string;
+	slug: string;
 	status: string;
-	uploadedTo: number;
-	date: number;
-	modified: number;
-	menuOrder: number;
-	mime: string;
 	type: string;
-	subtype: string;
-	icon: string;
-	dateFormatted: string;
-	nonces: Record< string, string >;
-	editLink: string;
-	meta: boolean;
-	authorName: string;
-	authorLink: string;
-	filesizeInBytes: number;
-	filesizeHumanReadable: string;
-	sizes?: Record< string, { url: string; width: number; height: number } >;
-	width?: number;
-	height?: number;
+	link: string;
+	title: { raw: string; rendered: string };
+	author: number;
+	caption: { raw: string; rendered: string };
+	alt_text: string;
+	media_type: string;
+	mime_type: string;
+	source_url: string;
+	media_details: {
+		width?: number;
+		height?: number;
+		file?: string;
+		sizes?: Record<
+			string,
+			{ source_url: string; width: number; height: number }
+		>;
+		[ key: string ]: unknown;
+	};
+	[ key: string ]: unknown;
 }
 
 export interface UploadOptions {
