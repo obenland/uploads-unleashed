@@ -48,15 +48,9 @@ add_action( 'plugins_loaded', 'resumable_uploads_init' );
  * @since 0.1.0
  */
 function resumable_uploads_register_scripts() {
-	$index_asset_file = RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/index.asset.php';
-
-	if ( ! file_exists( $index_asset_file ) ) {
-		return;
-	}
-
-	$index_asset = require $index_asset_file;
-
 	// Register core TUS library.
+	$index_asset = require RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/index.asset.php';
+
 	wp_register_script(
 		'resumable-uploads',
 		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/index.js',
@@ -64,7 +58,6 @@ function resumable_uploads_register_scripts() {
 		$index_asset['version'],
 		true
 	);
-
 	wp_localize_script(
 		'resumable-uploads',
 		'resumableUploads',
@@ -74,14 +67,27 @@ function resumable_uploads_register_scripts() {
 		)
 	);
 
+	// Register and enqueue the pending uploads UI script.
+	$ui_asset = require RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/resumable-ui.asset.php';
+	wp_register_script(
+		'resumable-uploads-ui',
+		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/resumable-ui.js',
+		array_merge( $ui_asset['dependencies'], array( 'resumable-uploads' ) ),
+		$ui_asset['version'],
+		true
+	);
+
+	wp_set_script_translations( 'resumable-uploads-ui', 'resumable-uploads' );
+
+	wp_register_style(
+		'resumable-uploads-ui',
+		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/resumable-ui.css',
+		array(),
+		$ui_asset['version']
+	);
+
 	// Register WordPress media uploader integration.
-	$uploader_asset_file = RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/wp-uploader.asset.php';
-
-	if ( ! file_exists( $uploader_asset_file ) ) {
-		return;
-	}
-
-	$uploader_asset = require $uploader_asset_file;
+	$uploader_asset = require RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/wp-uploader.asset.php';
 
 	wp_register_script(
 		'resumable-uploads-wp-uploader',
@@ -100,9 +106,28 @@ add_action( 'init', 'resumable_uploads_register_scripts' );
  */
 function resumable_uploads_enqueue_scripts() {
 	wp_enqueue_script( 'resumable-uploads-wp-uploader' );
+	wp_enqueue_script( 'resumable-uploads-ui' );
+	wp_enqueue_style( 'resumable-uploads-ui' );
 }
 add_action( 'wp_enqueue_media', 'resumable_uploads_enqueue_scripts' );
 add_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_scripts' );
+
+/**
+ * Renders the pending uploads UI container.
+ *
+ * @since 0.1.0
+ */
+function resumable_uploads_pending_ui() {
+	?>
+	<div id="resumable-uploads-pending" class="resumable-uploads-pending notice notice-alt notice-info inline" style="display: none;">
+		<p class="resumable-uploads-notice">
+			<strong><?php esc_html_e( 'Pick up where you left off:', 'resumable-uploads' ); ?></strong>
+		</p>
+		<ul class="resumable-uploads-list"></ul>
+	</div>
+	<?php
+}
+add_action( 'post-plupload-upload-ui', 'resumable_uploads_pending_ui' );
 
 /**
  * Registers REST API routes.

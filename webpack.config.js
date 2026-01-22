@@ -12,5 +12,6 @@ module.exports = {
 	entry: {
 		index: path.resolve( __dirname, 'src/index.ts' ),
 		'wp-uploader': path.resolve( __dirname, 'src/wp-uploader.ts' ),
+		'resumable-ui': path.resolve( __dirname, 'src/resumable-ui.ts' ),
 	},
 };
