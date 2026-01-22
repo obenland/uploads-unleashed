@@ -112,13 +112,27 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Response $response The response object.
+	 * @param WP_REST_Request  $request  The request object.
 	 * @return WP_REST_Response Modified response with TUS headers.
 	 */
-	public function add_options_headers( WP_REST_Response $response ): WP_REST_Response {
+	public function add_options_headers( WP_REST_Response $response, WP_REST_Request $request ): WP_REST_Response {
+
+		/**
+		 * Filters the maximum upload size.
+		 *
+		 * Allows plugins to override the maximum allowed upload size.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param int             $max_size The maximum upload size in bytes.
+		 * @param WP_REST_Request $request  The request object.
+		 */
+		$max_size = apply_filters( 'resumable_uploads_max_upload_size', wp_max_upload_size(), $request );
+
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
 		$response->header( 'Tus-Version', self::TUS_VERSION );
 		$response->header( 'Tus-Extension', self::TUS_EXTENSIONS );
-		$response->header( 'Tus-Max-Size', wp_max_upload_size() );
+		$response->header( 'Tus-Max-Size', $max_size );
 
 		return $response;
 	}
@@ -268,8 +282,9 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		$upload_length = (int) $upload_length;
 
-		// Validate upload size against available space.
-		$max_size = wp_max_upload_size();
+		/** This filter is documented in includes/class-rest-tus-controller.php */
+		$max_size = apply_filters( 'resumable_uploads_max_upload_size', wp_max_upload_size(), $request );
+
 		if ( $upload_length > $max_size ) {
 			return new WP_Error(
 				'rest_upload_too_large',
@@ -282,19 +297,16 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// Parse metadata.
-		$metadata = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
-		$filename = $metadata['filename'] ?? 'unnamed';
-		$filetype = $metadata['filetype'] ?? 'application/octet-stream';
-
-		// Create upload session.
+		// Parse metadata and create upload session.
+		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
 		$session   = new TUS_Upload_Session();
 		$upload_id = $session->create(
 			array(
-				'filename' => $filename,
-				'filetype' => $filetype,
+				'filename' => $metadata['filename'] ?? 'unnamed',
+				'filetype' => $metadata['filetype'] ?? 'application/octet-stream',
 				'length'   => $upload_length,
-			)
+			),
+			$request
 		);
 
 		if ( is_wp_error( $upload_id ) ) {
@@ -302,6 +314,17 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$upload = $session->get( $upload_id );
+
+		/**
+		 * Fires after an upload session is created.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param string          $upload_id The upload ID.
+		 * @param array           $upload    The upload session data.
+		 * @param WP_REST_Request $request   The request object.
+		 */
+		do_action( 'resumable_uploads_upload_created', $upload_id, $upload, $request );
 
 		$response = new WP_REST_Response( null, 201 );
 		$response->header( 'Location', rest_url( sprintf( '%s/%s/%s', $this->namespace, $this->rest_base, $upload_id ) ) );
@@ -408,6 +431,18 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		// Update session.
 		$session->update_offset( $upload_id, $new_offset );
 
+		/**
+		 * Fires after a chunk is received and stored.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param string          $upload_id  The upload ID.
+		 * @param int             $new_offset The new byte offset after this chunk.
+		 * @param array           $upload     The upload session data.
+		 * @param WP_REST_Request $request    The request object.
+		 */
+		do_action( 'resumable_uploads_chunk_received', $upload_id, $new_offset, $upload, $request );
+
 		// Check if upload is complete.
 		if ( $new_offset >= $upload['length'] ) {
 			$attachment = $this->finalize_upload( $upload_id, $upload );
@@ -441,11 +476,22 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	public function delete_item( $request ): WP_REST_Response {
 		$upload_id = $request->get_param( 'id' );
 
-		$session = new TUS_Upload_Session();
-		$storage = new TUS_Chunk_Storage();
+		$session     = new TUS_Upload_Session();
+		$storage     = new TUS_Chunk_Storage();
+		$upload_data = $session->get( $upload_id );
 
 		$session->delete( $upload_id );
 		$storage->delete( $upload_id );
+
+		/**
+		 * Fires after an upload is deleted/canceled.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param string     $upload_id   The upload ID.
+		 * @param array|null $upload_data The upload session data (null if already deleted).
+		 */
+		do_action( 'resumable_uploads_upload_deleted', $upload_id, $upload_data );
 
 		$response = new WP_REST_Response( null, 204 );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
@@ -465,7 +511,74 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
 		$storage    = new TUS_Chunk_Storage();
 		$chunk_path = $storage->get_path( $upload_id );
-		$filename   = $upload_data['filename'];
+
+		/**
+		 * Filters whether to proceed with finalization.
+		 *
+		 * Allows plugins to validate or abort finalization. Return WP_Error to abort.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param true|WP_Error $proceed     Whether to proceed with finalization.
+		 * @param string        $upload_id   The upload ID.
+		 * @param array         $upload_data The upload session data.
+		 * @param string        $chunk_path  Path to the uploaded file.
+		 */
+		$proceed = apply_filters( 'resumable_uploads_pre_finalize', true, $upload_id, $upload_data, $chunk_path );
+
+		if ( is_wp_error( $proceed ) ) {
+			$storage->delete( $upload_id );
+			( new TUS_Upload_Session() )->delete( $upload_id );
+
+			return $proceed;
+		}
+
+		/**
+		 * Filters the finalization result.
+		 *
+		 * Allows plugins to completely override finalization. Return an array
+		 * to use as the response data, WP_Error to abort, or null to continue
+		 * with default finalization.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param array|WP_Error|null $result      The result to return, or null to use default.
+		 * @param string              $upload_id   The upload ID.
+		 * @param array               $upload_data The upload session data.
+		 * @param string              $chunk_path  Path to the uploaded file.
+		 */
+		$custom_result = apply_filters( 'resumable_uploads_finalize_upload', null, $upload_id, $upload_data, $chunk_path );
+
+		if ( is_wp_error( $custom_result ) ) {
+			$storage->delete( $upload_id );
+			( new TUS_Upload_Session() )->delete( $upload_id );
+
+			return $custom_result;
+		}
+
+		if ( is_array( $custom_result ) ) {
+			// Custom finalization provided - clean up and return.
+			$storage->cleanup( $upload_id );
+			( new TUS_Upload_Session() )->delete( $upload_id );
+
+			$attachment_id = $custom_result['id'] ?? 0;
+
+			/**
+			 * Fires after an upload is finalized.
+			 *
+			 * @since 0.1.0
+			 *
+			 * @param int    $attachment_id The attachment ID (0 if custom finalization didn't create one).
+			 * @param string $upload_id     The upload ID.
+			 * @param array  $upload_data   The upload session data.
+			 */
+			do_action( 'resumable_uploads_upload_complete', $attachment_id, $upload_id, $upload_data );
+
+			return $custom_result;
+		}
+
+		// Default finalization.
+		$filename = $upload_data['filename'];
 
 		// Validate actual MIME type from file contents.
 		$validated = wp_check_filetype_and_ext( $chunk_path, $filename );
@@ -586,8 +699,24 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$storage->cleanup( $upload_id );
 		( new TUS_Upload_Session() )->delete( $upload_id );
 
-		// Return attachment data in the format WordPress media library expects.
-		return wp_prepare_attachment_for_js( $attachment_id );
+		/** This action is documented in includes/class-rest-tus-controller.php */
+		do_action( 'resumable_uploads_upload_complete', $attachment_id, $upload_id, $upload_data );
+
+		// Get attachment data in the format WordPress media library expects.
+		$attachment_data = wp_prepare_attachment_for_js( $attachment_id );
+
+		/**
+		 * Filters the attachment data returned after finalization.
+		 *
+		 * Allows plugins to add custom fields to the response.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param array $attachment_data The attachment data from wp_prepare_attachment_for_js().
+		 * @param int   $attachment_id   The attachment ID.
+		 * @param array $upload_data     The upload session data.
+		 */
+		return apply_filters( 'resumable_uploads_attachment_data', $attachment_data, $attachment_id, $upload_data );
 	}
 
 	/**

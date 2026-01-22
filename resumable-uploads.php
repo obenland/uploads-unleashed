@@ -137,7 +137,7 @@ function resumable_uploads_add_options_headers( WP_REST_Response $response, WP_R
 	}
 
 	$controller = new REST_TUS_Controller();
-	return $controller->add_options_headers( $response );
+	return $controller->add_options_headers( $response, $request );
 }
 add_filter( 'rest_post_dispatch', 'resumable_uploads_add_options_headers', 10, 3 );
 

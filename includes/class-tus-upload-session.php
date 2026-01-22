@@ -33,36 +33,47 @@ class TUS_Upload_Session {
 	 *
 	 * @since 0.1.0
 	 *
-	 * @param array $data {
+	 * @param array           $data {
 	 *     Upload data.
 	 *
 	 *     @type string $filename The filename.
 	 *     @type string $filetype The MIME type.
 	 *     @type int    $length   The total file size in bytes.
 	 * }
+	 * @param WP_REST_Request $request The REST request object.
 	 * @return string|WP_Error The upload ID on success, WP_Error on failure.
 	 */
-	public function create( array $data ) {
-		$upload_id = wp_generate_uuid4();
-
+	public function create( array $data, WP_REST_Request $request ) {
 		$session_data = array(
-			'upload_id'  => $upload_id,
+			'upload_id'  => wp_generate_uuid4(),
 			'user_id'    => get_current_user_id(),
-			'filename'   => sanitize_file_name( $data['filename'] ),
-			'filetype'   => sanitize_mime_type( $data['filetype'] ),
-			'length'     => (int) $data['length'],
+			'filename'   => sanitize_file_name( $data['filename'] ?? 'unnamed' ),
+			'filetype'   => sanitize_mime_type( $data['filetype'] ?? 'application/octet-stream' ),
+			'length'     => (int) ( $data['length'] ?? 0 ),
 			'offset'     => 0,
 			'created_at' => time(),
 			'expires_at' => time() + self::EXPIRATION,
 		);
 
-		$result = set_transient( self::TRANSIENT_PREFIX . $upload_id, $session_data, self::EXPIRATION );
+		/**
+		 * Filters the session data before storage.
+		 *
+		 * Allows plugins to store additional data with the upload session.
+		 *
+		 * @since 0.1.0
+		 *
+		 * @param array           $session_data The session data to be stored.
+		 * @param WP_REST_Request $request      The request object.
+		 */
+		$session_data = apply_filters( 'resumable_uploads_session_data', $session_data, $request );
+
+		$result = set_transient( self::TRANSIENT_PREFIX . $session_data['upload_id'], $session_data, self::EXPIRATION );
 
 		if ( ! $result ) {
 			return new WP_Error( 'tus_session_create_failed', __( 'Could not create upload session.', 'resumable-uploads' ), array( 'status' => 500 ) );
 		}
 
-		return $upload_id;
+		return $session_data['upload_id'];
 	}
 
 	/**

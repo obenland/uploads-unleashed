@@ -90,6 +90,29 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	}
 
 	/**
+	 * Helper method to create an upload session with a mock request.
+	 *
+	 * @param array $data Optional. Upload data (filename, filetype, length).
+	 * @return string The upload ID.
+	 */
+	protected function create_upload_session( array $data = array() ): string {
+		$data = array_merge(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			),
+			$data
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request->set_header( 'Upload-Length', (string) $data['length'] );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( $data['filename'] ) );
+
+		return ( new TUS_Upload_Session() )->create( $data, $request );
+	}
+
+	/**
 	 * Test route registration.
 	 */
 	public function test_register_routes() {
@@ -163,15 +186,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test HEAD request returns correct offset.
 	 */
 	public function test_head_returns_offset() {
-		// Create an upload first.
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/tus/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
@@ -197,14 +212,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH requires correct Content-Type.
 	 */
 	public function test_patch_requires_content_type() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		// Use text/plain instead of application/json to avoid WordPress JSON parsing.
@@ -223,14 +231,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH requires Upload-Offset header.
 	 */
 	public function test_patch_requires_offset() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -245,14 +246,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH returns 409 on offset mismatch.
 	 */
 	public function test_patch_offset_mismatch() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -268,15 +262,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH uploads chunk successfully.
 	 */
 	public function test_patch_uploads_chunk() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
@@ -292,7 +278,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$this->assertSame( '512', (string) $headers['Upload-Offset'] );
 
 		// Verify session was updated.
-		$upload = $session->get( $upload_id );
+		$upload  = ( new TUS_Upload_Session() )->get( $upload_id );
 		$this->assertSame( 512, (int) $upload['offset'] );
 	}
 
@@ -301,14 +287,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 */
 	public function test_user_cannot_access_others_upload() {
 		// Create upload as admin.
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		// Try to access as another admin.
 		$other_admin = self::factory()->user->create( array( 'role' => 'administrator' ) );
@@ -324,14 +303,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test complete upload creates attachment.
 	 */
 	public function test_complete_upload_creates_attachment() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 9,
-			)
-		);
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -423,20 +395,13 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test deleting item.
 	 */
 	public function test_delete_item() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/media/tus/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 204, $response->get_status() );
-		$this->assertNull( $session->get( $upload_id ) );
+		$this->assertNull( ( new TUS_Upload_Session() )->get( $upload_id ) );
 	}
 
 	/**
@@ -452,14 +417,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test POST with X-HTTP-Method-Override: HEAD returns offset.
 	 */
 	public function test_method_override_head() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'HEAD' );
@@ -476,15 +434,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test POST with X-HTTP-Method-Override: PATCH uploads chunk.
 	 */
 	public function test_method_override_patch() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
@@ -504,14 +454,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test POST with X-HTTP-Method-Override: DELETE deletes upload.
 	 */
 	public function test_method_override_delete() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'DELETE' );
@@ -519,21 +462,14 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 204, $response->get_status() );
-		$this->assertNull( $session->get( $upload_id ) );
+		$this->assertNull( ( new TUS_Upload_Session() )->get( $upload_id ) );
 	}
 
 	/**
 	 * Test POST without X-HTTP-Method-Override returns error.
 	 */
 	public function test_method_override_required() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request  = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
@@ -547,14 +483,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test POST with invalid X-HTTP-Method-Override returns error.
 	 */
 	public function test_method_override_invalid() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'PUT' );
@@ -570,14 +499,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test X-HTTP-Method-Override is case-insensitive.
 	 */
 	public function test_method_override_case_insensitive() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
+		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'head' ); // lowercase
@@ -607,15 +529,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH with valid SHA256 checksum succeeds.
 	 */
 	public function test_patch_with_valid_sha256_checksum() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$checksum = 'sha256 ' . base64_encode( hash( 'sha256', $chunk_data, true ) );
@@ -635,15 +549,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH with invalid checksum returns 460.
 	 */
 	public function test_patch_with_invalid_checksum_returns_460() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 		// Wrong checksum (hash of different data).
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
@@ -666,15 +572,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH without checksum header still works.
 	 */
 	public function test_patch_without_checksum_succeeds() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
@@ -692,15 +590,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH with unsupported checksum algorithm returns 400.
 	 */
 	public function test_patch_with_unsupported_algorithm_returns_400() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$checksum = 'unsupported_algo ' . base64_encode( 'somehash' );
@@ -722,15 +612,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH with malformed checksum header returns 400.
 	 */
 	public function test_patch_with_malformed_checksum_returns_400() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
@@ -750,15 +632,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test PATCH with SHA1 checksum succeeds.
 	 */
 	public function test_patch_with_sha1_checksum() {
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
-			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 1024,
-			)
-		);
-
+		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'b', 256 );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$checksum = 'sha1 ' . base64_encode( hash( 'sha1', $chunk_data, true ) );

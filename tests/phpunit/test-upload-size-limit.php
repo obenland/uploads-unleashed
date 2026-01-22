@@ -86,6 +86,30 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Helper method to create an upload session with a mock request.
+	 *
+	 * @param array $data Optional. Upload data (filename, filetype, length).
+	 * @return string The upload ID.
+	 */
+	protected function create_upload_session( array $data = array() ) {
+		$data = array_merge(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			),
+			$data
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request->set_header( 'Upload-Length', (string) $data['length'] );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( $data['filename'] ) );
+
+		$session = new TUS_Upload_Session();
+		return $session->create( $data, $request );
+	}
+
+	/**
 	 * Test that the filter is registered at priority 20.
 	 */
 	public function test_filter_is_registered() {
@@ -130,12 +154,9 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		}
 
 		// Create a pending upload session.
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
+		$upload_id = $this->create_upload_session(
 			array(
-				'filename' => 'test.txt',
-				'filetype' => 'text/plain',
-				'length'   => 10 * MB_IN_BYTES, // 10 MB.
+				'length' => 10 * MB_IN_BYTES, // 10 MB.
 			)
 		);
 
@@ -166,23 +187,20 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 			$this->markTestSkipped( 'disk_free_space() not available on this system.' );
 		}
 
-		$session = new TUS_Upload_Session();
 		$storage = new TUS_Chunk_Storage();
 
 		// Create multiple pending uploads.
-		$upload_id_1 = $session->create(
+		$upload_id_1 = $this->create_upload_session(
 			array(
 				'filename' => 'test1.txt',
-				'filetype' => 'text/plain',
 				'length'   => 10 * MB_IN_BYTES, // 10 MB.
 			)
 		);
 		touch( $storage->get_path( $upload_id_1 ) );
 
-		$upload_id_2 = $session->create(
+		$upload_id_2 = $this->create_upload_session(
 			array(
 				'filename' => 'test2.txt',
-				'filetype' => 'text/plain',
 				'length'   => 20 * MB_IN_BYTES, // 20 MB.
 			)
 		);
@@ -209,11 +227,9 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		}
 
 		// Create a pending upload larger than available disk space.
-		$session   = new TUS_Upload_Session();
-		$upload_id = $session->create(
+		$upload_id = $this->create_upload_session(
 			array(
 				'filename' => 'huge.txt',
-				'filetype' => 'text/plain',
 				'length'   => PHP_INT_MAX,
 			)
 		);
