@@ -1,0 +1,6 @@
+.claude
+build
+coverage
+node_modules
+vendor
+package-lock.json

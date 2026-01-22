@@ -25,6 +25,7 @@ webpack.config.js export-ignore
 src/ export-ignore
 
 # Testing and linting
+.prettierignore export-ignore
 tests/ export-ignore
 phpcs.xml.dist export-ignore
 phpunit.xml.dist export-ignore

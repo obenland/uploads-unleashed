@@ -42,11 +42,6 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	 * Clean up after each test.
 	 */
 	public function tear_down() {
-		// Clean up any transients created during tests.
-		global $wpdb;
-		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_tus_upload_%'" );
-		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_tus_upload_%'" );
-
 		// Clean up .part files created during this test.
 		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
 		$files      = glob( trailingslashit( $chunks_dir ) . '*.part' );
@@ -103,6 +98,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 		$request->set_header( 'Upload-Length', (string) $data['length'] );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( $data['filename'] ) );
 
 		$session = new TUS_Upload_Session();
@@ -163,6 +159,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// Create a .part file so get_total_pending_size() finds it.
 		$storage = new TUS_Chunk_Storage();
 		$path    = $storage->get_path( $upload_id );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $path );
 
 		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
@@ -196,6 +193,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 				'length'   => 10 * MB_IN_BYTES, // 10 MB.
 			)
 		);
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $storage->get_path( $upload_id_1 ) );
 
 		$upload_id_2 = $this->create_upload_session(
@@ -204,6 +202,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 				'length'   => 20 * MB_IN_BYTES, // 20 MB.
 			)
 		);
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $storage->get_path( $upload_id_2 ) );
 
 		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
@@ -235,6 +234,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		);
 
 		$storage = new TUS_Chunk_Storage();
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $storage->get_path( $upload_id ) );
 
 		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
@@ -273,6 +273,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 
 		// Create the .part file.
 		$storage = new TUS_Chunk_Storage();
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $storage->get_path( $upload_id ) );
 
 		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
@@ -300,6 +301,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// Try to create an upload larger than available space.
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 		$request->set_header( 'Upload-Length', (string) ( $expected_space + 1024 ) );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'huge.txt' ) );
 
 		$response = rest_get_server()->dispatch( $request );

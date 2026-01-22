@@ -227,7 +227,8 @@ function resumable_uploads_filter_upload_size_limit( int $size ): int {
 	} else {
 		// On single-site, use available disk space.
 		$upload_dir = wp_upload_dir();
-		$available  = @disk_free_space( $upload_dir['basedir'] );
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk_free_space may be disabled on some hosts.
+		$available = @disk_free_space( $upload_dir['basedir'] );
 
 		if ( false === $available ) {
 			// If we can't determine disk space, keep the original limit.

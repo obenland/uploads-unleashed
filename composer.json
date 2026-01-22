@@ -20,6 +20,7 @@
   "scripts": {
     "lint": "phpcs",
     "lint:fix": "phpcbf",
-    "test": "npm test"
+    "test": "npm test",
+    "test:coverage": "phpunit --coverage-html coverage"
   }
 }

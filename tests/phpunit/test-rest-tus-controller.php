@@ -550,7 +550,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$upload_id = $this->create_upload_session();
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
-		$request->set_header( 'X-HTTP-Method-Override', 'head' ); // lowercase
+		$request->set_header( 'X-HTTP-Method-Override', 'head' ); // Lowercase.
 
 		$response = rest_get_server()->dispatch( $request );
 		$headers  = $response->get_headers();
