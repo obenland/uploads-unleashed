@@ -5,6 +5,8 @@
   "author": "Konstantin Obenland",
   "license": "GPL-2.0-or-later",
   "scripts": {
+    "build": "wp-scripts build",
+    "start:js": "wp-scripts start",
     "wp-env": "wp-env",
     "start": "wp-env start",
     "stop": "wp-env stop",
@@ -18,5 +20,8 @@
   "devDependencies": {
     "@wordpress/env": "^10.38.0",
     "@wordpress/scripts": "^31.3.0"
+  },
+  "dependencies": {
+    "tus-js-client": "^4.3.1"
   }
 }

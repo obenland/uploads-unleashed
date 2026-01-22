@@ -43,6 +43,39 @@ function resumable_uploads_init() {
 add_action( 'plugins_loaded', 'resumable_uploads_init' );
 
 /**
+ * Registers the TUS uploader script.
+ *
+ * @since 0.1.0
+ */
+function resumable_uploads_register_scripts() {
+	$asset_file = RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/index.asset.php';
+
+	if ( ! file_exists( $asset_file ) ) {
+		return;
+	}
+
+	$asset = require $asset_file;
+
+	wp_register_script(
+		'resumable-uploads',
+		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/index.js',
+		$asset['dependencies'],
+		$asset['version'],
+		true
+	);
+
+	wp_localize_script(
+		'resumable-uploads',
+		'resumableUploads',
+		array(
+			'endpoint' => rest_url( 'wp/v2/media/tus' ),
+			'nonce'    => wp_create_nonce( 'wp_rest' ),
+		)
+	);
+}
+add_action( 'init', 'resumable_uploads_register_scripts' );
+
+/**
  * Registers REST API routes.
  *
  * @since 0.1.0
