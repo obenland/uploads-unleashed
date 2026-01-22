@@ -106,11 +106,20 @@ add_action( 'init', 'resumable_uploads_register_scripts' );
  */
 function resumable_uploads_enqueue_scripts() {
 	wp_enqueue_script( 'resumable-uploads-wp-uploader' );
-	wp_enqueue_script( 'resumable-uploads-ui' );
-	wp_enqueue_style( 'resumable-uploads-ui' );
 }
 add_action( 'wp_enqueue_media', 'resumable_uploads_enqueue_scripts' );
 add_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_scripts' );
+
+/**
+ * Enqueues the pending uploads UI on media-new.php.
+ *
+ * @since 0.1.0
+ */
+function resumable_uploads_enqueue_ui() {
+	wp_enqueue_script( 'resumable-uploads-ui' );
+	wp_enqueue_style( 'resumable-uploads-ui' );
+}
+add_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_ui' );
 
 /**
  * Renders the pending uploads UI container.
