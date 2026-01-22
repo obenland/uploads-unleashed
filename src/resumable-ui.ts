@@ -4,12 +4,12 @@
  * Displays interrupted/resumable uploads in the media uploader with
  * Resume and Discard buttons.
  *
- * @package resumable-uploads
+ * @package
  */
 
 import { sprintf, __ } from '@wordpress/i18n';
 import './resumable-ui.css';
-import type { PluploadFile, PluploadInstance } from './wordpress-types';
+import type { PluploadFile } from './wordpress-types';
 
 interface PendingUpload {
 	key: string;

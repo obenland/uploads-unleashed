@@ -3,7 +3,7 @@
  *
  * Intercepts media uploads via wp.apiFetch middleware to use TUS protocol.
  *
- * @package resumable-uploads
+ * @package
  */
 
 import { createUpload } from './index';

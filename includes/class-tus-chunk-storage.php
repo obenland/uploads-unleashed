@@ -176,7 +176,9 @@ class TUS_Chunk_Storage {
 			return 0;
 		}
 
-		return filesize( $path );
+		$size = filesize( $path );
+
+		return false === $size ? 0 : $size;
 	}
 
 	/**

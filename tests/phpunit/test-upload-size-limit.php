@@ -86,7 +86,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	 * @param array $data Optional. Upload data (filename, filetype, length).
 	 * @return string The upload ID.
 	 */
-	protected function create_upload_session( array $data = array() ) {
+	protected function create_upload_session( array $data = array() ): string {
 		$data = array_merge(
 			array(
 				'filename' => 'test.txt',

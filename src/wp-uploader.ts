@@ -17,6 +17,18 @@ import type {
 	WpUploaderInstance,
 } from './wordpress-types';
 
+/**
+ * Plupload file status constants.
+ *
+ * @see https://www.plupload.com/docs/v2/File#status-property
+ */
+const PLUPLOAD_STATUS = {
+	QUEUED: 1,
+	UPLOADING: 2,
+	FAILED: 4,
+	DONE: 5,
+} as const;
+
 // Track which files we're handling via TUS to prevent duplicate uploads
 const tusHandledFiles = new Set< string >();
 
@@ -98,7 +110,7 @@ function handlePluploadError(
 	file: PluploadFile,
 	message: string
 ): void {
-	file.status = 4; // plupload.FAILED
+	file.status = PLUPLOAD_STATUS.FAILED;
 
 	if ( typeof window.wpFileError === 'function' ) {
 		window.wpFileError( file, message );
@@ -170,7 +182,7 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 				}
 
 				file.percent = 100;
-				file.status = 5; // plupload.DONE
+				file.status = PLUPLOAD_STATUS.DONE;
 
 				// Transform REST API format to legacy format for WordPress core
 				const legacyAttachment = toAttachmentForJs( attachment );

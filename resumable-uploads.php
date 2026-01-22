@@ -37,7 +37,7 @@ require_once RESUMABLE_UPLOADS_PLUGIN_DIR . 'includes/class-rest-tus-controller.
 function resumable_uploads_init() {
 	// Schedule cleanup cron if not already scheduled.
 	if ( ! wp_next_scheduled( 'resumable_uploads_cleanup' ) ) {
-		wp_schedule_event( time(), 'hourly', 'resumable_uploads_cleanup' );
+		wp_schedule_event( time(), 'daily', 'resumable_uploads_cleanup' );
 	}
 }
 add_action( 'plugins_loaded', 'resumable_uploads_init' );

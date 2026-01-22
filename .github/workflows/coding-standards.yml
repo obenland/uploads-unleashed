@@ -1,0 +1,52 @@
+name: Coding Standards
+
+on:
+    push:
+        branches: [trunk]
+    pull_request:
+        branches: [trunk]
+
+jobs:
+    phpcs:
+        name: PHP Coding Standards
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: '8.3'
+                  tools: cs2pr
+
+            - name: Install PHP dependencies
+              run: composer install --prefer-dist --no-progress
+
+            - name: Run PHPCS
+              run: composer lint -- --report-full --report-checkstyle=./phpcs-report.xml
+
+            - name: Show PHPCS results in PR
+              if: ${{ always() && github.event_name == 'pull_request' }}
+              run: cs2pr ./phpcs-report.xml
+
+    eslint:
+        name: JavaScript Coding Standards
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+                  cache: 'npm'
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Run ESLint
+              run: npm run lint:js

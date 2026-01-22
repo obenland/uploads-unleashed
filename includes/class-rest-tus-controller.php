@@ -509,6 +509,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 */
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
 		$storage    = new TUS_Chunk_Storage();
+		$session    = new TUS_Upload_Session();
 		$chunk_path = $storage->get_path( $upload_id );
 
 		/**
@@ -527,7 +528,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		if ( is_wp_error( $proceed ) ) {
 			$storage->delete( $upload_id );
-			( new TUS_Upload_Session() )->delete( $upload_id );
+			$session->delete( $upload_id );
 
 			return $proceed;
 		}
@@ -550,7 +551,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		if ( is_wp_error( $custom_result ) ) {
 			$storage->delete( $upload_id );
-			( new TUS_Upload_Session() )->delete( $upload_id );
+			$session->delete( $upload_id );
 
 			return $custom_result;
 		}
@@ -558,7 +559,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		if ( is_array( $custom_result ) ) {
 			// Custom finalization provided - clean up and return.
 			$storage->cleanup( $upload_id );
-			( new TUS_Upload_Session() )->delete( $upload_id );
+			$session->delete( $upload_id );
 
 			$attachment_id = $custom_result['id'] ?? 0;
 
@@ -576,127 +577,45 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			return $custom_result;
 		}
 
-		// Default finalization.
-		$filename = $upload_data['filename'];
-
-		// Validate actual MIME type from file contents.
-		$validated = wp_check_filetype_and_ext( $chunk_path, $filename );
-
-		if ( ! $validated['type'] ) {
+		// Default finalization pipeline.
+		$validated = $this->validate_file( $chunk_path, $upload_data['filename'] );
+		if ( is_wp_error( $validated ) ) {
 			$storage->delete( $upload_id );
-			( new TUS_Upload_Session() )->delete( $upload_id );
+			$session->delete( $upload_id );
 
-			return new WP_Error( 'rest_invalid_file_type', __( 'Sorry, you are not allowed to upload this file type.', 'resumable-uploads' ), array( 'status' => 400 ) );
+			return $validated;
 		}
 
-		// For images, verify actual image data (prevents PHP-in-image attacks).
-		if ( str_starts_with( $validated['type'], 'image/' ) ) {
-			$actual_mime = wp_get_image_mime( $chunk_path );
-			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
-				$storage->delete( $upload_id );
-				( new TUS_Upload_Session() )->delete( $upload_id );
-
-				return new WP_Error( 'rest_invalid_image', __( 'File is not a valid image.', 'resumable-uploads' ), array( 'status' => 400 ) );
-			}
-		}
-
-		// Correct filename if extension doesn't match detected type.
-		if ( ! empty( $validated['proper_filename'] ) ) {
-			$filename = $validated['proper_filename'];
-		}
-
-		// Sanitize filename.
-		$filename = sanitize_file_name( $filename );
-
-		// Fire prefilter hook (virus scanners, etc.).
-		$file_array = array(
-			'name'     => $filename,
-			'type'     => $validated['type'],
-			'tmp_name' => $chunk_path,
-			'size'     => filesize( $chunk_path ),
-			'error'    => 0,
-		);
-
-		/** This filter is documented in wp-admin/includes/file.php */
-		$file_array = apply_filters( 'wp_handle_upload_prefilter', $file_array );
-
-		if ( ! empty( $file_array['error'] ) && is_string( $file_array['error'] ) ) {
+		$file_array = $this->apply_upload_prefilter( $chunk_path, $validated['filename'], $validated['type'] );
+		if ( is_wp_error( $file_array ) ) {
 			$storage->delete( $upload_id );
-			( new TUS_Upload_Session() )->delete( $upload_id );
+			$session->delete( $upload_id );
 
-			return new WP_Error( 'rest_upload_error', $file_array['error'], array( 'status' => 400 ) );
+			return $file_array;
 		}
 
-		// Check multisite quota.
-		if ( is_multisite() ) {
-			$space_used    = get_space_used();
-			$space_allowed = get_space_allowed();
-			$file_size_mb  = filesize( $chunk_path ) / MB_IN_BYTES;
+		$quota_check = $this->check_multisite_quota( $chunk_path );
+		if ( is_wp_error( $quota_check ) ) {
+			$storage->delete( $upload_id );
+			$session->delete( $upload_id );
 
-			if ( $space_used + $file_size_mb > $space_allowed ) {
-				$storage->delete( $upload_id );
-				( new TUS_Upload_Session() )->delete( $upload_id );
-
-				return new WP_Error( 'rest_quota_exceeded', __( 'You have used your space quota.', 'resumable-uploads' ), array( 'status' => 400 ) );
-			}
+			return $quota_check;
 		}
 
-		// Move to uploads directory.
-		$upload_dir      = wp_upload_dir();
-		$unique_filename = wp_unique_filename( $upload_dir['path'], $filename );
-		$new_path        = trailingslashit( $upload_dir['path'] ) . $unique_filename;
+		$upload_result = $this->move_to_uploads( $chunk_path, $validated['filename'], $validated['type'] );
+		if ( is_wp_error( $upload_result ) ) {
+			$storage->delete( $upload_id );
+			$session->delete( $upload_id );
 
-		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Silencing rename errors to handle gracefully.
-		if ( ! @rename( $chunk_path, $new_path ) ) {
-			// Try copy + delete as fallback (cross-filesystem moves).
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Fallback for cross-filesystem moves.
-			if ( ! @copy( $chunk_path, $new_path ) ) {
-				$storage->delete( $upload_id );
-				( new TUS_Upload_Session() )->delete( $upload_id );
-
-				return new WP_Error( 'rest_move_failed', __( 'Could not move uploaded file.', 'resumable-uploads' ), array( 'status' => 500 ) );
-			}
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
-			@unlink( $chunk_path );
+			return $upload_result;
 		}
 
-		// Fire post-upload hook.
-		$upload_result = array(
-			'file' => $new_path,
-			'url'  => trailingslashit( $upload_dir['url'] ) . $unique_filename,
-			'type' => $validated['type'],
-		);
-
-		/** This filter is documented in wp-admin/includes/file.php */
-		$upload_result = apply_filters( 'wp_handle_upload', $upload_result, 'upload' );
-
-		// Create attachment.
-		$attachment = array(
-			'post_mime_type' => $upload_result['type'],
-			'post_title'     => preg_replace( '/\.[^.]+$/', '', $unique_filename ),
-			'post_status'    => 'inherit',
-			'guid'           => $upload_result['url'],
-		);
-
-		$attachment_id = wp_insert_attachment( $attachment, $upload_result['file'] );
+		$attachment_id = $this->create_attachment( $upload_result );
+		$session->delete( $upload_id );
 
 		if ( is_wp_error( $attachment_id ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
-			@unlink( $new_path );
-			( new TUS_Upload_Session() )->delete( $upload_id );
-
 			return $attachment_id;
 		}
-
-		// Generate metadata (thumbnails, video metadata, etc.).
-		require_once ABSPATH . 'wp-admin/includes/image.php';
-		require_once ABSPATH . 'wp-admin/includes/media.php';
-		$metadata = wp_generate_attachment_metadata( $attachment_id, $upload_result['file'] );
-		wp_update_attachment_metadata( $attachment_id, $metadata );
-
-		// Cleanup session and storage directory.
-		$storage->cleanup( $upload_id );
-		( new TUS_Upload_Session() )->delete( $upload_id );
 
 		/** This action is documented in includes/class-rest-tus-controller.php */
 		do_action( 'resumable_uploads_upload_complete', $attachment_id, $upload_id, $upload_data );
@@ -716,6 +635,179 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 * @param array $upload_data     The upload session data.
 		 */
 		return apply_filters( 'resumable_uploads_attachment_data', $attachment_data, $attachment_id, $upload_data );
+	}
+
+	/**
+	 * Validates file type and content.
+	 *
+	 * Checks MIME type against allowed types and verifies image content
+	 * to prevent PHP-in-image attacks.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param string $file_path The path to the uploaded file.
+	 * @param string $filename  The original filename.
+	 * @return array|WP_Error Array with 'type' and 'filename' on success, WP_Error on failure.
+	 */
+	protected function validate_file( string $file_path, string $filename ) {
+		$validated = wp_check_filetype_and_ext( $file_path, $filename );
+
+		if ( ! $validated['type'] ) {
+			return new WP_Error(
+				'rest_invalid_file_type',
+				__( 'Sorry, you are not allowed to upload this file type.', 'resumable-uploads' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// For images, verify actual image data (prevents PHP-in-image attacks).
+		if ( str_starts_with( $validated['type'], 'image/' ) ) {
+			$actual_mime = wp_get_image_mime( $file_path );
+			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
+				return new WP_Error(
+					'rest_invalid_image',
+					__( 'File is not a valid image.', 'resumable-uploads' ),
+					array( 'status' => 400 )
+				);
+			}
+		}
+
+		// Correct filename if extension doesn't match detected type.
+		$final_filename = $filename;
+		if ( ! empty( $validated['proper_filename'] ) ) {
+			$final_filename = $validated['proper_filename'];
+		}
+
+		return array(
+			'type'     => $validated['type'],
+			'filename' => sanitize_file_name( $final_filename ),
+		);
+	}
+
+	/**
+	 * Applies pre-upload filters (virus scanners, etc.).
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param string $file_path The path to the uploaded file.
+	 * @param string $filename  The sanitized filename.
+	 * @param string $mime_type The validated MIME type.
+	 * @return array|WP_Error File array on success, WP_Error on failure.
+	 */
+	protected function apply_upload_prefilter( string $file_path, string $filename, string $mime_type ) {
+		$file_array = array(
+			'name'     => $filename,
+			'type'     => $mime_type,
+			'tmp_name' => $file_path,
+			'size'     => filesize( $file_path ),
+			'error'    => 0,
+		);
+
+		/** This filter is documented in wp-admin/includes/file.php */
+		$file_array = apply_filters( 'wp_handle_upload_prefilter', $file_array );
+
+		if ( ! empty( $file_array['error'] ) && is_string( $file_array['error'] ) ) {
+			return new WP_Error( 'rest_upload_error', $file_array['error'], array( 'status' => 400 ) );
+		}
+
+		return $file_array;
+	}
+
+	/**
+	 * Checks multisite quota constraints.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param string $file_path The path to the uploaded file.
+	 * @return true|WP_Error True if quota OK, WP_Error if exceeded.
+	 */
+	protected function check_multisite_quota( string $file_path ) {
+		if ( ! is_multisite() ) {
+			return true;
+		}
+
+		$space_used    = get_space_used();
+		$space_allowed = get_space_allowed();
+		$file_size_mb  = filesize( $file_path ) / MB_IN_BYTES;
+
+		if ( $space_used + $file_size_mb > $space_allowed ) {
+			return new WP_Error( 'rest_quota_exceeded', __( 'You have used your space quota.', 'resumable-uploads' ), array( 'status' => 400 ) );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Moves the file to the uploads directory.
+	 *
+	 * Handles cross-filesystem moves by falling back to copy + delete.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param string $source_path The source file path.
+	 * @param string $filename    The sanitized filename.
+	 * @param string $mime_type   The validated MIME type.
+	 * @return array|WP_Error Upload result array on success, WP_Error on failure.
+	 */
+	protected function move_to_uploads( string $source_path, string $filename, string $mime_type ) {
+		$upload_dir      = wp_upload_dir();
+		$unique_filename = wp_unique_filename( $upload_dir['path'], $filename );
+		$new_path        = trailingslashit( $upload_dir['path'] ) . $unique_filename;
+
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Silencing rename errors to handle gracefully.
+		if ( ! @rename( $source_path, $new_path ) ) {
+			// Try copy + delete as fallback (cross-filesystem moves).
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Fallback for cross-filesystem moves.
+			if ( ! @copy( $source_path, $new_path ) ) {
+				return new WP_Error( 'rest_move_failed', __( 'Could not move uploaded file.', 'resumable-uploads' ), array( 'status' => 500 ) );
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
+			@unlink( $source_path );
+		}
+
+		$upload_result = array(
+			'file' => $new_path,
+			'url'  => trailingslashit( $upload_dir['url'] ) . $unique_filename,
+			'type' => $mime_type,
+		);
+
+		/** This filter is documented in wp-admin/includes/file.php */
+		return apply_filters( 'wp_handle_upload', $upload_result, 'upload' );
+	}
+
+	/**
+	 * Creates the WordPress attachment post.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param array $upload_result The upload result from move_to_uploads().
+	 * @return int|WP_Error Attachment ID on success, WP_Error on failure.
+	 */
+	protected function create_attachment( array $upload_result ) {
+		$filename = basename( $upload_result['file'] );
+
+		$attachment = array(
+			'post_mime_type' => $upload_result['type'],
+			'post_title'     => preg_replace( '/\.[^.]+$/', '', $filename ),
+			'post_status'    => 'inherit',
+			'guid'           => $upload_result['url'],
+		);
+
+		$attachment_id = wp_insert_attachment( $attachment, $upload_result['file'] );
+
+		if ( is_wp_error( $attachment_id ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
+			@unlink( $upload_result['file'] );
+			return $attachment_id;
+		}
+
+		// Generate metadata (thumbnails, video metadata, etc.).
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		$metadata = wp_generate_attachment_metadata( $attachment_id, $upload_result['file'] );
+		wp_update_attachment_metadata( $attachment_id, $metadata );
+
+		return $attachment_id;
 	}
 
 	/**

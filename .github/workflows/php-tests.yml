@@ -1,0 +1,44 @@
+name: PHP Tests
+
+on:
+    push:
+        branches: [trunk]
+    pull_request:
+        branches: [trunk]
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                php: ['7.4', '8.3']
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: ${{ matrix.php }}
+                  extensions: dom, curl, libxml, mbstring, zip
+                  coverage: none
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+                  cache: 'npm'
+
+            - name: Install PHP dependencies
+              run: composer install --prefer-dist --no-progress
+
+            - name: Install Node dependencies
+              run: npm ci
+
+            - name: Start WordPress environment
+              run: npm run start
+
+            - name: Run PHPUnit tests
+              run: npm test
