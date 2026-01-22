@@ -55,7 +55,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @since 0.1.0
 	 */
 	public function register_routes(): void {
-		// OPTIONS and POST for upload creation.
+		// POST for upload creation.
 		register_rest_route(
 			$this->namespace,
 			'/' . $this->rest_base,
@@ -74,41 +74,33 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			$this->namespace,
 			'/' . $this->rest_base . '/(?P<id>[a-zA-Z0-9-]+)',
 			array(
+				'args' => array(
+					'id' => array(
+						'description' => __( 'Unique identifier for the upload.', 'resumable-uploads' ),
+						'type'        => 'string',
+						'required'    => true,
+					),
+				),
 				array(
 					'methods'             => 'HEAD',
 					'callback'            => array( $this, 'get_item_offset' ),
 					'permission_callback' => array( $this, 'get_item_permissions_check' ),
-					'args'                => array(
-						'id' => array(
-							'description' => __( 'Unique identifier for the upload.', 'resumable-uploads' ),
-							'type'        => 'string',
-							'required'    => true,
-						),
-					),
 				),
 				array(
 					'methods'             => 'PATCH',
 					'callback'            => array( $this, 'upload_chunk' ),
 					'permission_callback' => array( $this, 'get_item_permissions_check' ),
-					'args'                => array(
-						'id' => array(
-							'description' => __( 'Unique identifier for the upload.', 'resumable-uploads' ),
-							'type'        => 'string',
-							'required'    => true,
-						),
-					),
 				),
 				array(
 					'methods'             => WP_REST_Server::DELETABLE,
 					'callback'            => array( $this, 'delete_item' ),
 					'permission_callback' => array( $this, 'delete_item_permissions_check' ),
-					'args'                => array(
-						'id' => array(
-							'description' => __( 'Unique identifier for the upload.', 'resumable-uploads' ),
-							'type'        => 'string',
-							'required'    => true,
-						),
-					),
+				),
+				// POST with X-HTTP-Method-Override for restricted environments.
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'handle_method_override' ),
+					'permission_callback' => array( $this, 'method_override_permissions_check' ),
 				),
 			)
 		);
@@ -185,6 +177,78 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 */
 	public function delete_item_permissions_check( $request ) {
 		return $this->get_item_permissions_check( $request );
+	}
+
+	/**
+	 * Checks if a given request has access via method override.
+	 *
+	 * @param WP_REST_Request $request Full details about the request.
+	 *
+	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
+	 *@since 0.1.0
+	 *
+	 */
+	public function method_override_permissions_check( WP_REST_Request $request ) {
+		$override_method = $request->get_header( 'X-HTTP-Method-Override' );
+
+		if ( empty( $override_method ) ) {
+			return new WP_Error(
+				'rest_method_override_required',
+				__( 'X-HTTP-Method-Override header is required for POST requests to this endpoint.', 'resumable-uploads' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$override_method = strtoupper( $override_method );
+
+		// Validate the override method.
+		if ( ! in_array( $override_method, array( 'HEAD', 'PATCH', 'DELETE' ), true ) ) {
+			return new WP_Error(
+				'rest_invalid_method_override',
+				__( 'Invalid X-HTTP-Method-Override value. Must be HEAD, PATCH, or DELETE.', 'resumable-uploads' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Delegate to the appropriate permission check.
+		if ( 'DELETE' === $override_method ) {
+			return $this->delete_item_permissions_check( $request );
+		}
+
+		return $this->get_item_permissions_check( $request );
+	}
+
+	/**
+	 * Handles POST requests with X-HTTP-Method-Override header.
+	 *
+	 * This enables TUS protocol support in environments where PATCH, DELETE,
+	 * or HEAD methods are blocked by firewalls or server configuration.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param WP_REST_Request $request Full details about the request.
+	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
+	 */
+	public function handle_method_override( WP_REST_Request $request ) {
+		$override_method = strtoupper( $request->get_header( 'X-HTTP-Method-Override' ) );
+
+		switch ( $override_method ) {
+			case 'HEAD':
+				return $this->get_item_offset( $request );
+
+			case 'PATCH':
+				return $this->upload_chunk( $request );
+
+			case 'DELETE':
+				return $this->delete_item( $request );
+
+			default:
+				return new WP_Error(
+					'rest_invalid_method_override',
+					__( 'Invalid X-HTTP-Method-Override value. Must be HEAD, PATCH, or DELETE.', 'resumable-uploads' ),
+					array( 'status' => 400 )
+				);
+		}
 	}
 
 	/**

@@ -447,4 +447,145 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_prepare_item() {
 		// Controller does not implement prepare_item().
 	}
+
+	/**
+	 * Test POST with X-HTTP-Method-Override: HEAD returns offset.
+	 */
+	public function test_method_override_head() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'X-HTTP-Method-Override', 'HEAD' );
+
+		$response = rest_get_server()->dispatch( $request );
+		$headers  = $response->get_headers();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( '0', (string) $headers['Upload-Offset'] );
+		$this->assertSame( '1024', (string) $headers['Upload-Length'] );
+	}
+
+	/**
+	 * Test POST with X-HTTP-Method-Override: PATCH uploads chunk.
+	 */
+	public function test_method_override_patch() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$chunk_data = str_repeat( 'a', 512 );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'X-HTTP-Method-Override', 'PATCH' );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 204, $response->get_status() );
+		$headers = $response->get_headers();
+		$this->assertSame( '512', (string) $headers['Upload-Offset'] );
+	}
+
+	/**
+	 * Test POST with X-HTTP-Method-Override: DELETE deletes upload.
+	 */
+	public function test_method_override_delete() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'X-HTTP-Method-Override', 'DELETE' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 204, $response->get_status() );
+		$this->assertNull( $session->get( $upload_id ) );
+	}
+
+	/**
+	 * Test POST without X-HTTP-Method-Override returns error.
+	 */
+	public function test_method_override_required() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$request  = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_method_override_required', $data['code'] );
+	}
+
+	/**
+	 * Test POST with invalid X-HTTP-Method-Override returns error.
+	 */
+	public function test_method_override_invalid() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'X-HTTP-Method-Override', 'PUT' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_invalid_method_override', $data['code'] );
+	}
+
+	/**
+	 * Test X-HTTP-Method-Override is case-insensitive.
+	 */
+	public function test_method_override_case_insensitive() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'X-HTTP-Method-Override', 'head' ); // lowercase
+
+		$response = rest_get_server()->dispatch( $request );
+		$headers  = $response->get_headers();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( '0', (string) $headers['Upload-Offset'] );
+	}
 }
