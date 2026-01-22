@@ -43,24 +43,25 @@ function resumable_uploads_init() {
 add_action( 'plugins_loaded', 'resumable_uploads_init' );
 
 /**
- * Registers the TUS uploader script.
+ * Registers the TUS uploader scripts.
  *
  * @since 0.1.0
  */
 function resumable_uploads_register_scripts() {
-	$asset_file = RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/index.asset.php';
+	$index_asset_file = RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/index.asset.php';
 
-	if ( ! file_exists( $asset_file ) ) {
+	if ( ! file_exists( $index_asset_file ) ) {
 		return;
 	}
 
-	$asset = require $asset_file;
+	$index_asset = require $index_asset_file;
 
+	// Register core TUS library.
 	wp_register_script(
 		'resumable-uploads',
 		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/index.js',
-		$asset['dependencies'],
-		$asset['version'],
+		$index_asset['dependencies'],
+		$index_asset['version'],
 		true
 	);
 
@@ -72,8 +73,35 @@ function resumable_uploads_register_scripts() {
 			'nonce'    => wp_create_nonce( 'wp_rest' ),
 		)
 	);
+
+	// Register WordPress media uploader integration.
+	$uploader_asset_file = RESUMABLE_UPLOADS_PLUGIN_DIR . 'build/wp-uploader.asset.php';
+
+	if ( ! file_exists( $uploader_asset_file ) ) {
+		return;
+	}
+
+	$uploader_asset = require $uploader_asset_file;
+
+	wp_register_script(
+		'resumable-uploads-wp-uploader',
+		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/wp-uploader.js',
+		array_merge( $uploader_asset['dependencies'], array( 'resumable-uploads' ) ),
+		$uploader_asset['version'],
+		true
+	);
 }
 add_action( 'init', 'resumable_uploads_register_scripts' );
+
+/**
+ * Enqueues the TUS uploader script when media modal is loaded.
+ *
+ * @since 0.1.0
+ */
+function resumable_uploads_enqueue_scripts() {
+	wp_enqueue_script( 'resumable-uploads-wp-uploader' );
+}
+add_action( 'wp_enqueue_media', 'resumable_uploads_enqueue_scripts' );
 
 /**
  * Registers REST API routes.
