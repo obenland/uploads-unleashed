@@ -9,7 +9,6 @@
  * - plupload-handlers dependency: handlers.js jQuery ready runs before ours
  */
 
-import * as tus from 'tus-js-client';
 import { createUpload } from './index';
 
 declare global {
@@ -78,8 +77,7 @@ interface PluploadInstance {
 	start: () => void;
 }
 
-// Track which files we're handling via TUS
-const tusUploads = new Map< string, tus.Upload >();
+// Track which files we're handling via TUS to prevent duplicate uploads
 const tusHandledFiles = new Set< string >();
 
 // Track hooked plupload instances
@@ -144,9 +142,6 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 
 		tusHandledFiles.add( fileKey );
 
-		// Stop plupload from uploading this file
-		uploader.stop();
-
 		const upload = createUpload( nativeFile, {
 			onProgress: ( percentage, bytesUploaded ) => {
 				file.loaded = bytesUploaded;
@@ -163,7 +158,6 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 				uploader.trigger( 'UploadProgress', file );
 			},
 			onSuccess: ( attachment ) => {
-				tusUploads.delete( fileKey );
 				tusHandledFiles.delete( fileKey );
 
 				if ( ! attachment ) {
@@ -194,14 +188,8 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 						} ),
 					} );
 				}
-
-				// Continue with next file in queue
-				if ( uploader.files.length > 0 ) {
-					uploader.start();
-				}
 			},
 			onError: ( error ) => {
-				tusUploads.delete( fileKey );
 				tusHandledFiles.delete( fileKey );
 				handlePluploadError(
 					uploader,
@@ -211,8 +199,6 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 			},
 		} );
 
-		tusUploads.set( fileKey, upload );
-
 		upload.findPreviousUploads().then( ( previousUploads ) => {
 			if ( previousUploads.length > 0 ) {
 				upload.resumeFromPreviousUpload( previousUploads[ 0 ] );
@@ -220,7 +206,11 @@ function hookPluploadInstance( up: PluploadInstance ): void {
 			upload.start();
 		} );
 
-		return false; // Prevent plupload default
+		// Remove from plupload queue (we're handling via TUS) and process next file
+		uploader.removeFile( file );
+		setTimeout( () => uploader.start(), 0 );
+
+		return false;
 	} );
 }
 
