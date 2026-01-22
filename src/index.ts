@@ -1,7 +1,7 @@
 /**
  * TUS Resumable Uploader for WordPress
  *
- * @package resumable-uploader
+ * @package
  */
 
 import * as tus from 'tus-js-client';
@@ -15,13 +15,52 @@ declare global {
 	}
 }
 
+/**
+ * Attachment data returned by wp_prepare_attachment_for_js().
+ */
+export interface AttachmentData {
+	id: number;
+	title: string;
+	filename: string;
+	url: string;
+	link: string;
+	alt: string;
+	author: string;
+	description: string;
+	caption: string;
+	name: string;
+	status: string;
+	uploadedTo: number;
+	date: number;
+	modified: number;
+	menuOrder: number;
+	mime: string;
+	type: string;
+	subtype: string;
+	icon: string;
+	dateFormatted: string;
+	nonces: Record< string, string >;
+	editLink: string;
+	meta: boolean;
+	authorName: string;
+	authorLink: string;
+	filesizeInBytes: number;
+	filesizeHumanReadable: string;
+	sizes?: Record< string, { url: string; width: number; height: number } >;
+	width?: number;
+	height?: number;
+}
+
 export interface UploadOptions {
 	onProgress?: (
 		percentage: string,
 		bytesUploaded: number,
 		bytesTotal: number
 	) => void;
-	onSuccess?: ( attachmentId: number | null, upload: tus.Upload ) => void;
+	onSuccess?: (
+		attachment: AttachmentData | null,
+		upload: tus.Upload
+	) => void;
 	onError?: ( error: Error | tus.DetailedError ) => void;
 	chunkSize?: number;
 	retryDelays?: number[];
@@ -29,7 +68,7 @@ export interface UploadOptions {
 }
 
 export interface UploadResult {
-	attachmentId: number | null;
+	attachment: AttachmentData | null;
 	upload: tus.Upload;
 }
 
@@ -77,16 +116,57 @@ export function createUpload(
 			onProgress( percentage, bytesUploaded, bytesTotal );
 		},
 		onSuccess: ( payload ) => {
-			// Extract attachment ID from response header.
-			const attachmentId = payload.lastResponse.getHeader(
-				'X-WP-Upload-Attachment-ID'
-			);
-			onSuccess(
-				attachmentId ? parseInt( attachmentId, 10 ) : null,
-				upload
-			);
+			const status = payload.lastResponse.getStatus();
+			const body = payload.lastResponse.getBody();
+
+			// Check if the server returned an error status.
+			if ( status >= 400 ) {
+				let errorMessage = 'Upload failed';
+				try {
+					if ( body ) {
+						const parsed = JSON.parse( body );
+						errorMessage = parsed.message || errorMessage;
+					}
+				} catch {
+					// Ignore parse errors
+				}
+				onError( new Error( errorMessage ) );
+				return;
+			}
+
+			// Parse attachment data from response body.
+			let attachment: AttachmentData | null = null;
+			try {
+				if ( body ) {
+					attachment = JSON.parse( body ) as AttachmentData;
+				}
+			} catch {
+				// Ignore parse errors
+			}
+
+			onSuccess( attachment, upload );
 		},
-		onError,
+		onError: ( error: Error | tus.DetailedError ) => {
+			// Extract a clean error message from TUS errors
+			let cleanMessage = error.message || 'Upload failed';
+
+			// Try to extract WordPress error message from response body
+			if ( 'originalResponse' in error && error.originalResponse ) {
+				try {
+					const body = error.originalResponse.getBody();
+					if ( body ) {
+						const parsed = JSON.parse( body );
+						if ( parsed.message ) {
+							cleanMessage = parsed.message;
+						}
+					}
+				} catch {
+					// Ignore parse errors
+				}
+			}
+
+			onError( new Error( cleanMessage ) );
+		},
 	} );
 
 	return upload;
@@ -104,11 +184,11 @@ export function uploadFile(
 	return new Promise( ( resolve, reject ) => {
 		const upload = createUpload( file, {
 			...options,
-			onSuccess: ( attachmentId, uploadInstance ) => {
+			onSuccess: ( attachment, uploadInstance ) => {
 				if ( options.onSuccess ) {
-					options.onSuccess( attachmentId, uploadInstance );
+					options.onSuccess( attachment, uploadInstance );
 				}
-				resolve( { attachmentId, upload: uploadInstance } );
+				resolve( { attachment, upload: uploadInstance } );
 			},
 			onError: ( error ) => {
 				if ( options.onError ) {

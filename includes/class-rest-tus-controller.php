@@ -333,16 +333,15 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		// Check if upload is complete.
 		if ( $new_offset >= $upload['length'] ) {
-			$attachment_id = $this->finalize_upload( $upload_id, $upload );
+			$attachment = $this->finalize_upload( $upload_id, $upload );
 
-			if ( is_wp_error( $attachment_id ) ) {
-				return $attachment_id;
+			if ( is_wp_error( $attachment ) ) {
+				return $attachment;
 			}
 
-			$response = new WP_REST_Response( null, 204 );
+			$response = new WP_REST_Response( $attachment, 200 );
 			$response->header( 'Upload-Offset', $new_offset );
 			$response->header( 'Tus-Resumable', self::TUS_VERSION );
-			$response->header( 'X-WP-Upload-Attachment-ID', $attachment_id );
 
 			return $response;
 		}
@@ -384,7 +383,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 *
 	 * @param string $upload_id   The upload ID.
 	 * @param array  $upload_data The upload session data.
-	 * @return int|WP_Error Attachment ID on success, WP_Error on failure.
+	 * @return array|WP_Error Attachment data from wp_prepare_attachment_for_js() on success, WP_Error on failure.
 	 */
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
 		$storage    = new TUS_Chunk_Storage();
@@ -500,8 +499,9 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			return $attachment_id;
 		}
 
-		// Generate metadata (thumbnails, etc.).
+		// Generate metadata (thumbnails, video metadata, etc.).
 		require_once ABSPATH . 'wp-admin/includes/image.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
 		$metadata = wp_generate_attachment_metadata( $attachment_id, $upload_result['file'] );
 		wp_update_attachment_metadata( $attachment_id, $metadata );
 
@@ -509,7 +509,8 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$storage->cleanup( $upload_id );
 		( new TUS_Upload_Session() )->delete( $upload_id );
 
-		return $attachment_id;
+		// Return attachment data in the format WordPress media library expects.
+		return wp_prepare_attachment_for_js( $attachment_id );
 	}
 
 	/**

@@ -86,7 +86,7 @@ function resumable_uploads_register_scripts() {
 	wp_register_script(
 		'resumable-uploads-wp-uploader',
 		RESUMABLE_UPLOADS_PLUGIN_URL . 'build/wp-uploader.js',
-		array_merge( $uploader_asset['dependencies'], array( 'resumable-uploads' ) ),
+		array_merge( $uploader_asset['dependencies'], array( 'resumable-uploads', 'wp-plupload', 'plupload-handlers' ) ),
 		$uploader_asset['version'],
 		true
 	);
@@ -94,7 +94,7 @@ function resumable_uploads_register_scripts() {
 add_action( 'init', 'resumable_uploads_register_scripts' );
 
 /**
- * Enqueues the TUS uploader script when media modal is loaded.
+ * Enqueues the TUS uploader script when media scripts are loaded.
  *
  * @since 0.1.0
  */
@@ -102,6 +102,7 @@ function resumable_uploads_enqueue_scripts() {
 	wp_enqueue_script( 'resumable-uploads-wp-uploader' );
 }
 add_action( 'wp_enqueue_media', 'resumable_uploads_enqueue_scripts' );
+add_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_scripts' );
 
 /**
  * Registers REST API routes.

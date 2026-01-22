@@ -9,7 +9,11 @@
     "WP_DEBUG_LOG": true,
     "SCRIPT_DEBUG": true
   },
-  "mappings": {
-    "wp-content/uploads": "./uploads"
+  "env": {
+    "tests": {
+      "mappings": {
+        "wp-content/uploads": "./uploads"
+      }
+    }
   }
 }

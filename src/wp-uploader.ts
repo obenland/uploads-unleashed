@@ -1,413 +1,311 @@
 /**
  * WordPress Media Uploader Integration
  *
- * Replaces the default Plupload-based upload with TUS resumable uploads.
+ * Hooks into wp.Uploader and plupload to use TUS protocol for resumable file uploads.
+ * Supports both the Media Library grid view (upload.php) and Add New Media page (media-new.php).
  *
- * @package resumable-uploader
+ * Uses proper script dependencies to ensure timing:
+ * - wp-plupload dependency: wp.Uploader exists when this script runs
+ * - plupload-handlers dependency: handlers.js jQuery ready runs before ours
  */
 
 import * as tus from 'tus-js-client';
 import { createUpload } from './index';
 
-type EventCallback = ( ...args: unknown[] ) => void;
-
-interface AttachmentModel {
-	id: string;
-	file: File;
-	uploading: boolean;
-	percent: number;
-	filename: string;
-	loaded?: number;
-	size?: number;
-	error?: string;
-	_events: Record< string, EventCallback[] >;
-	get: ( key: string ) => unknown;
-	set: ( data: Record< string, unknown > ) => void;
-	on: ( event: string, callback: EventCallback ) => void;
-	off: ( event: string, callback: EventCallback ) => void;
-	trigger: ( event: string, ...args: unknown[] ) => void;
-	[ key: string ]: unknown;
-}
-
-interface UploaderOptions {
-	container?: Element | string;
-	dropzone?: Element | string;
-	browser?: Element | string;
-	params?: Record< string, unknown >;
-	added?: ( attachment: AttachmentModel ) => void;
-	progress?: ( attachment: AttachmentModel ) => void;
-	success?: ( attachment: AttachmentModel ) => void;
-	error?: ( error: { message: string; file: File } ) => void;
-	complete?: ( attachment: AttachmentModel ) => void;
-}
-
-interface QueueItem {
-	file: File;
-	attachment: AttachmentModel;
-}
-
-interface WPUploader {
-	new ( options?: UploaderOptions ): WPUploaderInstance;
-	uuid: number;
-	queue: unknown[];
-	prototype: WPUploaderPrototype;
-}
-
-interface WPUploaderInstance extends WPUploaderPrototype {
-	options: Required< UploaderOptions >;
-	queue: QueueItem[];
-	activeUploads: Map< string, tus.Upload >;
-	supports: { upload: boolean; dragdrop: boolean };
-	uploader: { refresh: () => void; bind: () => void };
-}
-
-interface WPUploaderPrototype {
-	initDropzone: ( dropzone: Element | string ) => void;
-	initBrowser: ( browser: Element | string ) => void;
-	addFiles: ( files: File[] ) => void;
-	createAttachmentModel: ( file: File ) => AttachmentModel;
-	processQueue: () => void;
-	uploadFile: ( file: File, attachment: AttachmentModel ) => void;
-	handleError: ( attachment: AttachmentModel, error: Error ) => void;
-	abort: ( id: string ) => void;
-	abortAll: () => void;
-}
-
 declare global {
 	interface Window {
 		wp: {
-			Uploader: WPUploader;
-			apiFetch: ( options: {
-				path: string;
-			} ) => Promise< Record< string, unknown > >;
+			Uploader: WpUploaderConstructor & {
+				queue: BackboneCollection;
+			};
 		};
+		plupload?: {
+			Uploader: new ( settings: unknown ) => PluploadInstance;
+		};
+		// Global functions from wp-admin/includes/js/handlers.js (media-new.php)
+		uploadSuccess?: ( fileObj: PluploadFile, serverData: string ) => void;
+		wpFileError?: ( fileObj: PluploadFile, message: string ) => void;
+		jQuery?: JQueryStatic;
+	}
+}
+
+interface JQueryStatic {
+	( callback: () => void ): void;
+	( document: Document ): {
+		ready: ( callback: () => void ) => void;
+	};
+}
+
+interface WpUploaderInstance {
+	uploader: PluploadInstance;
+}
+
+interface WpUploaderConstructor {
+	new ( options: unknown ): WpUploaderInstance;
+	prototype: WpUploaderInstance;
+}
+
+interface BackboneCollection {
+	on: ( event: string, callback: ( model: BackboneModel ) => void ) => void;
+	off: ( event: string, callback?: ( model: BackboneModel ) => void ) => void;
+}
+
+interface BackboneModel {
+	get: ( attr: string ) => unknown;
+	set: ( attrs: Record< string, unknown > ) => void;
+}
+
+interface PluploadFile {
+	id: string;
+	name: string;
+	size: number;
+	loaded: number;
+	percent: number;
+	status: number;
+	type: string;
+	getNative?: () => File;
+	attachment?: BackboneModel;
+}
+
+interface PluploadInstance {
+	id: string;
+	state: number;
+	files: PluploadFile[];
+	bind: ( event: string, callback: ( ...args: unknown[] ) => void ) => void;
+	trigger: ( event: string, ...args: unknown[] ) => void;
+	removeFile: ( file: PluploadFile ) => void;
+	stop: () => void;
+	start: () => void;
+}
+
+// Track which files we're handling via TUS
+const tusUploads = new Map< string, tus.Upload >();
+const tusHandledFiles = new Set< string >();
+
+// Track hooked plupload instances
+const hookedUploaders = new WeakSet< PluploadInstance >();
+
+/**
+ * Handles plupload errors by updating file status and triggering error UI.
+ *
+ * Uses window.wpFileError if available (media-new.php), otherwise triggers
+ * plupload's Error event directly.
+ *
+ * @param up      - The plupload instance.
+ * @param file    - The file that failed.
+ * @param message - Human-readable error message.
+ */
+function handlePluploadError(
+	up: PluploadInstance,
+	file: PluploadFile,
+	message: string
+): void {
+	file.status = 4; // plupload.FAILED
+
+	if ( typeof window.wpFileError === 'function' ) {
+		window.wpFileError( file, message );
+	} else {
+		up.trigger( 'Error', {
+			code: -200,
+			message,
+			file,
+		} );
 	}
 }
 
 /**
- * Initializes TUS uploader by replacing wp.Uploader.
+ * Hooks a plupload instance to intercept uploads and use TUS protocol instead.
+ *
+ * Binds to the BeforeUpload event to:
+ * 1. Stop plupload's default upload behavior
+ * 2. Create a TUS upload with progress/success/error callbacks
+ * 3. Resume previous uploads if available (via tus-js-client fingerprinting)
+ * 4. Trigger plupload events to update WordPress UI (UploadProgress, FileUploaded)
+ *
+ * @param up - The plupload instance to hook.
  */
-function initTusUploader(): void {
-	// Bail if wp.Uploader is not available.
-	if ( typeof window.wp === 'undefined' || ! window.wp.Uploader ) {
+function hookPluploadInstance( up: PluploadInstance ): void {
+	// Mark this instance as hooked for debugging
+	( up as PluploadInstance & { _tusHooked?: boolean } )._tusHooked = true;
+
+	up.bind( 'BeforeUpload', ( ...args: unknown[] ) => {
+		const uploader = args[ 0 ] as PluploadInstance;
+		const file = args[ 1 ] as PluploadFile;
+
+		const nativeFile = file.getNative?.();
+		if ( ! nativeFile ) {
+			return; // Let plupload handle it
+		}
+
+		const fileKey = nativeFile.name + nativeFile.size;
+		if ( tusHandledFiles.has( fileKey ) ) {
+			return false; // Already handling via TUS
+		}
+
+		tusHandledFiles.add( fileKey );
+
+		// Stop plupload from uploading this file
+		uploader.stop();
+
+		const upload = createUpload( nativeFile, {
+			onProgress: ( percentage, bytesUploaded ) => {
+				file.loaded = bytesUploaded;
+				file.percent = parseFloat( percentage );
+
+				// Update the Backbone attachment model (used by media library grid)
+				if ( file.attachment ) {
+					file.attachment.set( {
+						loaded: bytesUploaded,
+						percent: parseFloat( percentage ),
+					} );
+				}
+
+				uploader.trigger( 'UploadProgress', file );
+			},
+			onSuccess: ( attachment ) => {
+				tusUploads.delete( fileKey );
+				tusHandledFiles.delete( fileKey );
+
+				if ( ! attachment ) {
+					handlePluploadError(
+						uploader,
+						file,
+						'Upload failed: no attachment data'
+					);
+					return;
+				}
+
+				file.percent = 100;
+				file.status = 5; // plupload.DONE
+
+				// For media-new.php (check for #media-items which only exists there)
+				if (
+					typeof window.uploadSuccess === 'function' &&
+					document.getElementById( 'media-items' )
+				) {
+					window.uploadSuccess( file, String( attachment.id ) );
+				} else {
+					// For upload.php and other contexts, trigger FileUploaded
+					// plupload automatically prepends 'this' (uploader) as first arg
+					uploader.trigger( 'FileUploaded', file, {
+						response: JSON.stringify( {
+							success: true,
+							data: attachment,
+						} ),
+					} );
+				}
+
+				// Continue with next file in queue
+				if ( uploader.files.length > 0 ) {
+					uploader.start();
+				}
+			},
+			onError: ( error ) => {
+				tusUploads.delete( fileKey );
+				tusHandledFiles.delete( fileKey );
+				handlePluploadError(
+					uploader,
+					file,
+					error.message || 'Upload failed'
+				);
+			},
+		} );
+
+		tusUploads.set( fileKey, upload );
+
+		upload.findPreviousUploads().then( ( previousUploads ) => {
+			if ( previousUploads.length > 0 ) {
+				upload.resumeFromPreviousUpload( previousUploads[ 0 ] );
+			}
+			upload.start();
+		} );
+
+		return false; // Prevent plupload default
+	} );
+}
+
+/**
+ * Wraps the wp.Uploader constructor to hook all future instances.
+ *
+ * This is the primary integration point for upload.php (Media Library grid).
+ * When users click "Add New" in the grid view, WordPress creates a new
+ * wp.Uploader instance. By wrapping the constructor, we can hook each
+ * instance's plupload uploader immediately after creation.
+ *
+ * Called immediately on script load since wp.Uploader exists via the
+ * wp-plupload script dependency.
+ */
+function wrapWpUploader(): void {
+	if ( ! window.wp?.Uploader ) {
+		// Should not happen with proper dependencies, but guard anyway
 		return;
 	}
 
 	const OriginalUploader = window.wp.Uploader;
 
-	/**
-	 * Custom Uploader that uses TUS protocol.
-	 * @param options
-	 */
-	const TusUploader = function (
-		this: WPUploaderInstance,
-		options?: UploaderOptions
+	const WrappedUploader = function (
+		this: WpUploaderInstance,
+		options: unknown
 	) {
-		const defaults: Required< UploaderOptions > = {
-			container: document.body,
-			dropzone: document.body,
-			browser: '',
-			params: {},
-			added: () => {},
-			progress: () => {},
-			success: () => {},
-			error: () => {},
-			complete: () => {},
-		};
+		OriginalUploader.call( this, options );
 
-		this.options = { ...defaults, ...options };
-		this.queue = [];
-		this.activeUploads = new Map();
-
-		// Bind to drop zone.
-		if ( this.options.dropzone ) {
-			this.initDropzone( this.options.dropzone );
+		// Hook the plupload instance immediately
+		if ( this.uploader && ! hookedUploaders.has( this.uploader ) ) {
+			hookedUploaders.add( this.uploader );
+			hookPluploadInstance( this.uploader );
 		}
+	} as unknown as WpUploaderConstructor;
 
-		// Bind to file input.
-		if ( this.options.browser ) {
-			this.initBrowser( this.options.browser );
-		}
+	WrappedUploader.prototype = OriginalUploader.prototype;
+	Object.keys( OriginalUploader ).forEach( ( key ) => {
+		( WrappedUploader as unknown as Record< string, unknown > )[ key ] = (
+			OriginalUploader as unknown as Record< string, unknown >
+		 )[ key ];
+	} );
 
-		// Expose supports object for compatibility.
-		this.supports = {
-			upload: true,
-			dragdrop: 'draggable' in document.createElement( 'div' ),
-		};
-
-		// Expose uploader for compatibility.
-		this.uploader = {
-			refresh() {},
-			bind() {},
-		};
-
-		return this;
-	} as unknown as WPUploader;
-
-	// Copy static properties and prototype.
-	TusUploader.uuid = 0;
-	TusUploader.queue = OriginalUploader.queue || [];
-
-	TusUploader.prototype = {
-		/**
-		 * Initializes dropzone event handlers.
-		 * @param dropzone
-		 */
-		initDropzone(
-			this: WPUploaderInstance,
-			dropzone: Element | string
-		): void {
-			const zone =
-				typeof dropzone === 'string'
-					? document.querySelector< HTMLElement >( dropzone )
-					: ( dropzone as HTMLElement );
-
-			if ( ! zone ) {
-				return;
-			}
-
-			zone.addEventListener( 'dragover', ( e ) => {
-				e.preventDefault();
-				zone.classList.add( 'drag-over' );
-			} );
-
-			zone.addEventListener( 'dragleave', () => {
-				zone.classList.remove( 'drag-over' );
-			} );
-
-			zone.addEventListener( 'drop', ( e ) => {
-				e.preventDefault();
-				zone.classList.remove( 'drag-over' );
-				if ( e.dataTransfer?.files ) {
-					this.addFiles( Array.from( e.dataTransfer.files ) );
-				}
-			} );
-		},
-
-		/**
-		 * Initializes file browser input.
-		 * @param browser
-		 */
-		initBrowser(
-			this: WPUploaderInstance,
-			browser: Element | string
-		): void {
-			const input =
-				typeof browser === 'string'
-					? document.querySelector< HTMLInputElement >( browser )
-					: ( browser as HTMLInputElement );
-
-			if ( ! input ) {
-				return;
-			}
-
-			input.addEventListener( 'change', () => {
-				if ( input.files ) {
-					this.addFiles( Array.from( input.files ) );
-				}
-				input.value = '';
-			} );
-		},
-
-		/**
-		 * Adds files to the upload queue.
-		 * @param files
-		 */
-		addFiles( this: WPUploaderInstance, files: File[] ): void {
-			files.forEach( ( file ) => {
-				const attachment = this.createAttachmentModel( file );
-				this.queue.push( { file, attachment } );
-
-				if ( this.options.added ) {
-					this.options.added.call( this, attachment );
-				}
-			} );
-
-			this.processQueue();
-		},
-
-		/**
-		 * Creates a Backbone attachment model for a file.
-		 * @param file
-		 */
-		createAttachmentModel( file: File ): AttachmentModel {
-			const id =
-				'tusupload_' + ++( window.wp.Uploader as WPUploader ).uuid;
-
-			// Create attachment object compatible with wp.media expectations.
-			return {
-				id,
-				file,
-				uploading: true,
-				percent: 0,
-				filename: file.name,
-				_events: {},
-				get( key: string ): unknown {
-					return this[ key ];
-				},
-				set( data: Record< string, unknown > ): void {
-					Object.assign( this, data );
-					if ( this.trigger ) {
-						this.trigger( 'change', this );
-					}
-				},
-				on( event: string, callback: EventCallback ): void {
-					this._events[ event ] = this._events[ event ] || [];
-					this._events[ event ].push( callback );
-				},
-				off( event: string, callback: EventCallback ): void {
-					if ( this._events[ event ] ) {
-						this._events[ event ] = this._events[ event ].filter(
-							( cb ) => cb !== callback
-						);
-					}
-				},
-				trigger( event: string, ...args: unknown[] ): void {
-					if ( this._events[ event ] ) {
-						this._events[ event ].forEach( ( cb ) =>
-							cb.apply( this, args )
-						);
-					}
-				},
-			};
-		},
-
-		/**
-		 * Processes the upload queue.
-		 */
-		processQueue( this: WPUploaderInstance ): void {
-			while ( this.queue.length > 0 && this.activeUploads.size < 3 ) {
-				const item = this.queue.shift();
-				if ( item ) {
-					this.uploadFile( item.file, item.attachment );
-				}
-			}
-		},
-
-		/**
-		 * Uploads a single file using TUS.
-		 * @param file
-		 * @param attachment
-		 */
-		uploadFile(
-			this: WPUploaderInstance,
-			file: File,
-			attachment: AttachmentModel
-		): void {
-			const upload = createUpload( file, {
-				onProgress: ( percentage, bytesUploaded, bytesTotal ) => {
-					attachment.set( {
-						percent: parseFloat( percentage ),
-						loaded: bytesUploaded,
-						size: bytesTotal,
-					} );
-
-					if ( this.options.progress ) {
-						this.options.progress.call( this, attachment );
-					}
-				},
-				onSuccess: ( attachmentId ) => {
-					this.activeUploads.delete( attachment.id );
-
-					// Fetch full attachment data from REST API.
-					window.wp
-						.apiFetch( { path: `/wp/v2/media/${ attachmentId }` } )
-						.then( ( data ) => {
-							attachment.set( {
-								...data,
-								uploading: false,
-								percent: 100,
-							} );
-
-							if ( this.options.success ) {
-								this.options.success.call( this, attachment );
-							}
-
-							if ( this.options.complete ) {
-								this.options.complete.call( this, attachment );
-							}
-
-							this.processQueue();
-						} )
-						.catch( ( error: Error ) => {
-							this.handleError( attachment, error );
-						} );
-				},
-				onError: ( error ) => {
-					this.handleError( attachment, error as Error );
-				},
-			} );
-
-			this.activeUploads.set( attachment.id, upload );
-
-			// Check for previous uploads to resume.
-			upload.findPreviousUploads().then( ( previousUploads ) => {
-				if ( previousUploads.length > 0 ) {
-					upload.resumeFromPreviousUpload( previousUploads[ 0 ] );
-				}
-				upload.start();
-			} );
-		},
-
-		/**
-		 * Handles upload errors.
-		 * @param attachment
-		 * @param error
-		 */
-		handleError(
-			this: WPUploaderInstance,
-			attachment: AttachmentModel,
-			error: Error
-		): void {
-			this.activeUploads.delete( attachment.id );
-
-			attachment.set( {
-				uploading: false,
-				error: error.message || 'Upload failed',
-			} );
-
-			if ( this.options.error ) {
-				this.options.error.call( this, {
-					message: error.message || 'Upload failed',
-					file: attachment.file,
-				} );
-			}
-
-			if ( this.options.complete ) {
-				this.options.complete.call( this, attachment );
-			}
-
-			this.processQueue();
-		},
-
-		/**
-		 * Aborts a specific upload.
-		 * @param id
-		 */
-		abort( this: WPUploaderInstance, id: string ): void {
-			const upload = this.activeUploads.get( id );
-			if ( upload ) {
-				upload.abort( true );
-				this.activeUploads.delete( id );
-			}
-		},
-
-		/**
-		 * Aborts all uploads.
-		 */
-		abortAll( this: WPUploaderInstance ): void {
-			this.activeUploads.forEach( ( upload ) => upload.abort( true ) );
-			this.activeUploads.clear();
-			this.queue = [];
-		},
-	};
-
-	window.wp.Uploader = TusUploader;
+	window.wp.Uploader = WrappedUploader as typeof window.wp.Uploader;
 }
 
-// Initialize WordPress integration when DOM is ready.
-if ( document.readyState === 'loading' ) {
-	document.addEventListener( 'DOMContentLoaded', initTusUploader );
-} else {
-	initTusUploader();
+/**
+ * Hooks the global plupload instance used by media-new.php (Add New Media page).
+ *
+ * Unlike upload.php which uses wp.Uploader, media-new.php creates a raw
+ * plupload instance stored as window.uploader. This is created by handlers.js
+ * in its jQuery ready callback.
+ *
+ * Called via jQuery ready. The plupload-handlers dependency ensures handlers.js
+ * registers its ready callback first, so window.uploader exists when we run.
+ */
+function hookGlobalUploader(): void {
+	const globalUploader = (
+		window as unknown as { uploader?: PluploadInstance }
+	 ).uploader;
+
+	if ( globalUploader && ! hookedUploaders.has( globalUploader ) ) {
+		hookedUploaders.add( globalUploader );
+		hookPluploadInstance( globalUploader );
+	}
 }
+
+/**
+ * Initializes TUS integration with WordPress media uploaders.
+ *
+ * Sets up two integration points:
+ * 1. Wraps wp.Uploader constructor immediately (for upload.php grid view)
+ * 2. Hooks global uploader via jQuery ready (for media-new.php)
+ *
+ * Script dependencies ensure proper load order - no polling required.
+ */
+function initTusUploader(): void {
+	// Wrap wp.Uploader immediately (exists via wp-plupload dependency)
+	wrapWpUploader();
+
+	// Hook global uploader via jQuery ready
+	// (handlers.js ready runs first due to plupload-handlers dependency)
+	if ( typeof window.jQuery !== 'undefined' ) {
+		window.jQuery( document ).ready( hookGlobalUploader );
+	}
+}
+
+// Initialize immediately (dependencies ensure proper load order)
+initTusUploader();
