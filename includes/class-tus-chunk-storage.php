@@ -192,6 +192,39 @@ class TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Returns the total size of all pending uploads.
+	 *
+	 * This sums the expected final size (not current progress) of all
+	 * in-progress uploads, useful for quota calculations.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @return int Total pending upload size in bytes.
+	 */
+	public function get_total_pending_size(): int {
+		$files = glob( trailingslashit( $this->base_dir ) . '*.part' );
+
+		if ( ! $files ) {
+			return 0;
+		}
+
+		$session    = new TUS_Upload_Session();
+		$total_size = 0;
+
+		foreach ( $files as $file ) {
+			$upload_id = basename( $file, '.part' );
+			$data      = $session->get( $upload_id );
+
+			// Only count if session exists and hasn't expired.
+			if ( $data && time() <= $data['expires_at'] ) {
+				$total_size += (int) $data['length'];
+			}
+		}
+
+		return $total_size;
+	}
+
+	/**
 	 * Cleans up expired chunk files.
 	 *
 	 * This method is intended to be called via WP-Cron.

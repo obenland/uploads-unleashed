@@ -340,17 +340,19 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		$this->assertSame( 204, $response->get_status() );
-		$this->assertArrayHasKey( 'X-WP-Upload-Attachment-ID', $response->get_headers() );
+		// Complete uploads return 200 with attachment data.
+		$this->assertSame( 200, $response->get_status() );
 
-		$attachment_id = $response->get_headers()['X-WP-Upload-Attachment-ID'];
-		$attachment    = get_post( $attachment_id );
+		$data = $response->get_data();
+		$this->assertArrayHasKey( 'id', $data );
+
+		$attachment = get_post( $data['id'] );
 
 		$this->assertSame( 'attachment', $attachment->post_type );
 		$this->assertSame( 'text/plain', $attachment->post_mime_type );
 
 		// Cleanup.
-		wp_delete_attachment( $attachment_id, true );
+		wp_delete_attachment( $data['id'], true );
 	}
 
 	/**

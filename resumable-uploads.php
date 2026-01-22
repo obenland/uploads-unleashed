@@ -152,6 +152,39 @@ function resumable_uploads_cleanup() {
 add_action( 'resumable_uploads_cleanup', 'resumable_uploads_cleanup' );
 
 /**
+ * Filters the upload size limit to reflect actual available space.
+ *
+ * With TUS resumable uploads, PHP's upload_max_filesize is irrelevant
+ * since uploads are chunked. The real limit is available disk space
+ * (or quota on multisite), minus any in-progress uploads.
+ *
+ * @since 0.1.0
+ *
+ * @param int $size Upload size limit in bytes.
+ * @return int Adjusted upload size limit in bytes.
+ */
+function resumable_uploads_filter_upload_size_limit( int $size ): int {
+	$pending_size = ( new TUS_Chunk_Storage() )->get_total_pending_size();
+
+	if ( is_multisite() ) {
+		// On multisite, use quota-based available space.
+		$available = get_upload_space_available();
+	} else {
+		// On single-site, use available disk space.
+		$upload_dir = wp_upload_dir();
+		$available  = @disk_free_space( $upload_dir['basedir'] );
+
+		if ( false === $available ) {
+			// If we can't determine disk space, keep the original limit.
+			return $size;
+		}
+	}
+
+	return max( 0, (int) $available - $pending_size );
+}
+add_filter( 'upload_size_limit', 'resumable_uploads_filter_upload_size_limit', 20 );
+
+/**
  * Clears the scheduled cleanup event on plugin deactivation.
  *
  * @since 0.1.0

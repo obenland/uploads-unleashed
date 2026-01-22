@@ -204,11 +204,18 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		$upload_length = (int) $upload_length;
 
-		// Validate upload size.
+		// Validate upload size against available space.
 		$max_size = wp_max_upload_size();
 		if ( $upload_length > $max_size ) {
-			/* translators: %s: Maximum upload size. */
-			return new WP_Error( 'rest_upload_too_large', sprintf( __( 'File size exceeds the maximum upload size of %s.', 'resumable-uploads' ), size_format( $max_size ) ), array( 'status' => 413 ) );
+			return new WP_Error(
+				'rest_upload_too_large',
+				sprintf(
+					/* translators: %s: Available space. */
+					__( 'Not enough space. You have %s available.', 'resumable-uploads' ),
+					size_format( $max_size )
+				),
+				array( 'status' => 413 )
+			);
 		}
 
 		// Parse metadata.
