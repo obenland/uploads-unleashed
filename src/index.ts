@@ -77,7 +77,7 @@ export interface UploadResult {
  */
 const DEFAULT_OPTIONS: Partial< tus.UploadOptions > = {
 	chunkSize: 5 * 1024 * 1024, // 5MB chunks
-	retryDelays: [ 0, 1000, 3000, 5000 ],
+	retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
 	removeFingerprintOnSuccess: true,
 };
 
