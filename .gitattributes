@@ -1,0 +1,33 @@
+# Distribution archive exclusions.
+# These files are excluded from release zips created by `git archive` and GitHub.
+
+# Git/GitHub files
+.gitattributes export-ignore
+.gitignore export-ignore
+.github/ export-ignore
+
+# IDE/Editor config
+.editorconfig export-ignore
+.idea/ export-ignore
+
+# Development environment
+.wp-env.json export-ignore
+
+# Build tooling
+composer.json export-ignore
+composer.lock export-ignore
+package.json export-ignore
+package-lock.json export-ignore
+tsconfig.json export-ignore
+webpack.config.js export-ignore
+
+# Source files (compiled to build/)
+src/ export-ignore
+
+# Testing and linting
+tests/ export-ignore
+phpcs.xml.dist export-ignore
+phpunit.xml.dist export-ignore
+
+# Documentation (developer-focused)
+docs/ export-ignore
