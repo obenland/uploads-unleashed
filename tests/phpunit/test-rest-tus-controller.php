@@ -695,4 +695,462 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$this->assertSame( 204, $response->get_status() );
 	}
+
+	/**
+	 * Test PATCH with MD5 checksum succeeds.
+	 */
+	public function test_patch_with_md5_checksum() {
+		$upload_id  = $this->create_upload_session();
+		$chunk_data = str_repeat( 'c', 128 );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+		$checksum = 'md5 ' . base64_encode( hash( 'md5', $chunk_data, true ) );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Upload-Checksum', $checksum );
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 204, $response->get_status() );
+	}
+
+	/**
+	 * Test PATCH with invalid base64 checksum returns 400.
+	 */
+	public function test_patch_with_invalid_base64_checksum_returns_400() {
+		$upload_id  = $this->create_upload_session();
+		$chunk_data = str_repeat( 'a', 512 );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Upload-Checksum', 'sha256 not-valid-base64!!!' );
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_invalid_checksum_encoding', $data['code'] );
+	}
+
+	/**
+	 * Test PATCH with empty body returns error.
+	 */
+	public function test_patch_with_empty_body_returns_error() {
+		$upload_id = $this->create_upload_session();
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( '' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_empty_chunk', $data['code'] );
+	}
+
+	/**
+	 * Test HEAD request for expired upload returns 410.
+	 */
+	public function test_head_expired_upload_returns_410() {
+		$upload_id    = wp_generate_uuid4();
+		$session_data = array(
+			'upload_id'  => $upload_id,
+			'user_id'    => self::$admin_id,
+			'filename'   => 'expired.txt',
+			'filetype'   => 'text/plain',
+			'length'     => 1024,
+			'offset'     => 0,
+			'created_at' => time() - DAY_IN_SECONDS * 2,
+			'expires_at' => time() - DAY_IN_SECONDS, // Expired.
+		);
+		set_transient( 'tus_upload_' . $upload_id, $session_data, DAY_IN_SECONDS );
+
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/tus/' . $upload_id );
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 410, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_upload_expired', $data['code'] );
+	}
+
+	/**
+	 * Test PATCH for expired upload returns 410.
+	 */
+	public function test_patch_expired_upload_returns_410() {
+		$upload_id    = wp_generate_uuid4();
+		$session_data = array(
+			'upload_id'  => $upload_id,
+			'user_id'    => self::$admin_id,
+			'filename'   => 'expired.txt',
+			'filetype'   => 'text/plain',
+			'length'     => 1024,
+			'offset'     => 0,
+			'created_at' => time() - DAY_IN_SECONDS * 2,
+			'expires_at' => time() - DAY_IN_SECONDS, // Expired.
+		);
+		set_transient( 'tus_upload_' . $upload_id, $session_data, DAY_IN_SECONDS );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 410, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_upload_expired', $data['code'] );
+	}
+
+	/**
+	 * Test complete upload with invalid file type.
+	 */
+	public function test_complete_upload_rejects_invalid_file_type() {
+		$php_content = '<?php echo "hi";';
+
+		// Create a session with .php file type.
+		$upload_id = $this->create_upload_session(
+			array(
+				'filename' => 'evil.php',
+				'filetype' => 'application/x-php',
+				'length'   => strlen( $php_content ),
+			)
+		);
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $php_content );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_invalid_file_type', $data['code'] );
+	}
+
+	/**
+	 * Test that pre_finalize filter can block upload.
+	 */
+	public function test_pre_finalize_filter_can_block_upload() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		$filter_callback = function () {
+			return new WP_Error( 'blocked', 'Upload blocked by filter', array( 'status' => 403 ) );
+		};
+		add_filter( 'resumable_uploads_pre_finalize', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'resumable_uploads_pre_finalize', $filter_callback );
+
+		$this->assertSame( 403, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'blocked', $data['code'] );
+	}
+
+	/**
+	 * Test that finalize_upload filter can return custom result.
+	 */
+	public function test_finalize_filter_can_return_custom_result() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		$custom_result   = array(
+			'id'         => 999,
+			'custom_key' => 'custom_value',
+		);
+		$filter_callback = function () use ( $custom_result ) {
+			return $custom_result;
+		};
+		add_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 999, $data['id'] );
+		$this->assertSame( 'custom_value', $data['custom_key'] );
+	}
+
+	/**
+	 * Test that finalize_upload filter can return error.
+	 */
+	public function test_finalize_filter_can_return_error() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		$filter_callback = function () {
+			return new WP_Error( 'custom_error', 'Custom error message', array( 'status' => 422 ) );
+		};
+		add_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+
+		$this->assertSame( 422, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'custom_error', $data['code'] );
+	}
+
+	/**
+	 * Test upload_created action is fired.
+	 */
+	public function test_upload_created_action_fires() {
+		$action_fired = false;
+		$action_args  = array();
+
+		$action_callback = function ( $upload_id, $upload, $request ) use ( &$action_fired, &$action_args ) {
+			$action_fired = true;
+			$action_args  = array(
+				'upload_id' => $upload_id,
+				'upload'    => $upload,
+			);
+		};
+		add_action( 'resumable_uploads_upload_created', $action_callback, 10, 3 );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'action-test.txt' ) );
+
+		rest_get_server()->dispatch( $request );
+
+		remove_action( 'resumable_uploads_upload_created', $action_callback );
+
+		$this->assertTrue( $action_fired );
+		$this->assertNotEmpty( $action_args['upload_id'] );
+		$this->assertSame( 'action-test.txt', $action_args['upload']['filename'] );
+	}
+
+	/**
+	 * Test chunk_received action is fired.
+	 */
+	public function test_chunk_received_action_fires() {
+		$upload_id = $this->create_upload_session();
+
+		$action_fired = false;
+		$action_args  = array();
+
+		$action_callback = function ( $received_upload_id, $new_offset, $upload, $request ) use ( &$action_fired, &$action_args ) {
+			$action_fired = true;
+			$action_args  = array(
+				'upload_id'  => $received_upload_id,
+				'new_offset' => $new_offset,
+			);
+		};
+		add_action( 'resumable_uploads_chunk_received', $action_callback, 10, 4 );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( str_repeat( 'a', 512 ) );
+
+		rest_get_server()->dispatch( $request );
+
+		remove_action( 'resumable_uploads_chunk_received', $action_callback );
+
+		$this->assertTrue( $action_fired );
+		$this->assertSame( $upload_id, $action_args['upload_id'] );
+		$this->assertSame( 512, $action_args['new_offset'] );
+	}
+
+	/**
+	 * Test upload_deleted action is fired.
+	 */
+	public function test_upload_deleted_action_fires() {
+		$upload_id = $this->create_upload_session();
+
+		$action_fired = false;
+		$action_args  = array();
+
+		$action_callback = function ( $deleted_upload_id, $upload_data ) use ( &$action_fired, &$action_args ) {
+			$action_fired = true;
+			$action_args  = array(
+				'upload_id'   => $deleted_upload_id,
+				'upload_data' => $upload_data,
+			);
+		};
+		add_action( 'resumable_uploads_upload_deleted', $action_callback, 10, 2 );
+
+		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/media/tus/' . $upload_id );
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_action( 'resumable_uploads_upload_deleted', $action_callback );
+
+		$this->assertTrue( $action_fired );
+		$this->assertSame( $upload_id, $action_args['upload_id'] );
+		$this->assertNotNull( $action_args['upload_data'] );
+	}
+
+	/**
+	 * Test upload_complete action is fired.
+	 */
+	public function test_upload_complete_action_fires() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		$action_fired = false;
+		$action_args  = array();
+
+		$action_callback = function ( $attachment_id, $completed_upload_id, $upload_data ) use ( &$action_fired, &$action_args ) {
+			$action_fired = true;
+			$action_args  = array(
+				'attachment_id' => $attachment_id,
+				'upload_id'     => $completed_upload_id,
+			);
+		};
+		add_action( 'resumable_uploads_upload_complete', $action_callback, 10, 3 );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_action( 'resumable_uploads_upload_complete', $action_callback );
+
+		$this->assertTrue( $action_fired );
+		$this->assertSame( $upload_id, $action_args['upload_id'] );
+		$this->assertGreaterThan( 0, $action_args['attachment_id'] );
+
+		// Cleanup.
+		wp_delete_attachment( $action_args['attachment_id'], true );
+	}
+
+	/**
+	 * Test metadata parsing handles empty header.
+	 */
+	public function test_create_handles_empty_metadata() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request->set_header( 'Upload-Length', '1024' );
+		// No Upload-Metadata header.
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 201, $response->get_status() );
+	}
+
+	/**
+	 * Test metadata parsing handles multiple values.
+	 */
+	public function test_create_parses_multiple_metadata_values() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header(
+			'Upload-Metadata',
+			'filename ' . base64_encode( 'document.pdf' ) . ',filetype ' . base64_encode( 'application/pdf' ) . ',custom ' . base64_encode( 'value' )
+		);
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 201, $response->get_status() );
+
+		// Extract upload ID from Location header.
+		$location  = $response->get_headers()['Location'];
+		$upload_id = basename( $location );
+
+		$session = new TUS_Upload_Session();
+		$upload  = $session->get( $upload_id );
+
+		$this->assertSame( 'document.pdf', $upload['filename'] );
+		$this->assertSame( 'application/pdf', $upload['filetype'] );
+	}
+
+	/**
+	 * Test max upload size filter is applied.
+	 */
+	public function test_max_upload_size_filter_applied() {
+		$filter_callback = function () {
+			return 100; // Very small limit.
+		};
+		add_filter( 'resumable_uploads_max_upload_size', $filter_callback );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'resumable_uploads_max_upload_size', $filter_callback );
+
+		$this->assertSame( 413, $response->get_status() );
+	}
+
+	/**
+	 * Test attachment data filter is applied.
+	 */
+	public function test_attachment_data_filter_applied() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		$filter_callback = function ( $data, $attachment_id, $upload_data ) {
+			$data['filtered'] = true;
+			return $data;
+		};
+		add_filter( 'resumable_uploads_attachment_data', $filter_callback, 10, 3 );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'resumable_uploads_attachment_data', $filter_callback );
+
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertTrue( $data['filtered'] );
+
+		// Cleanup.
+		wp_delete_attachment( $data['id'], true );
+	}
+
+	/**
+	 * Test wp_handle_upload_prefilter integration.
+	 */
+	public function test_upload_prefilter_can_reject_upload() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		$filter_callback = function ( $file ) {
+			$file['error'] = 'File rejected by security scan';
+			return $file;
+		};
+		add_filter( 'wp_handle_upload_prefilter', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'wp_handle_upload_prefilter', $filter_callback );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_upload_error', $data['code'] );
+		$this->assertStringContainsString( 'security scan', $data['message'] );
+	}
 }

@@ -74,6 +74,40 @@ For watch mode during development:
 npm run test:js:watch
 ```
 
+### Code Coverage Reports
+
+The coverage configuration is already set up in `phpunit.xml.dist` to analyze the code in the `includes` directory. To generate code coverage reports, you'll need to start wp-env with Xdebug enabled for coverage:
+
+```bash
+# Start the environment with Xdebug enabled
+npm run start -- --xdebug=coverage
+```
+
+```bash
+# Run tests with text coverage report
+npm run test:coverage:text
+```
+
+For a detailed HTML report:
+
+```bash
+# Generate HTML coverage report
+npm run test:coverage
+```
+
+```bash
+# Open the coverage report in your default browser (macOS)
+open coverage/index.html
+```
+
+The HTML report will be generated in the `coverage` directory, showing a detailed analysis of which lines of code are covered by tests.
+
+For JavaScript coverage:
+
+```bash
+npm run test:js:coverage
+```
+
 ## Code Standards
 
 ### PHP

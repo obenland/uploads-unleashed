@@ -20,3 +20,4 @@ Thumbs.db
 
 # Test artifacts
 .phpunit.result.cache
+/coverage/

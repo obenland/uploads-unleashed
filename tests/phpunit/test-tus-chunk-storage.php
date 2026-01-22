@@ -241,4 +241,62 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$this->assertFileExists( trailingslashit( $chunks_dir ) . '.htaccess' );
 		$this->assertFileExists( trailingslashit( $chunks_dir ) . 'index.php' );
 	}
+
+	/**
+	 * Tests that get_total_pending_size returns 0 when no chunks exist.
+	 */
+	public function test_get_total_pending_size_returns_zero_when_empty() {
+		$size = $this->storage->get_total_pending_size();
+
+		$this->assertSame( 0, $size );
+	}
+
+	/**
+	 * Tests that get_total_pending_size returns correct sum of session lengths.
+	 */
+	public function test_get_total_pending_size_returns_correct_sum() {
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$session = new TUS_Upload_Session();
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+
+		// Create sessions with specific upload IDs and lengths.
+		$upload_id1 = $session->create( array( 'filename' => 'a.txt', 'length' => 1000 ), $request );
+		$upload_id2 = $session->create( array( 'filename' => 'b.txt', 'length' => 2000 ), $request );
+		$upload_id3 = $session->create( array( 'filename' => 'c.txt', 'length' => 3000 ), $request );
+
+		// Create chunk files (required for glob to find them).
+		$this->storage->append( $upload_id1, 'a', 0 );
+		$this->storage->append( $upload_id2, 'b', 0 );
+		$this->storage->append( $upload_id3, 'c', 0 );
+
+		$total_size = $this->storage->get_total_pending_size();
+
+		// Total is sum of session lengths (1000 + 2000 + 3000).
+		$this->assertSame( 6000, $total_size );
+	}
+
+	/**
+	 * Tests that get_total_pending_size excludes chunks without valid sessions.
+	 */
+	public function test_get_total_pending_size_excludes_orphaned_chunks() {
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$session = new TUS_Upload_Session();
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+
+		// Create one with session, one without.
+		$upload_id_with_session = $session->create( array( 'filename' => 'valid.txt', 'length' => 1000 ), $request );
+		$orphan_upload_id       = wp_generate_uuid4();
+
+		$this->storage->append( $upload_id_with_session, str_repeat( 'a', 500 ), 0 );
+		$this->storage->append( $orphan_upload_id, str_repeat( 'b', 2000 ), 0 );
+
+		$total_size = $this->storage->get_total_pending_size();
+
+		// Only the session length counts, not file size. Orphan is excluded.
+		$this->assertSame( 1000, $total_size );
+	}
 }
