@@ -2,6 +2,9 @@
 /vendor/
 /node_modules/
 
+# Build artifacts
+/build/
+
 # IDE
 .idea/
 .vscode/
@@ -14,3 +17,6 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+.phpunit.result.cache
