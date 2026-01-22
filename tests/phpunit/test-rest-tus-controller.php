@@ -113,7 +113,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$this->assertSame( '1.0.0', $headers['Tus-Resumable'] );
 		$this->assertSame( '1.0.0', $headers['Tus-Version'] );
-		$this->assertSame( 'creation,expiration,termination', $headers['Tus-Extension'] );
+		$this->assertSame( 'creation,expiration,termination,checksum', $headers['Tus-Extension'] );
 		$this->assertArrayHasKey( 'Tus-Max-Size', $headers );
 	}
 
@@ -587,5 +587,190 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( '0', (string) $headers['Upload-Offset'] );
+	}
+
+	/**
+	 * Test that checksum extension is advertised.
+	 */
+	public function test_checksum_extension_advertised() {
+		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus' );
+		$response = rest_get_server()->dispatch( $request );
+
+		// Apply the filter manually since rest_post_dispatch isn't called in tests.
+		$response = resumable_uploads_add_options_headers( $response, rest_get_server(), $request );
+		$headers  = $response->get_headers();
+
+		$this->assertStringContainsString( 'checksum', $headers['Tus-Extension'] );
+	}
+
+	/**
+	 * Test PATCH with valid SHA256 checksum succeeds.
+	 */
+	public function test_patch_with_valid_sha256_checksum() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$chunk_data = str_repeat( 'a', 512 );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+		$checksum = 'sha256 ' . base64_encode( hash( 'sha256', $chunk_data, true ) );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Upload-Checksum', $checksum );
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 204, $response->get_status() );
+	}
+
+	/**
+	 * Test PATCH with invalid checksum returns 460.
+	 */
+	public function test_patch_with_invalid_checksum_returns_460() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$chunk_data = str_repeat( 'a', 512 );
+		// Wrong checksum (hash of different data).
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+		$wrong_checksum = 'sha256 ' . base64_encode( hash( 'sha256', 'different data', true ) );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Upload-Checksum', $wrong_checksum );
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 460, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_checksum_mismatch', $data['code'] );
+	}
+
+	/**
+	 * Test PATCH without checksum header still works.
+	 */
+	public function test_patch_without_checksum_succeeds() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$chunk_data = str_repeat( 'a', 512 );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		// No Upload-Checksum header.
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 204, $response->get_status() );
+	}
+
+	/**
+	 * Test PATCH with unsupported checksum algorithm returns 400.
+	 */
+	public function test_patch_with_unsupported_algorithm_returns_400() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$chunk_data = str_repeat( 'a', 512 );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+		$checksum = 'unsupported_algo ' . base64_encode( 'somehash' );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Upload-Checksum', $checksum );
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_unsupported_checksum_algorithm', $data['code'] );
+	}
+
+	/**
+	 * Test PATCH with malformed checksum header returns 400.
+	 */
+	public function test_patch_with_malformed_checksum_returns_400() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$chunk_data = str_repeat( 'a', 512 );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Upload-Checksum', 'sha256-without-space' ); // Missing space.
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_invalid_checksum_format', $data['code'] );
+	}
+
+	/**
+	 * Test PATCH with SHA1 checksum succeeds.
+	 */
+	public function test_patch_with_sha1_checksum() {
+		$session   = new TUS_Upload_Session();
+		$upload_id = $session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			)
+		);
+
+		$chunk_data = str_repeat( 'b', 256 );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+		$checksum = 'sha1 ' . base64_encode( hash( 'sha1', $chunk_data, true ) );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Upload-Checksum', $checksum );
+		$request->set_body( $chunk_data );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 204, $response->get_status() );
 	}
 }

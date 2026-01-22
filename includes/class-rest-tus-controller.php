@@ -31,7 +31,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @since 0.1.0
 	 * @var string
 	 */
-	const TUS_EXTENSIONS = 'creation,expiration,termination';
+	const TUS_EXTENSIONS = 'creation,expiration,termination,checksum';
 
 	/**
 	 * The namespace for the REST route.
@@ -391,6 +391,12 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_empty_chunk', __( 'No data received.', 'resumable-uploads' ), array( 'status' => 400 ) );
 		}
 
+		// Verify checksum if provided.
+		$checksum_error = $this->verify_chunk_checksum( $request, $chunk_data );
+		if ( is_wp_error( $checksum_error ) ) {
+			return $checksum_error;
+		}
+
 		// Write chunk.
 		$storage    = new TUS_Chunk_Storage();
 		$new_offset = $storage->append( $upload_id, $chunk_data, $server_offset );
@@ -617,6 +623,79 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		return $metadata;
+	}
+
+	/**
+	 * Verifies the checksum of uploaded chunk data.
+	 *
+	 * The Upload-Checksum header format is: "{algorithm} {base64-encoded-checksum}"
+	 * Example: "sha256 aGVsbG8gd29ybGQ="
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param WP_REST_Request $request    The request object.
+	 * @param string          $chunk_data The raw chunk data to verify.
+	 * @return true|WP_Error True if checksum is valid or not provided, WP_Error on mismatch.
+	 */
+	protected function verify_chunk_checksum( WP_REST_Request $request, string $chunk_data ) {
+		$checksum_header = $request->get_header( 'Upload-Checksum' );
+
+		// Checksum is optional per TUS spec.
+		if ( empty( $checksum_header ) ) {
+			return true;
+		}
+
+		// Parse header: "{algorithm} {base64-checksum}".
+		$parts = explode( ' ', $checksum_header, 2 );
+		if ( count( $parts ) !== 2 ) {
+			return new WP_Error(
+				'rest_invalid_checksum_format',
+				__( 'Invalid Upload-Checksum header format. Expected: "algorithm base64checksum".', 'resumable-uploads' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$algorithm        = strtolower( $parts[0] );
+		$expected_encoded = $parts[1];
+
+		// Validate algorithm is supported.
+		$supported_algorithms = array( 'sha256', 'sha1', 'md5' );
+		if ( ! in_array( $algorithm, $supported_algorithms, true ) ) {
+			return new WP_Error(
+				'rest_unsupported_checksum_algorithm',
+				sprintf(
+					/* translators: 1: received algorithm, 2: comma-separated list of supported algorithms */
+					__( 'Unsupported checksum algorithm "%1$s". Supported: %2$s.', 'resumable-uploads' ),
+					$algorithm,
+					implode( ', ', $supported_algorithms )
+				),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Decode expected checksum.
+		$expected_checksum = base64_decode( $expected_encoded, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- TUS protocol requires base64.
+		if ( false === $expected_checksum ) {
+			return new WP_Error(
+				'rest_invalid_checksum_encoding',
+				__( 'Invalid base64 encoding in Upload-Checksum header.', 'resumable-uploads' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Calculate actual checksum of chunk data.
+		$actual_checksum = hash( $algorithm, $chunk_data, true );
+
+		// Compare checksums.
+		if ( ! hash_equals( $expected_checksum, $actual_checksum ) ) {
+			return new WP_Error(
+				'rest_checksum_mismatch',
+				__( 'Checksum mismatch. The uploaded data does not match the provided checksum.', 'resumable-uploads' ),
+				array( 'status' => 460 ) // TUS-specific status code for checksum mismatch.
+			);
+		}
+
+		return true;
 	}
 
 	/**
