@@ -47,10 +47,14 @@ function parsePendingUploads(): PendingUpload[] {
 			const filetype = parts[ parts.length - 4 ];
 			const size = parseInt( parts[ parts.length - 3 ], 10 );
 
+			// Remove any trailing mime-type pattern from filename (parsing artifact
+			// when endpoint URL contains dashes like wp-json/resumable-uploads)
+			const cleanFilename = filename.replace( /-[a-z]+\/[a-z0-9.+-]+.*$/i, '' );
+
 			pending.push( {
 				key,
 				uploadUrl: data.uploadUrl,
-				filename: decodeURIComponent( filename ),
+				filename: decodeURIComponent( cleanFilename ),
 				filetype,
 				size,
 			} );
