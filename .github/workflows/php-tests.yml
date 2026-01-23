@@ -18,6 +18,11 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v4
 
+            - name: Cache Docker images
+              uses: ScribeMD/docker-cache@0.5.0
+              with:
+                  key: docker-${{ runner.os }}-${{ matrix.php }}
+
             - name: Setup PHP
               uses: shivammathur/setup-php@v2
               with:
@@ -36,6 +41,9 @@ jobs:
 
             - name: Install Node dependencies
               run: npm ci
+
+            - name: Build assets
+              run: npm run build
 
             - name: Start WordPress environment
               run: npm run start
