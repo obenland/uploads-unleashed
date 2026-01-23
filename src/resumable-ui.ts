@@ -15,7 +15,6 @@ interface PendingUpload {
 	key: string;
 	uploadUrl: string;
 	filename: string;
-	filetype: string;
 	size: number;
 }
 
@@ -30,7 +29,7 @@ function parsePendingUploads(): PendingUpload[] {
 
 	for ( let i = 0; i < localStorage.length; i++ ) {
 		const key = localStorage.key( i );
-		if ( ! key?.startsWith( 'tus::tus-br-' ) ) {
+		if ( ! key?.startsWith( 'tus::tus-br|' ) ) {
 			continue;
 		}
 		if ( ! key.includes( endpoint ) ) {
@@ -39,32 +38,27 @@ function parsePendingUploads(): PendingUpload[] {
 
 		try {
 			const data = JSON.parse( localStorage.getItem( key ) || '' );
-			// Parse fingerprint: tus::tus-br-{filename}-{filetype}-{size}-{lastModified}-{endpoint}::{id}
-			const fingerprint = key.split( '::' )[ 1 ];
-			const parts = fingerprint.split( '-' );
-			// Filename may contain dashes, so join all but last 4 parts
-			const filename = parts.slice( 2, -4 ).join( '-' );
-			const filetype = parts[ parts.length - 4 ];
-			const size = parseInt( parts[ parts.length - 3 ], 10 );
+			// Parse fingerprint: tus::tus-br|{filename}|{size}|{lastModified}|{endpoint}::{uploadUrl}
+			const parts = key.split( '::' )[ 1 ].split( '|' );
 
-			// Remove any trailing mime-type pattern from filename (parsing artifact
-			// when endpoint URL contains dashes like wp-json/resumable-uploads)
-			const cleanFilename = filename.replace(
-				/-[a-z]+\/[a-z0-9.+-]+.*$/i,
-				''
-			);
+			// parts[0] = 'tus-br', parts[1] = filename, parts[2] = size, etc.
+			if ( parts.length < 5 ) {
+				localStorage.removeItem( key );
+				continue;
+			}
 
 			pending.push( {
 				key,
 				uploadUrl: data.uploadUrl,
-				filename: decodeURIComponent( cleanFilename ),
-				filetype,
-				size,
+				filename: decodeURIComponent( parts[ 1 ] ),
+				size: parseInt( parts[ 2 ], 10 ),
 			} );
 		} catch {
-			// Ignore malformed entries
+			// Clean up malformed entries
+			localStorage.removeItem( key );
 		}
 	}
+
 	return pending;
 }
 
@@ -127,6 +121,10 @@ async function discardUpload(
 async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 	let file: File | null = null;
 
+	// Extract file extension for filtering (more reliable than MIME type)
+	const extMatch = upload.filename.match( /\.[^.]+$/ );
+	const extension = extMatch ? extMatch[ 0 ].toLowerCase() : '';
+
 	// Try File System Access API first (Chrome/Edge)
 	if ( 'showOpenFilePicker' in window ) {
 		try {
@@ -137,17 +135,19 @@ async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 					) => Promise< FileSystemFileHandle[] >;
 				}
 			 ).showOpenFilePicker( {
-				types: [
-					{
-						description: upload.filename,
-						accept: { [ upload.filetype ]: [] },
-					},
-				],
 				multiple: false,
+				types: extension
+					? [
+							{
+								description: upload.filename,
+								accept: { '*/*': [ extension ] },
+							},
+					  ]
+					: undefined,
 			} );
 			file = await handle.getFile();
 		} catch {
-			// User cancelled or API error - fall through to fallback
+			// User canceled or API error - fall through to fallback
 		}
 	}
 
@@ -156,7 +156,9 @@ async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 		file = await new Promise< File | null >( ( resolve ) => {
 			const input = document.createElement( 'input' );
 			input.type = 'file';
-			input.accept = upload.filetype;
+			if ( extension ) {
+				input.accept = extension;
+			}
 			input.onchange = () => resolve( input.files?.[ 0 ] || null );
 			input.click();
 		} );
@@ -220,9 +222,7 @@ function renderPendingUploads(): void {
 		.map(
 			( upload ) => `
 		<li data-key="${ upload.key }" data-url="${ upload.uploadUrl }"
-			data-filename="${ upload.filename }" data-filetype="${
-				upload.filetype
-			}" data-size="${ upload.size }">
+			data-filename="${ upload.filename }" data-size="${ upload.size }">
 			<span class="filename">${ upload.filename }</span>
 			<span class="filesize">(${ formatFileSize( upload.size ) })</span>
 			<button type="button" class="button resume-upload">${ __(
@@ -250,7 +250,6 @@ function renderPendingUploads(): void {
 				key: li.getAttribute( 'data-key' ) || '',
 				uploadUrl: li.getAttribute( 'data-url' ) || '',
 				filename: li.getAttribute( 'data-filename' ) || '',
-				filetype: li.getAttribute( 'data-filetype' ) || '',
 				size: parseInt( li.getAttribute( 'data-size' ) || '0', 10 ),
 			};
 			const resumed = await resumeUpload( upload );

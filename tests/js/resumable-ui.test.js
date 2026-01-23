@@ -68,9 +68,10 @@ describe( 'parsePendingUploads', () => {
 	} );
 
 	it( 'should parse TUS fingerprints from localStorage', () => {
-		// Add a mock TUS fingerprint entry
+		// Add a mock TUS fingerprint entry (pipe-delimited, URL-encoded filename)
 		const endpoint = '/wp-json/wp/v2/media/tus';
-		const fingerprint = `tus-br-test.txt-text%2Fplain-1024-1234567890-${ endpoint }`;
+		const filename = encodeURIComponent( 'test.txt' );
+		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
 		const key = `tus::${ fingerprint }::upload-id-123`;
 
 		localStorage.setItem(
