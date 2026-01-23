@@ -922,14 +922,14 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$action_fired = false;
 		$action_args  = array();
 
-		$action_callback = function ( $upload_id, $upload, $request ) use ( &$action_fired, &$action_args ) {
+		$action_callback = function ( $upload_id, $upload ) use ( &$action_fired, &$action_args ) {
 			$action_fired = true;
 			$action_args  = array(
 				'upload_id' => $upload_id,
 				'upload'    => $upload,
 			);
 		};
-		add_action( 'resumable_uploads_upload_created', $action_callback, 10, 3 );
+		add_action( 'resumable_uploads_upload_created', $action_callback, 10, 2 );
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 		$request->set_header( 'Upload-Length', '1024' );
@@ -953,14 +953,14 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$action_fired = false;
 		$action_args  = array();
 
-		$action_callback = function ( $received_upload_id, $new_offset, $upload, $request ) use ( &$action_fired, &$action_args ) {
+		$action_callback = function ( $received_upload_id, $new_offset ) use ( &$action_fired, &$action_args ) {
 			$action_fired = true;
 			$action_args  = array(
 				'upload_id'  => $received_upload_id,
 				'new_offset' => $new_offset,
 			);
 		};
-		add_action( 'resumable_uploads_chunk_received', $action_callback, 10, 4 );
+		add_action( 'resumable_uploads_chunk_received', $action_callback, 10, 2 );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -1013,14 +1013,14 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$action_fired = false;
 		$action_args  = array();
 
-		$action_callback = function ( $attachment_id, $completed_upload_id, $upload_data ) use ( &$action_fired, &$action_args ) {
+		$action_callback = function ( $attachment_id, $completed_upload_id ) use ( &$action_fired, &$action_args ) {
 			$action_fired = true;
 			$action_args  = array(
 				'attachment_id' => $attachment_id,
 				'upload_id'     => $completed_upload_id,
 			);
 		};
-		add_action( 'resumable_uploads_upload_complete', $action_callback, 10, 3 );
+		add_action( 'resumable_uploads_upload_complete', $action_callback, 10, 2 );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -1104,11 +1104,11 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_attachment_data_filter_applied() {
 		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
 
-		$filter_callback = function ( $data, $attachment_id, $upload_data ) {
+		$filter_callback = function ( $data ) {
 			$data['filtered'] = true;
 			return $data;
 		};
-		add_filter( 'resumable_uploads_attachment_data', $filter_callback, 10, 3 );
+		add_filter( 'resumable_uploads_attachment_data', $filter_callback );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );

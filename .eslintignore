@@ -1,0 +1,7 @@
+# Build and coverage
+/build/
+/coverage/
+
+# Dependencies
+/vendor/
+/node_modules/

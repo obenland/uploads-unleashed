@@ -299,14 +299,18 @@ describe( 'createUpload', () => {
 				message: 'TUS error',
 				originalResponse: {
 					getBody: () =>
-						JSON.stringify( { message: 'WordPress error message' } ),
+						JSON.stringify( {
+							message: 'WordPress error message',
+						} ),
 				},
 			};
 
 			capturedCallbacks.onError( detailedError );
 
 			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( { message: 'WordPress error message' } )
+				expect.objectContaining( {
+					message: 'WordPress error message',
+				} )
 			);
 		} );
 
@@ -410,7 +414,9 @@ describe( 'uploadFile', () => {
 		const mockUpload = tus.Upload.mock.results[ 0 ]?.value;
 
 		// Reconfigure findPreviousUploads for next call
-		mockUpload.findPreviousUploads.mockResolvedValueOnce( [ previousUpload ] );
+		mockUpload.findPreviousUploads.mockResolvedValueOnce( [
+			previousUpload,
+		] );
 
 		// Create another upload that will use the reconfigured mock
 		uploadFile( file );

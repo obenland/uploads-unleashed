@@ -49,7 +49,10 @@ function parsePendingUploads(): PendingUpload[] {
 
 			// Remove any trailing mime-type pattern from filename (parsing artifact
 			// when endpoint URL contains dashes like wp-json/resumable-uploads)
-			const cleanFilename = filename.replace( /-[a-z]+\/[a-z0-9.+-]+.*$/i, '' );
+			const cleanFilename = filename.replace(
+				/-[a-z]+\/[a-z0-9.+-]+.*$/i,
+				''
+			);
 
 			pending.push( {
 				key,

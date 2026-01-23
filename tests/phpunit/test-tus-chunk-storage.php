@@ -262,9 +262,27 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 
 		// Create sessions with specific upload IDs and lengths.
-		$upload_id1 = $session->create( array( 'filename' => 'a.txt', 'length' => 1000 ), $request );
-		$upload_id2 = $session->create( array( 'filename' => 'b.txt', 'length' => 2000 ), $request );
-		$upload_id3 = $session->create( array( 'filename' => 'c.txt', 'length' => 3000 ), $request );
+		$upload_id1 = $session->create(
+			array(
+				'filename' => 'a.txt',
+				'length'   => 1000,
+			),
+			$request
+		);
+		$upload_id2 = $session->create(
+			array(
+				'filename' => 'b.txt',
+				'length'   => 2000,
+			),
+			$request
+		);
+		$upload_id3 = $session->create(
+			array(
+				'filename' => 'c.txt',
+				'length'   => 3000,
+			),
+			$request
+		);
 
 		// Create chunk files (required for glob to find them).
 		$this->storage->append( $upload_id1, 'a', 0 );
@@ -288,7 +306,13 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 
 		// Create one with session, one without.
-		$upload_id_with_session = $session->create( array( 'filename' => 'valid.txt', 'length' => 1000 ), $request );
+		$upload_id_with_session = $session->create(
+			array(
+				'filename' => 'valid.txt',
+				'length'   => 1000,
+			),
+			$request
+		);
 		$orphan_upload_id       = wp_generate_uuid4();
 
 		$this->storage->append( $upload_id_with_session, str_repeat( 'a', 500 ), 0 );
