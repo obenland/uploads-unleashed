@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: # Manual trigger for testing
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Create release zip
+        run: |
+          # Create archive using git archive (respects .gitattributes export-ignore)
+          git archive --format=zip --prefix=resumable-uploads/ HEAD > resumable-uploads.zip
+
+          # Add build/ directory (not in git, but needed for distribution)
+          mkdir -p resumable-uploads
+          cp -r build/ resumable-uploads/
+          zip -r resumable-uploads.zip resumable-uploads/build/
+
+          # Clean up temp directory
+          rm -rf resumable-uploads
+
+      - name: Upload artifact (for testing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumable-uploads
+          path: resumable-uploads.zip
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: resumable-uploads.zip
