@@ -2,7 +2,7 @@
 /**
  * PHPUnit bootstrap file.
  *
- * This file is excluded from the plugin distribution via .distignore.
+ * This file is excluded from the plugin distribution via .gitattributes using export-ignore.
  *
  * @package resumable-uploads
  */
