@@ -525,3 +525,201 @@ describe( 'abortUpload', () => {
 		expect( result ).toBeInstanceOf( Promise );
 	} );
 } );
+
+describe( 'ExpiringUrlStorage', () => {
+	beforeEach( () => {
+		localStorage.clear();
+	} );
+
+	it( 'passes urlStorage option to tus.Upload', () => {
+		const file = new File( [ 'test' ], 'test.txt' );
+
+		createUpload( file );
+
+		expect( tus.Upload ).toHaveBeenCalledWith(
+			file,
+			expect.objectContaining( {
+				urlStorage: expect.objectContaining( {
+					addUpload: expect.any( Function ),
+					findUploadsByFingerprint: expect.any( Function ),
+					findAllUploads: expect.any( Function ),
+					removeUpload: expect.any( Function ),
+				} ),
+			} )
+		);
+	} );
+
+	describe( 'addUpload', () => {
+		it( 'stores entry with expiration in key', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			// Get the urlStorage from the mock call
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+
+			const key = await urlStorage.addUpload( fingerprint, {
+				uploadUrl: '/test',
+			} );
+
+			// Key should have 4 parts: tus, fingerprint, expiresAt, id
+			const parts = key.split( '::' );
+			expect( parts.length ).toBe( 4 );
+			expect( parts[ 0 ] ).toBe( 'tus' );
+			expect( parts[ 1 ] ).toBe( fingerprint );
+			expect( parseInt( parts[ 2 ], 10 ) ).toBeGreaterThan( Date.now() );
+		} );
+
+		it( 'sets expiration to 24 hours from now', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const now = Date.now();
+
+			const key = await urlStorage.addUpload( 'fingerprint', {
+				uploadUrl: '/test',
+			} );
+
+			const expiresAt = parseInt( key.split( '::' )[ 2 ], 10 );
+			const expectedExpiration = 24 * 60 * 60 * 1000;
+
+			// Should be within 1 second of expected (accounting for test execution time)
+			expect( expiresAt - now ).toBeGreaterThanOrEqual(
+				expectedExpiration - 1000
+			);
+			expect( expiresAt - now ).toBeLessThanOrEqual(
+				expectedExpiration + 1000
+			);
+		} );
+	} );
+
+	describe( 'findUploadsByFingerprint', () => {
+		it( 'returns non-expired entries matching fingerprint', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+			const futureExpiry = Date.now() + 86400000;
+
+			// Add a valid entry directly to localStorage
+			const key = `tus::${ fingerprint }::${ futureExpiry }::123`;
+			localStorage.setItem(
+				key,
+				JSON.stringify( { uploadUrl: '/test' } )
+			);
+
+			const results =
+				await urlStorage.findUploadsByFingerprint( fingerprint );
+
+			expect( results.length ).toBe( 1 );
+			expect( results[ 0 ].uploadUrl ).toBe( '/test' );
+		} );
+
+		it( 'filters out and removes expired entries', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+			const pastExpiry = Date.now() - 1000;
+
+			// Add an expired entry
+			const key = `tus::${ fingerprint }::${ pastExpiry }::123`;
+			localStorage.setItem(
+				key,
+				JSON.stringify( { uploadUrl: '/test' } )
+			);
+
+			const results =
+				await urlStorage.findUploadsByFingerprint( fingerprint );
+
+			expect( results.length ).toBe( 0 );
+			expect( localStorage.getItem( key ) ).toBeNull();
+		} );
+
+		it( 'removes entries with invalid expiration values', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+
+			// Add entry with invalid expiration (NaN)
+			const key = `tus::${ fingerprint }::invalid::123`;
+			localStorage.setItem(
+				key,
+				JSON.stringify( { uploadUrl: '/test' } )
+			);
+
+			const results =
+				await urlStorage.findUploadsByFingerprint( fingerprint );
+
+			expect( results.length ).toBe( 0 );
+			expect( localStorage.getItem( key ) ).toBeNull();
+		} );
+	} );
+
+	describe( 'findAllUploads', () => {
+		it( 'returns all non-expired entries', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const futureExpiry = Date.now() + 86400000;
+
+			// Add two valid entries
+			localStorage.setItem(
+				`tus::fingerprint1::${ futureExpiry }::1`,
+				JSON.stringify( { uploadUrl: '/test1' } )
+			);
+			localStorage.setItem(
+				`tus::fingerprint2::${ futureExpiry }::2`,
+				JSON.stringify( { uploadUrl: '/test2' } )
+			);
+
+			const results = await urlStorage.findAllUploads();
+
+			expect( results.length ).toBe( 2 );
+		} );
+
+		it( 'removes malformed entries with less than 4 parts', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+
+			// Add malformed entry (only 2 parts)
+			const key = 'tus::fingerprint::123';
+			localStorage.setItem(
+				key,
+				JSON.stringify( { uploadUrl: '/test' } )
+			);
+
+			await urlStorage.findAllUploads();
+
+			expect( localStorage.getItem( key ) ).toBeNull();
+		} );
+	} );
+
+	describe( 'removeUpload', () => {
+		it( 'removes entry from localStorage', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			createUpload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const key = 'tus::fingerprint::12345::123';
+
+			localStorage.setItem(
+				key,
+				JSON.stringify( { uploadUrl: '/test' } )
+			);
+			expect( localStorage.getItem( key ) ).not.toBeNull();
+
+			await urlStorage.removeUpload( key );
+
+			expect( localStorage.getItem( key ) ).toBeNull();
+		} );
+	} );
+} );

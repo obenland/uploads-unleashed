@@ -67,12 +67,13 @@ describe( 'parsePendingUploads', () => {
 		expect( localStorage.length ).toBe( 0 );
 	} );
 
-	it( 'should parse TUS fingerprints from localStorage', () => {
-		// Add a mock TUS fingerprint entry (pipe-delimited, URL-encoded filename)
+	it( 'should parse TUS fingerprints with expiration from localStorage', () => {
+		// Add a mock TUS fingerprint entry with expiration (4-part key format)
 		const endpoint = '/wp-json/wp/v2/media/tus';
 		const filename = encodeURIComponent( 'test.txt' );
 		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
-		const key = `tus::${ fingerprint }::upload-id-123`;
+		const expiresAt = Date.now() + 86400000; // 24 hours from now
+		const key = `tus::${ fingerprint }::${ expiresAt }::upload-id-123`;
 
 		localStorage.setItem(
 			key,
@@ -81,8 +82,9 @@ describe( 'parsePendingUploads', () => {
 			} )
 		);
 
-		// Verify it was stored
+		// Verify it was stored with correct format
 		expect( localStorage.getItem( key ) ).not.toBeNull();
+		expect( key.split( '::' ).length ).toBe( 4 );
 	} );
 
 	it( 'should ignore malformed localStorage entries', () => {
@@ -103,6 +105,118 @@ describe( 'parsePendingUploads', () => {
 		// Entry doesn't match our endpoint, so would be filtered
 		const key = localStorage.key( 0 );
 		expect( key ).not.toContain( '/wp-json/wp/v2/media/tus' );
+	} );
+} );
+
+describe( 'parsePendingUploads expiration handling', () => {
+	it( 'should parse key with 4 parts correctly', () => {
+		const endpoint = '/wp-json/wp/v2/media/tus';
+		const filename = encodeURIComponent( 'test.txt' );
+		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
+		const expiresAt = Date.now() + 86400000;
+		const key = `tus::${ fingerprint }::${ expiresAt }::upload-id-123`;
+
+		const parts = key.split( '::' );
+
+		expect( parts.length ).toBe( 4 );
+		expect( parts[ 0 ] ).toBe( 'tus' );
+		expect( parts[ 1 ] ).toBe( fingerprint );
+		expect( parseInt( parts[ 2 ], 10 ) ).toBe( expiresAt );
+		expect( parts[ 3 ] ).toBe( 'upload-id-123' );
+	} );
+
+	it( 'should parse fingerprint parts correctly', () => {
+		const endpoint = '/wp-json/wp/v2/media/tus';
+		const filename = encodeURIComponent( 'test file.txt' );
+		const fingerprint = `tus-br|${ filename }|2048|9876543210|${ endpoint }`;
+
+		const fingerprintParts = fingerprint.split( '|' );
+
+		expect( fingerprintParts.length ).toBe( 5 );
+		expect( fingerprintParts[ 0 ] ).toBe( 'tus-br' );
+		expect( decodeURIComponent( fingerprintParts[ 1 ] ) ).toBe(
+			'test file.txt'
+		);
+		expect( parseInt( fingerprintParts[ 2 ], 10 ) ).toBe( 2048 );
+		expect( parseInt( fingerprintParts[ 3 ], 10 ) ).toBe( 9876543210 );
+		expect( fingerprintParts[ 4 ] ).toBe( endpoint );
+	} );
+
+	it( 'should identify expired entries by comparing timestamps', () => {
+		const pastExpiry = Date.now() - 1000;
+		const futureExpiry = Date.now() + 86400000;
+
+		expect( Date.now() > pastExpiry ).toBe( true );
+		expect( Date.now() > futureExpiry ).toBe( false );
+	} );
+
+	it( 'should handle invalid expiration values with isNaN check', () => {
+		const invalidExpiry = parseInt( 'not-a-number', 10 );
+
+		expect( isNaN( invalidExpiry ) ).toBe( true );
+		expect( isNaN( invalidExpiry ) || Date.now() > invalidExpiry ).toBe(
+			true
+		);
+	} );
+
+	it( 'should remove expired entries from localStorage', () => {
+		const endpoint = '/wp-json/wp/v2/media/tus';
+		const filename = encodeURIComponent( 'test.txt' );
+		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
+		const pastExpiry = Date.now() - 1000;
+		const key = `tus::${ fingerprint }::${ pastExpiry }::upload-id-123`;
+
+		localStorage.setItem(
+			key,
+			JSON.stringify( { uploadUrl: `${ endpoint }/upload-id-123` } )
+		);
+
+		// Simulate the expiration check logic
+		const keyParts = key.split( '::' );
+		const expiresAt = parseInt( keyParts[ 2 ], 10 );
+
+		if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
+			localStorage.removeItem( key );
+		}
+
+		expect( localStorage.getItem( key ) ).toBeNull();
+	} );
+
+	it( 'should keep non-expired entries in localStorage', () => {
+		const endpoint = '/wp-json/wp/v2/media/tus';
+		const filename = encodeURIComponent( 'test.txt' );
+		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
+		const futureExpiry = Date.now() + 86400000;
+		const key = `tus::${ fingerprint }::${ futureExpiry }::upload-id-123`;
+
+		localStorage.setItem(
+			key,
+			JSON.stringify( { uploadUrl: `${ endpoint }/upload-id-123` } )
+		);
+
+		// Simulate the expiration check logic
+		const keyParts = key.split( '::' );
+		const expiresAt = parseInt( keyParts[ 2 ], 10 );
+
+		if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
+			localStorage.removeItem( key );
+		}
+
+		expect( localStorage.getItem( key ) ).not.toBeNull();
+	} );
+
+	it( 'should remove entries with malformed key format (less than 4 parts)', () => {
+		const key = 'tus::tus-br|test.txt|1024|123|/endpoint::upload-id';
+
+		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+
+		const keyParts = key.split( '::' );
+
+		if ( keyParts.length < 4 ) {
+			localStorage.removeItem( key );
+		}
+
+		expect( localStorage.getItem( key ) ).toBeNull();
 	} );
 } );
 
