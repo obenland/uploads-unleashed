@@ -2,7 +2,7 @@
 Contributors: obenland
 Tags: uploads, media, tus, resumable, large files
 Requires at least: 6.4
-Tested up to: 6.7
+Tested up to: 6.9
 Requires PHP: 7.4
 Stable tag: 0.1.0
 License: GPL-2.0-or-later
@@ -36,6 +36,10 @@ The plugin implements TUS 1.0.0 protocol via a REST API endpoint at `/wp/v2/medi
 * WordPress 6.4 or higher
 * PHP 7.4 or higher
 
+= Third-Party Libraries =
+
+This plugin includes [tus-js-client](https://github.com/tus/tus-js-client) (MIT License) for implementing the TUS protocol on the client side.
+
 == Installation ==
 
 1. Upload the plugin files to `/wp-content/plugins/resumable-uploads/`
@@ -59,6 +63,10 @@ Yes! Since files are uploaded in chunks, the PHP `upload_max_filesize` limit doe
 = Does this work on multisite? =
 
 Yes, the plugin respects multisite upload quotas.
+
+= Does this plugin collect any user data? =
+
+No. Upload session data is stored temporarily on your server and automatically deleted after 24 hours.
 
 == Changelog ==
 

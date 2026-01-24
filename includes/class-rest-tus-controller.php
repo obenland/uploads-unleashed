@@ -704,7 +704,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		);
 
 		/** This filter is documented in wp-admin/includes/file.php */
-		$file_array = apply_filters( 'wp_handle_upload_prefilter', $file_array );
+		$file_array = apply_filters( 'wp_handle_upload_prefilter', $file_array ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Intentionally calling core filter.
 
 		if ( ! empty( $file_array['error'] ) && is_string( $file_array['error'] ) ) {
 			return new WP_Error( 'rest_upload_error', $file_array['error'], array( 'status' => 400 ) );
@@ -772,7 +772,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		);
 
 		/** This filter is documented in wp-admin/includes/file.php */
-		return apply_filters( 'wp_handle_upload', $upload_result, 'upload' );
+		return apply_filters( 'wp_handle_upload', $upload_result, 'upload' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Intentionally calling core filter.
 	}
 
 	/**
