@@ -47,7 +47,8 @@ class ExpiringUrlStorage {
 
 	_findEntries( prefix: string ): tus.PreviousUpload[] {
 		const results: tus.PreviousUpload[] = [];
-		for ( let i = 0; i < localStorage.length; i++ ) {
+		// Iterate backwards to safely remove items during iteration
+		for ( let i = localStorage.length - 1; i >= 0; i-- ) {
 			const key = localStorage.key( i );
 			if ( ! key?.startsWith( prefix ) ) {
 				continue;
@@ -56,12 +57,14 @@ class ExpiringUrlStorage {
 			// Parse expiration from key: tus::{fingerprint}::{expiresAt}::{id}
 			const parts = key.split( '::' );
 			if ( parts.length < 4 ) {
+				// Clean up malformed entries with unexpected key format
+				localStorage.removeItem( key );
 				continue;
 			}
 			const expiresAt = parseInt( parts[ 2 ], 10 );
 
-			// Skip and clean up expired entries
-			if ( Date.now() > expiresAt ) {
+			// Skip and clean up expired or invalid entries
+			if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
 				localStorage.removeItem( key );
 				continue;
 			}
@@ -73,7 +76,8 @@ class ExpiringUrlStorage {
 				upload.urlStorageKey = key;
 				results.push( upload );
 			} catch {
-				// Ignore malformed entries
+				// Clean up malformed JSON entries
+				localStorage.removeItem( key );
 			}
 		}
 		return results;

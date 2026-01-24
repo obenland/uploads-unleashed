@@ -27,7 +27,8 @@ const nonce = window.resumableUploads?.nonce || '';
 function parsePendingUploads(): PendingUpload[] {
 	const pending: PendingUpload[] = [];
 
-	for ( let i = 0; i < localStorage.length; i++ ) {
+	// Iterate backwards to safely remove items during iteration
+	for ( let i = localStorage.length - 1; i >= 0; i-- ) {
 		const key = localStorage.key( i );
 		if ( ! key?.startsWith( 'tus::tus-br|' ) ) {
 			continue;
@@ -46,7 +47,7 @@ function parsePendingUploads(): PendingUpload[] {
 
 			// Check expiration (keyParts[2] is expiresAt)
 			const expiresAt = parseInt( keyParts[ 2 ], 10 );
-			if ( Date.now() > expiresAt ) {
+			if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
 				localStorage.removeItem( key );
 				continue;
 			}
@@ -55,7 +56,7 @@ function parsePendingUploads(): PendingUpload[] {
 			// Parse fingerprint: tus-br|{filename}|{size}|{lastModified}|{endpoint}
 			const fingerprintParts = keyParts[ 1 ].split( '|' );
 
-			// parts[0] = 'tus-br', parts[1] = filename, parts[2] = size, parts[3] = lastModified, parts[4] = endpoint
+			// fingerprintParts[0] = 'tus-br', fingerprintParts[1] = filename, fingerprintParts[2] = size, fingerprintParts[3] = lastModified, fingerprintParts[4] = endpoint
 			if ( fingerprintParts.length !== 5 ) {
 				localStorage.removeItem( key );
 				continue;
