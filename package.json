@@ -29,7 +29,7 @@
 	},
 	"scripts": {
 		"build": "wp-scripts build",
-		"start:js": "wp-scripts start",
+		"dev": "wp-scripts start",
 		"format": "wp-scripts format",
 		"wp-env": "wp-env",
 		"start": "wp-env start",

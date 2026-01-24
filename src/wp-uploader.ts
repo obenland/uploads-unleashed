@@ -68,8 +68,9 @@ function toAttachmentForJs(
 		icon: '',
 		dateFormatted: attachment.date,
 		nonces: {},
-		editLink: ( attachment._links?.self as { href: string }[] )?.[ 0 ]
-			?.href,
+		editLink:
+			( attachment._links as { self?: { href: string }[] } | undefined )
+				?.self?.[ 0 ]?.href || '',
 		meta: false,
 		authorName: '',
 		authorLink: '',

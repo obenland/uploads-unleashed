@@ -70,12 +70,39 @@ export interface UploadResult {
 }
 
 /**
+ * Generates a fingerprint for resumable uploads.
+ *
+ * Uses pipe delimiter since it's invalid in filenames on Windows/Mac
+ * and won't conflict with the :: delimiter tus-js-client uses for
+ * localStorage keys.
+ *
+ * @param file    The file being uploaded.
+ * @param options TUS upload options.
+ * @return Fingerprint string.
+ */
+function fingerprint(
+	file: File,
+	options: tus.UploadOptions
+): Promise< string > {
+	return Promise.resolve(
+		[
+			'tus-br',
+			encodeURIComponent( file.name ),
+			file.size,
+			file.lastModified,
+			options.endpoint,
+		].join( '|' )
+	);
+}
+
+/**
  * Default options for the TUS uploader.
  */
 const DEFAULT_OPTIONS: Partial< tus.UploadOptions > = {
 	chunkSize: 5 * 1024 * 1024, // 5MB chunks
 	retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
 	removeFingerprintOnSuccess: true,
+	fingerprint,
 };
 
 /**
