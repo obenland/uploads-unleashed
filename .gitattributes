@@ -9,6 +9,7 @@
 # IDE/Editor config
 .editorconfig export-ignore
 .idea/ export-ignore
+.claude/ export-ignore
 
 # Development environment
 .wp-env.json export-ignore
@@ -16,6 +17,7 @@
 # Build tooling
 composer.json export-ignore
 composer.lock export-ignore
+jest.config.js export-ignore
 package.json export-ignore
 package-lock.json export-ignore
 tsconfig.json export-ignore

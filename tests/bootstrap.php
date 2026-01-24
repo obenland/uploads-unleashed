@@ -2,8 +2,12 @@
 /**
  * PHPUnit bootstrap file.
  *
+ * This file is excluded from the plugin distribution via .distignore.
+ *
  * @package resumable-uploads
  */
+
+// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI script.
 
 $_tests_dir = getenv( 'WP_TESTS_DIR' );
 

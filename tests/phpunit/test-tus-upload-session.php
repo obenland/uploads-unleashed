@@ -5,6 +5,10 @@
  * @package resumable-uploads
  */
 
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
 /**
  * Tests for the TUS_Upload_Session class.
  */
