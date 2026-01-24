@@ -3,7 +3,6 @@ name: Release
 on:
   release:
     types: [published]
-  workflow_dispatch: # Manual trigger for testing
 
 permissions:
   contents: write
@@ -39,14 +38,7 @@ jobs:
           # Clean up temp directory
           rm -rf resumable-uploads
 
-      - name: Upload artifact (for testing)
-        uses: actions/upload-artifact@v4
-        with:
-          name: resumable-uploads
-          path: resumable-uploads.zip
-
       - name: Upload release asset
-        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: resumable-uploads.zip
