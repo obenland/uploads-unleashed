@@ -235,7 +235,7 @@ add_action( 'resumable_uploads_upload_complete', function( $attachment_id, $uplo
 
 ### `resumable_uploads_upload_deleted`
 
-Fires after an upload is cancelled/deleted.
+Fires after an upload is canceled/deleted.
 
 **Parameters:**
 - `$upload_id` (string) - The upload ID.
@@ -245,7 +245,7 @@ Fires after an upload is cancelled/deleted.
 ```php
 add_action( 'resumable_uploads_upload_deleted', function( $upload_id, $upload_data ) {
     if ( $upload_data ) {
-        error_log( sprintf( 'Upload cancelled: %s', $upload_data['filename'] ) );
+        error_log( sprintf( 'Upload canceled: %s', $upload_data['filename'] ) );
     }
 }, 10, 2 );
 ```

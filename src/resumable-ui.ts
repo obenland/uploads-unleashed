@@ -38,7 +38,7 @@ function parsePendingUploads(): PendingUpload[] {
 
 		try {
 			const data = JSON.parse( localStorage.getItem( key ) || '' );
-			// Parse fingerprint: tus::tus-br|{filename}|{size}|{lastModified}|{endpoint}::{uploadUrl}
+			// Parse fingerprint: tus::tus-br|{filename}|{size}|{lastModified}|{endpoint}::{id}
 			const parts = key.split( '::' )[ 1 ].split( '|' );
 
 			// parts[0] = 'tus-br', parts[1] = filename, parts[2] = size, etc.
@@ -116,7 +116,7 @@ async function discardUpload(
  * Uses File System Access API if available, falls back to file input.
  *
  * @param upload Pending upload metadata.
- * @return True if upload was resumed, false if cancelled.
+ * @return True if upload was resumed, false if canceled.
  */
 async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 	let file: File | null = null;
@@ -165,7 +165,7 @@ async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 	}
 
 	if ( ! file ) {
-		return false; // User cancelled
+		return false; // User canceled
 	}
 
 	// Verify file matches expected fingerprint (name + size)
