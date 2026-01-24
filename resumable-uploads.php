@@ -3,7 +3,7 @@
  * Plugin Name: Resumable Uploads
  * Plugin URI: https://github.com/obenland/resumable-uploads
  * Description: TUS protocol support for resumable media uploads in WordPress.
- * Version: 0.1.0
+ * Version: 0.2.0
  * Requires at least: 6.4
  * Requires PHP: 7.4
  * Author: Konstantin Obenland
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RESUMABLE_UPLOADS_VERSION', '0.1.0' );
+define( 'RESUMABLE_UPLOADS_VERSION', '0.2.0' );
 define( 'RESUMABLE_UPLOADS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RESUMABLE_UPLOADS_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
@@ -32,7 +32,7 @@ require_once RESUMABLE_UPLOADS_PLUGIN_DIR . 'includes/class-rest-tus-controller.
 /**
  * Initializes the plugin.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_init() {
 	// Schedule cleanup cron if not already scheduled.
@@ -45,7 +45,7 @@ add_action( 'plugins_loaded', 'resumable_uploads_init' );
 /**
  * Registers the TUS uploader scripts.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_register_scripts() {
 	// Register core TUS library.
@@ -113,7 +113,7 @@ add_action( 'init', 'resumable_uploads_register_scripts' );
 /**
  * Enqueues the TUS uploader script when media scripts are loaded.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_enqueue_scripts() {
 	wp_enqueue_script( 'resumable-uploads-wp-uploader' );
@@ -124,7 +124,7 @@ add_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_scri
 /**
  * Enqueues the pending uploads UI on media-new.php.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_enqueue_ui() {
 	wp_enqueue_script( 'resumable-uploads-ui' );
@@ -135,7 +135,7 @@ add_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_ui' 
 /**
  * Enqueues the TUS integration for the block editor.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_enqueue_block_editor() {
 	wp_enqueue_script( 'resumable-uploads-media-utils' );
@@ -145,7 +145,7 @@ add_action( 'enqueue_block_editor_assets', 'resumable_uploads_enqueue_block_edit
 /**
  * Renders the pending uploads UI container.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_pending_ui() {
 	?>
@@ -162,7 +162,7 @@ add_action( 'post-plupload-upload-ui', 'resumable_uploads_pending_ui' );
 /**
  * Registers REST API routes.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_register_routes() {
 	$controller = new REST_TUS_Controller();
@@ -173,7 +173,7 @@ add_action( 'rest_api_init', 'resumable_uploads_register_routes' );
 /**
  * Adds TUS headers to OPTIONS requests.
  *
- * @since 0.1.0
+ * @since 0.2.0
  *
  * @param WP_REST_Response $response The response object.
  * @param WP_REST_Server   $server   The REST server instance.
@@ -199,7 +199,7 @@ add_filter( 'rest_post_dispatch', 'resumable_uploads_add_options_headers', 10, 3
 /**
  * Cleans up expired uploads.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_cleanup() {
 	TUS_Chunk_Storage::cleanup_expired();
@@ -213,7 +213,7 @@ add_action( 'resumable_uploads_cleanup', 'resumable_uploads_cleanup' );
  * since uploads are chunked. The real limit is available disk space
  * (or quota on multisite), minus any in-progress uploads.
  *
- * @since 0.1.0
+ * @since 0.2.0
  *
  * @param int $size Upload size limit in bytes.
  * @return int Adjusted upload size limit in bytes.
@@ -243,7 +243,7 @@ add_filter( 'upload_size_limit', 'resumable_uploads_filter_upload_size_limit', 2
 /**
  * Clears the scheduled cleanup event on plugin deactivation.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 function resumable_uploads_deactivate() {
 	$timestamp = wp_next_scheduled( 'resumable_uploads_cleanup' );

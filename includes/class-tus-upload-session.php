@@ -8,14 +8,14 @@
 /**
  * Manages TUS upload sessions using transients.
  *
- * @since 0.1.0
+ * @since 0.2.0
  */
 class TUS_Upload_Session {
 
 	/**
 	 * Transient prefix for upload sessions.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 * @var string
 	 */
 	const TRANSIENT_PREFIX = 'tus_upload_';
@@ -23,7 +23,7 @@ class TUS_Upload_Session {
 	/**
 	 * Default session expiration in seconds (24 hours).
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 * @var int
 	 */
 	const EXPIRATION = DAY_IN_SECONDS;
@@ -31,7 +31,7 @@ class TUS_Upload_Session {
 	/**
 	 * Creates a new upload session.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param array           $data {
 	 *     Upload data.
@@ -60,7 +60,7 @@ class TUS_Upload_Session {
 		 *
 		 * Allows plugins to store additional data with the upload session.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param array           $session_data The session data to be stored.
 		 * @param WP_REST_Request $request      The request object.
@@ -79,7 +79,7 @@ class TUS_Upload_Session {
 	/**
 	 * Retrieves an upload session.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return array|null Session data on success, null if not found.
@@ -97,7 +97,7 @@ class TUS_Upload_Session {
 	/**
 	 * Updates the offset for an upload session.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @param int    $offset    The new offset.
@@ -124,7 +124,7 @@ class TUS_Upload_Session {
 	/**
 	 * Deletes an upload session.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True on success, false on failure.
@@ -136,7 +136,7 @@ class TUS_Upload_Session {
 	/**
 	 * Verifies that the current user owns the upload.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True if the current user owns the upload, false otherwise.
@@ -154,7 +154,7 @@ class TUS_Upload_Session {
 	/**
 	 * Checks if an upload has expired.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True if expired, false otherwise.

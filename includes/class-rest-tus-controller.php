@@ -10,7 +10,7 @@
  *
  * Implements the TUS 1.0.0 protocol for resumable file uploads.
  *
- * @since 0.1.0
+ * @since 0.2.0
  *
  * @see WP_REST_Controller
  * @see https://tus.io/protocols/resumable-upload
@@ -20,7 +20,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * TUS protocol version.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 * @var string
 	 */
 	const TUS_VERSION = '1.0.0';
@@ -28,7 +28,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Supported TUS extensions.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 * @var string
 	 */
 	const TUS_EXTENSIONS = 'creation,expiration,termination,checksum';
@@ -36,7 +36,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * The namespace for the REST route.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 * @var string
 	 */
 	protected $namespace = 'wp/v2';
@@ -44,7 +44,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * The base of the REST route.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 * @var string
 	 */
 	protected $rest_base = 'media/tus';
@@ -52,7 +52,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Registers the routes for the TUS controller.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 */
 	public function register_routes(): void {
 		// POST for upload creation.
@@ -109,7 +109,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Adds TUS headers to OPTIONS responses.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Response $response The response object.
 	 * @param WP_REST_Request  $request  The request object.
@@ -122,7 +122,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 *
 		 * Allows plugins to override the maximum allowed upload size.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param int             $max_size The maximum upload size in bytes.
 		 * @param WP_REST_Request $request  The request object.
@@ -140,7 +140,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks if a given request has access to create uploads.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
@@ -156,7 +156,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks if a given request has access to read/update an upload.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
@@ -184,7 +184,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks if a given request has access to delete an upload.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
@@ -199,7 +199,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @param WP_REST_Request $request Full details about the request.
 	 *
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 */
 	public function method_override_permissions_check( WP_REST_Request $request ) {
 		$override_method = $request->get_header( 'X-HTTP-Method-Override' );
@@ -237,7 +237,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * This enables TUS protocol support in environments where PATCH, DELETE,
 	 * or HEAD methods are blocked by firewalls or server configuration.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -267,7 +267,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Creates a new upload resource.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -317,7 +317,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		/**
 		 * Fires after an upload session is created.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param string          $upload_id The upload ID.
 		 * @param array           $upload    The upload session data.
@@ -336,7 +336,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Returns the current offset of an upload.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -368,7 +368,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Uploads a chunk of data.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -433,7 +433,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		/**
 		 * Fires after a chunk is received and stored.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param string          $upload_id  The upload ID.
 		 * @param int             $new_offset The new byte offset after this chunk.
@@ -467,7 +467,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Deletes an upload.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response Response object on success.
@@ -485,7 +485,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		/**
 		 * Fires after an upload is deleted/canceled.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param string     $upload_id   The upload ID.
 		 * @param array|null $upload_data The upload session data (null if already deleted).
@@ -501,7 +501,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Finalizes an upload and creates the attachment.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $upload_id   The upload ID.
 	 * @param array  $upload_data The upload session data.
@@ -517,7 +517,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 *
 		 * Allows plugins to validate or abort finalization. Return WP_Error to abort.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param true|WP_Error $proceed     Whether to proceed with finalization.
 		 * @param string        $upload_id   The upload ID.
@@ -540,7 +540,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 * to use as the response data, WP_Error to abort, or null to continue
 		 * with default finalization.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param array|WP_Error|null $result      The result to return, or null to use default.
 		 * @param string              $upload_id   The upload ID.
@@ -566,7 +566,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			/**
 			 * Fires after an upload is finalized.
 			 *
-			 * @since 0.1.0
+			 * @since 0.2.0
 			 *
 			 * @param int    $attachment_id The attachment ID (0 if custom finalization didn't create one).
 			 * @param string $upload_id     The upload ID.
@@ -628,7 +628,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 *
 		 * Allows plugins to add custom fields to the response.
 		 *
-		 * @since 0.1.0
+		 * @since 0.2.0
 		 *
 		 * @param array $attachment_data The attachment data in REST API format.
 		 * @param int   $attachment_id   The attachment ID.
@@ -643,7 +643,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * Checks MIME type against allowed types and verifies image content
 	 * to prevent PHP-in-image attacks.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The original filename.
@@ -687,7 +687,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Applies pre-upload filters (virus scanners, etc.).
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The sanitized filename.
@@ -716,7 +716,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks multisite quota constraints.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @return true|WP_Error True if quota OK, WP_Error if exceeded.
@@ -742,7 +742,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 *
 	 * Handles cross-filesystem moves by falling back to copy + delete.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string $source_path The source file path.
 	 * @param string $filename    The sanitized filename.
@@ -778,7 +778,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Creates the WordPress attachment post.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param array $upload_result The upload result from move_to_uploads().
 	 * @return int|WP_Error Attachment ID on success, WP_Error on failure.
@@ -816,7 +816,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * Uses WP_REST_Attachments_Controller to ensure consistent format
 	 * with the standard /wp/v2/media endpoint.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param int $attachment_id The attachment ID.
 	 * @return array Attachment data in REST API format.
@@ -835,7 +835,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Parses the Upload-Metadata header.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param string|null $header The Upload-Metadata header value.
 	 * @return array Parsed metadata as key-value pairs.
@@ -873,7 +873,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * The Upload-Checksum header format is: "{algorithm} {base64-encoded-checksum}"
 	 * Example: "sha256 aGVsbG8gd29ybGQ="
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @param WP_REST_Request $request    The request object.
 	 * @param string          $chunk_data The raw chunk data to verify.
@@ -943,7 +943,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Retrieves the upload schema, conforming to JSON Schema.
 	 *
-	 * @since 0.1.0
+	 * @since 0.2.0
 	 *
 	 * @return array Item schema data.
 	 */
