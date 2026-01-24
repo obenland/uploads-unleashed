@@ -18,7 +18,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		$this->assertTrue( defined( 'RESUMABLE_UPLOADS_PLUGIN_DIR' ) );
 		$this->assertTrue( defined( 'RESUMABLE_UPLOADS_PLUGIN_URL' ) );
 
-		$this->assertSame( '0.1.0', RESUMABLE_UPLOADS_VERSION );
+		$this->assertSame( '0.2.0', RESUMABLE_UPLOADS_VERSION );
 	}
 
 	/**
