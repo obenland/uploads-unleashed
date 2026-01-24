@@ -23,9 +23,6 @@ package-lock.json export-ignore
 tsconfig.json export-ignore
 webpack.config.js export-ignore
 
-# Source files (compiled to build/)
-src/ export-ignore
-
 # Testing and linting
 .eslintignore export-ignore
 .eslintrc.json export-ignore
