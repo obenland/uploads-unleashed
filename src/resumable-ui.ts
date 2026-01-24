@@ -41,8 +41,8 @@ function parsePendingUploads(): PendingUpload[] {
 			// Parse fingerprint: tus::tus-br|{filename}|{size}|{lastModified}|{endpoint}::{id}
 			const parts = key.split( '::' )[ 1 ].split( '|' );
 
-			// parts[0] = 'tus-br', parts[1] = filename, parts[2] = size, etc.
-			if ( parts.length < 5 ) {
+			// parts[0] = 'tus-br', parts[1] = filename, parts[2] = size, parts[3] = lastModified, parts[4] = endpoint
+			if ( parts.length !== 5 ) {
 				localStorage.removeItem( key );
 				continue;
 			}
