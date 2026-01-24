@@ -6,6 +6,80 @@
 
 import * as tus from 'tus-js-client';
 
+/**
+ * Upload expiration time in milliseconds (24 hours).
+ * Matches DAY_IN_SECONDS on the server side.
+ */
+const UPLOAD_EXPIRATION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Custom URL storage that embeds expiration timestamp in localStorage keys.
+ * Key format: tus::{fingerprint}::{expiresAt}::{id}
+ */
+class ExpiringUrlStorage {
+	addUpload(
+		uploadFingerprint: string,
+		upload: tus.PreviousUpload
+	): Promise< string > {
+		const id = Math.round( Math.random() * 1e12 );
+		const expiresAt = Date.now() + UPLOAD_EXPIRATION_MS;
+		const key = `tus::${ uploadFingerprint }::${ expiresAt }::${ id }`;
+		localStorage.setItem( key, JSON.stringify( upload ) );
+		return Promise.resolve( key );
+	}
+
+	findUploadsByFingerprint(
+		uploadFingerprint: string
+	): Promise< tus.PreviousUpload[] > {
+		return Promise.resolve(
+			this._findEntries( `tus::${ uploadFingerprint }::` )
+		);
+	}
+
+	findAllUploads(): Promise< tus.PreviousUpload[] > {
+		return Promise.resolve( this._findEntries( 'tus::' ) );
+	}
+
+	removeUpload( urlStorageKey: string ): Promise< void > {
+		localStorage.removeItem( urlStorageKey );
+		return Promise.resolve();
+	}
+
+	_findEntries( prefix: string ): tus.PreviousUpload[] {
+		const results: tus.PreviousUpload[] = [];
+		for ( let i = 0; i < localStorage.length; i++ ) {
+			const key = localStorage.key( i );
+			if ( ! key?.startsWith( prefix ) ) {
+				continue;
+			}
+
+			// Parse expiration from key: tus::{fingerprint}::{expiresAt}::{id}
+			const parts = key.split( '::' );
+			if ( parts.length < 4 ) {
+				continue;
+			}
+			const expiresAt = parseInt( parts[ 2 ], 10 );
+
+			// Skip and clean up expired entries
+			if ( Date.now() > expiresAt ) {
+				localStorage.removeItem( key );
+				continue;
+			}
+
+			try {
+				const upload = JSON.parse(
+					localStorage.getItem( key ) || ''
+				) as tus.PreviousUpload;
+				upload.urlStorageKey = key;
+				results.push( upload );
+			} catch {
+				// Ignore malformed entries
+			}
+		}
+		return results;
+	}
+}
+
 declare global {
 	interface Window {
 		resumableUploads?: {
@@ -103,6 +177,7 @@ const DEFAULT_OPTIONS: Partial< tus.UploadOptions > = {
 	retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
 	removeFingerprintOnSuccess: true,
 	fingerprint,
+	urlStorage: new ExpiringUrlStorage(),
 };
 
 /**

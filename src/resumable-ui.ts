@@ -37,12 +37,26 @@ function parsePendingUploads(): PendingUpload[] {
 		}
 
 		try {
+			// Parse key: tus::{fingerprint}::{expiresAt}::{id}
+			const keyParts = key.split( '::' );
+			if ( keyParts.length < 4 ) {
+				localStorage.removeItem( key );
+				continue;
+			}
+
+			// Check expiration (keyParts[2] is expiresAt)
+			const expiresAt = parseInt( keyParts[ 2 ], 10 );
+			if ( Date.now() > expiresAt ) {
+				localStorage.removeItem( key );
+				continue;
+			}
+
 			const data = JSON.parse( localStorage.getItem( key ) || '' );
-			// Parse fingerprint: tus::tus-br|{filename}|{size}|{lastModified}|{endpoint}::{id}
-			const parts = key.split( '::' )[ 1 ].split( '|' );
+			// Parse fingerprint: tus-br|{filename}|{size}|{lastModified}|{endpoint}
+			const fingerprintParts = keyParts[ 1 ].split( '|' );
 
 			// parts[0] = 'tus-br', parts[1] = filename, parts[2] = size, parts[3] = lastModified, parts[4] = endpoint
-			if ( parts.length !== 5 ) {
+			if ( fingerprintParts.length !== 5 ) {
 				localStorage.removeItem( key );
 				continue;
 			}
@@ -50,8 +64,8 @@ function parsePendingUploads(): PendingUpload[] {
 			pending.push( {
 				key,
 				uploadUrl: data.uploadUrl,
-				filename: decodeURIComponent( parts[ 1 ] ),
-				size: parseInt( parts[ 2 ], 10 ),
+				filename: decodeURIComponent( fingerprintParts[ 1 ] ),
+				size: parseInt( fingerprintParts[ 2 ], 10 ),
 			} );
 		} catch {
 			// Clean up malformed entries
