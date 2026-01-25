@@ -661,7 +661,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// For images, verify actual image data (prevents PHP-in-image attacks).
-		if ( str_starts_with( $validated['type'], 'image/' ) ) {
+		if ( 0 === strpos( $validated['type'], 'image/' ) ) {
 			$actual_mime = wp_get_image_mime( $file_path );
 			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
 				return new WP_Error(

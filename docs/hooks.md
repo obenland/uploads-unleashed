@@ -69,7 +69,7 @@ Validate or abort finalization before it begins. Use for custom validation rules
 ```php
 add_filter( 'uploads_unleashed_pre_finalize', function( $proceed, $upload_id, $upload_data, $chunk_path ) {
     // Custom validation for video files
-    if ( str_starts_with( $upload_data['filetype'], 'video/' ) ) {
+    if ( 0 === strpos( $upload_data['filetype'], 'video/' ) ) {
         $duration = my_get_video_duration( $chunk_path );
         if ( $duration > 3600 ) {
             return new WP_Error(
@@ -104,7 +104,7 @@ Completely override the finalization process. Use for custom file handling (e.g.
 ```php
 add_filter( 'uploads_unleashed_finalize_upload', function( $result, $upload_id, $upload_data, $chunk_path ) {
     // Custom handling for video files
-    if ( ! str_starts_with( $upload_data['filetype'], 'video/' ) ) {
+    if ( 0 !== strpos( $upload_data['filetype'], 'video/' ) ) {
         return null; // Use default for non-videos
     }
 
@@ -277,7 +277,7 @@ function vidproc_session_data( $session, $request ) {
 add_filter( 'uploads_unleashed_finalize_upload', 'vidproc_finalize', 10, 4 );
 function vidproc_finalize( $result, $upload_id, $upload_data, $chunk_path ) {
     // Only handle videos
-    if ( ! str_starts_with( $upload_data['filetype'], 'video/' ) ) {
+    if ( 0 !== strpos( $upload_data['filetype'], 'video/' ) ) {
         return null;
     }
 
