@@ -1,25 +1,25 @@
 /**
  * Pending Uploads UI Styles
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
-.resumable-uploads-pending {
+.uploads-unleashed-pending {
 	margin: 10px 0;
 }
 
-.resumable-uploads-notice {
+.uploads-unleashed-notice {
 	margin: 0 0 10px;
 	color: #1e1e1e;
 }
 
-.resumable-uploads-list {
+.uploads-unleashed-list {
 	margin: 0;
 	list-style: none;
 	padding: 0;
 }
 
-.resumable-uploads-list li {
+.uploads-unleashed-list li {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -28,48 +28,48 @@
 	border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-.resumable-uploads-list li:last-child {
+.uploads-unleashed-list li:last-child {
 	border-bottom: none;
 	padding-bottom: 0;
 }
 
-.resumable-uploads-list .filename {
+.uploads-unleashed-list .filename {
 	font-weight: 500;
 	word-break: break-all;
 }
 
-.resumable-uploads-list .filesize {
+.uploads-unleashed-list .filesize {
 	color: #646970;
 	flex-shrink: 0;
 }
 
-.resumable-uploads-list .button {
+.uploads-unleashed-list .button {
 	flex-shrink: 0;
 	margin-left: auto;
 }
 
-.resumable-uploads-list .button + .button {
+.uploads-unleashed-list .button + .button {
 	margin-left: 5px;
 }
 
-.resumable-uploads-list .resume-upload {
+.uploads-unleashed-list .resume-upload {
 	color: #135e96;
 	border-color: #135e96;
 }
 
-.resumable-uploads-list .resume-upload:hover,
-.resumable-uploads-list .resume-upload:focus {
+.uploads-unleashed-list .resume-upload:hover,
+.uploads-unleashed-list .resume-upload:focus {
 	background: #135e96;
 	color: #fff;
 }
 
-.resumable-uploads-list .discard-upload {
+.uploads-unleashed-list .discard-upload {
 	color: #b32d2e;
 	border-color: #b32d2e;
 }
 
-.resumable-uploads-list .discard-upload:hover,
-.resumable-uploads-list .discard-upload:focus {
+.uploads-unleashed-list .discard-upload:hover,
+.uploads-unleashed-list .discard-upload:focus {
 	background: #b32d2e;
 	color: #fff;
 }

@@ -86,7 +86,7 @@ class ExpiringUrlStorage {
 
 declare global {
 	interface Window {
-		resumableUploads?: {
+		uploadsUnleashed?: {
 			endpoint: string;
 			nonce: string;
 		};
@@ -204,9 +204,9 @@ export function createUpload(
 		...DEFAULT_OPTIONS,
 		...tusOptions,
 		endpoint:
-			window.resumableUploads?.endpoint || '/wp-json/wp/v2/media/tus',
+			window.uploadsUnleashed?.endpoint || '/wp-json/wp/v2/media/tus',
 		headers: {
-			'X-WP-Nonce': window.resumableUploads?.nonce || '',
+			'X-WP-Nonce': window.uploadsUnleashed?.nonce || '',
 		},
 		metadata: {
 			filename: file.name,

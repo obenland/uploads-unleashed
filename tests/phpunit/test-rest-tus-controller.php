@@ -2,7 +2,7 @@
 /**
  * REST TUS Controller tests.
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -135,7 +135,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		// The rest_post_dispatch filter isn't applied in test environment,
 		// so we manually apply it to test the filter function.
-		$response = resumable_uploads_add_options_headers( $response, rest_get_server(), $request );
+		$response = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
 		$headers  = $response->get_headers();
 
 		$this->assertSame( '1.0.0', $headers['Tus-Resumable'] );
@@ -571,7 +571,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$response = rest_get_server()->dispatch( $request );
 
 		// Apply the filter manually since rest_post_dispatch isn't called in tests.
-		$response = resumable_uploads_add_options_headers( $response, rest_get_server(), $request );
+		$response = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
 		$headers  = $response->get_headers();
 
 		$this->assertStringContainsString( 'checksum', $headers['Tus-Extension'] );
@@ -848,7 +848,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$filter_callback = function () {
 			return new WP_Error( 'blocked', 'Upload blocked by filter', array( 'status' => 403 ) );
 		};
-		add_filter( 'resumable_uploads_pre_finalize', $filter_callback );
+		add_filter( 'uploads_unleashed_pre_finalize', $filter_callback );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -857,7 +857,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_filter( 'resumable_uploads_pre_finalize', $filter_callback );
+		remove_filter( 'uploads_unleashed_pre_finalize', $filter_callback );
 
 		$this->assertSame( 403, $response->get_status() );
 		$data = $response->get_data();
@@ -877,7 +877,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$filter_callback = function () use ( $custom_result ) {
 			return $custom_result;
 		};
-		add_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+		add_filter( 'uploads_unleashed_finalize_upload', $filter_callback );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -886,7 +886,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+		remove_filter( 'uploads_unleashed_finalize_upload', $filter_callback );
 
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
@@ -903,7 +903,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$filter_callback = function () {
 			return new WP_Error( 'custom_error', 'Custom error message', array( 'status' => 422 ) );
 		};
-		add_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+		add_filter( 'uploads_unleashed_finalize_upload', $filter_callback );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -912,7 +912,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_filter( 'resumable_uploads_finalize_upload', $filter_callback );
+		remove_filter( 'uploads_unleashed_finalize_upload', $filter_callback );
 
 		$this->assertSame( 422, $response->get_status() );
 		$data = $response->get_data();
@@ -933,7 +933,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 				'upload'    => $upload,
 			);
 		};
-		add_action( 'resumable_uploads_upload_created', $action_callback, 10, 2 );
+		add_action( 'uploads_unleashed_upload_created', $action_callback, 10, 2 );
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 		$request->set_header( 'Upload-Length', '1024' );
@@ -941,7 +941,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		rest_get_server()->dispatch( $request );
 
-		remove_action( 'resumable_uploads_upload_created', $action_callback );
+		remove_action( 'uploads_unleashed_upload_created', $action_callback );
 
 		$this->assertTrue( $action_fired );
 		$this->assertNotEmpty( $action_args['upload_id'] );
@@ -964,7 +964,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 				'new_offset' => $new_offset,
 			);
 		};
-		add_action( 'resumable_uploads_chunk_received', $action_callback, 10, 2 );
+		add_action( 'uploads_unleashed_chunk_received', $action_callback, 10, 2 );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -973,7 +973,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		rest_get_server()->dispatch( $request );
 
-		remove_action( 'resumable_uploads_chunk_received', $action_callback );
+		remove_action( 'uploads_unleashed_chunk_received', $action_callback );
 
 		$this->assertTrue( $action_fired );
 		$this->assertSame( $upload_id, $action_args['upload_id'] );
@@ -996,12 +996,12 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 				'upload_data' => $upload_data,
 			);
 		};
-		add_action( 'resumable_uploads_upload_deleted', $action_callback, 10, 2 );
+		add_action( 'uploads_unleashed_upload_deleted', $action_callback, 10, 2 );
 
 		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/media/tus/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_action( 'resumable_uploads_upload_deleted', $action_callback );
+		remove_action( 'uploads_unleashed_upload_deleted', $action_callback );
 
 		$this->assertTrue( $action_fired );
 		$this->assertSame( $upload_id, $action_args['upload_id'] );
@@ -1024,7 +1024,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 				'upload_id'     => $completed_upload_id,
 			);
 		};
-		add_action( 'resumable_uploads_upload_complete', $action_callback, 10, 2 );
+		add_action( 'uploads_unleashed_upload_complete', $action_callback, 10, 2 );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -1033,7 +1033,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_action( 'resumable_uploads_upload_complete', $action_callback );
+		remove_action( 'uploads_unleashed_upload_complete', $action_callback );
 
 		$this->assertTrue( $action_fired );
 		$this->assertSame( $upload_id, $action_args['upload_id'] );
@@ -1089,7 +1089,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$filter_callback = function () {
 			return 100; // Very small limit.
 		};
-		add_filter( 'resumable_uploads_max_upload_size', $filter_callback );
+		add_filter( 'uploads_unleashed_max_upload_size', $filter_callback );
 
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 		$request->set_header( 'Upload-Length', '1024' );
@@ -1097,7 +1097,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_filter( 'resumable_uploads_max_upload_size', $filter_callback );
+		remove_filter( 'uploads_unleashed_max_upload_size', $filter_callback );
 
 		$this->assertSame( 413, $response->get_status() );
 	}
@@ -1112,7 +1112,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 			$data['filtered'] = true;
 			return $data;
 		};
-		add_filter( 'resumable_uploads_attachment_data', $filter_callback );
+		add_filter( 'uploads_unleashed_attachment_data', $filter_callback );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -1121,7 +1121,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_filter( 'resumable_uploads_attachment_data', $filter_callback );
+		remove_filter( 'uploads_unleashed_attachment_data', $filter_callback );
 
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();

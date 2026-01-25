@@ -1,6 +1,6 @@
 {
-	"name": "obenland/resumable-uploads",
-	"description": "TUS protocol support for resumable media uploads in WordPress",
+	"name": "obenland/uploads-unleashed",
+	"description": "Upload large files to WordPress without hitting size limits or losing progress when your connection drops.",
 	"type": "wordpress-plugin",
 	"license": "GPL-2.0-or-later",
 	"require": {

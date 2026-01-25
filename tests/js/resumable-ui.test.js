@@ -22,8 +22,8 @@ beforeEach( () => {
 	// Reset localStorage
 	localStorage.clear();
 
-	// Setup resumableUploads config
-	window.resumableUploads = {
+	// Setup uploadsUnleashed config
+	window.uploadsUnleashed = {
 		endpoint: '/wp-json/wp/v2/media/tus',
 		nonce: 'test-nonce',
 	};
@@ -233,7 +233,7 @@ describe( 'pending uploads UI', () => {
 	it( 'should hide container when no pending uploads', () => {
 		// Create the container
 		const container = document.createElement( 'div' );
-		container.id = 'resumable-uploads-pending';
+		container.id = 'uploads-unleashed-pending';
 		container.style.display = 'block';
 		document.body.appendChild( container );
 

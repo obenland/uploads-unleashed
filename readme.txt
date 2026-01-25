@@ -1,74 +1,60 @@
-=== Resumable Uploads ===
+=== Uploads Unleashed ===
 Contributors: obenland
-Tags: uploads, media, tus, resumable, large files
+Tags: large files, upload limit, media upload, file upload, video upload, upload failed, big files, upload timeout, upload size, reliable upload, resumable, media
 Requires at least: 6.4
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 0.2.0
+Stable tag: 0.1.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-TUS protocol support for resumable media uploads in WordPress.
+Upload large files to WordPress without hitting size limits or losing progress when your connection drops.
 
 == Description ==
 
-Resumable Uploads adds support for the [TUS resumable upload protocol](https://tus.io/) to WordPress, enabling reliable uploads of large files that can resume after network interruptions.
+Uploads Unleashed removes the frustrating barriers to uploading large files in WordPress. Upload videos, high-resolution images, or any large media file without running into PHP size limits or starting over when your connection hiccups.
 
-= Features =
+What it fixes:
 
-* **Resumable uploads** - Uploads automatically resume from where they left off after connection failures
-* **Large file support** - Bypasses PHP upload limits by chunking files
-* **Progress tracking** - Real-time upload progress in the media uploader
-* **Transparent integration** - Works with the existing WordPress media library interface
-* **Extensible** - Filter and action hooks for custom workflows
+* Upload files larger than your server's PHP limit normally allows.
+* If your connection drops mid-upload, pick up where you left off instead of starting over.
+* See real-time progress as your file uploads.
 
-= How It Works =
-
-The plugin implements TUS 1.0.0 protocol via a REST API endpoint at `/wp/v2/media/tus`. When you upload a file through the media library, the plugin:
-
-1. Creates an upload session with metadata
-2. Sends the file in chunks
-3. Automatically resumes if the connection drops
-4. Finalizes the upload and creates a media attachment
-
-= Requirements =
-
-* WordPress 6.4 or higher
-* PHP 7.4 or higher
-
-= Third-Party Libraries =
-
-This plugin includes [tus-js-client](https://github.com/tus/tus-js-client) (MIT License) for implementing the TUS protocol on the client side.
+Just activate the plugin. No settings to configure - your media uploader automatically gets these improvements.
 
 == Installation ==
 
-1. Upload the plugin files to `/wp-content/plugins/resumable-uploads/`
+1. Upload the plugin files to `/wp-content/plugins/uploads-unleashed/`
 2. Activate the plugin through the 'Plugins' screen in WordPress
-3. That's it! The media uploader will automatically use resumable uploads
+3. That's it - start uploading.
 
 == Frequently Asked Questions ==
 
-= Does this work with the block editor? =
+= How does it handle large files? =
 
-Yes, resumable uploads work anywhere the WordPress media uploader is used, including the block editor.
+The plugin uploads files in small pieces instead of all at once. This bypasses PHP's upload size limit and makes uploads more reliable on slower connections.
 
-= What happens to in-progress uploads if my browser crashes? =
+= What happens if my upload gets interrupted? =
 
-Upload sessions are stored for 24 hours. If you return within that time, the upload can resume from where it stopped.
+Your progress is saved for 24 hours. Come back and the upload resumes from where it stopped - no need to start over.
 
-= Can I upload files larger than my server's PHP limit? =
+= Where does this work? =
 
-Yes! Since files are uploaded in chunks, the PHP `upload_max_filesize` limit doesn't apply. The actual limit is your available disk space.
+Everywhere you upload media in WordPress: the Media Library, block editor, classic editor, and anywhere else that uses the standard media uploader.
 
 = Does this work on multisite? =
 
-Yes, the plugin respects multisite upload quotas.
+Yes. Upload quotas are still respected.
 
-= Does this plugin collect any user data? =
+= Does this plugin collect any data? =
 
 No. Upload session data is stored temporarily on your server and automatically deleted after 24 hours.
 
+= What's the actual file size limit? =
+
+Your available disk space. There's no artificial cap.
+
 == Changelog ==
 
-= 0.2.0 =
+= 0.1.0 =
 * Initial release.

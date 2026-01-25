@@ -2,11 +2,11 @@
 /**
  * Upload Size Limit Filter tests.
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 /**
- * Tests for the resumable_uploads_filter_upload_size_limit function.
+ * Tests for the uploads_unleashed_filter_upload_size_limit function.
  */
 class Test_Upload_Size_Limit extends WP_UnitTestCase {
 
@@ -109,7 +109,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	 * Test that the filter is registered at priority 20.
 	 */
 	public function test_filter_is_registered() {
-		$this->assertSame( 20, has_filter( 'upload_size_limit', 'resumable_uploads_filter_upload_size_limit' ) );
+		$this->assertSame( 20, has_filter( 'upload_size_limit', 'uploads_unleashed_filter_upload_size_limit' ) );
 	}
 
 	/**
@@ -128,7 +128,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		}
 
 		// With no pending uploads, should return disk free space.
-		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
+		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
 		// Allow 1 MB tolerance for disk space fluctuation during test.
 		$this->assertEqualsWithDelta( $expected_space, $result, MB_IN_BYTES );
@@ -162,7 +162,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $path );
 
-		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
+		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
 		// Should be disk space minus the pending upload size (10 MB).
 		// Allow 1 MB tolerance for disk space fluctuation.
@@ -205,7 +205,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $storage->get_path( $upload_id_2 ) );
 
-		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
+		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
 		// Should be disk space minus both pending upload sizes (30 MB total).
 		// Allow 1 MB tolerance for disk space fluctuation.
@@ -237,7 +237,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $storage->get_path( $upload_id ) );
 
-		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
+		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
 		$this->assertSame( 0, $result );
 	}
@@ -276,7 +276,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
 		touch( $storage->get_path( $upload_id ) );
 
-		$result = resumable_uploads_filter_upload_size_limit( PHP_INT_MAX );
+		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
 		// Expired upload should not be counted.
 		// Allow 1 MB tolerance for disk space fluctuation.

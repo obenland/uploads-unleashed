@@ -2,7 +2,7 @@
 /**
  * TUS Upload Session tests.
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -310,7 +310,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 			$session_data['custom_field'] = 'custom_value';
 			return $session_data;
 		};
-		add_filter( 'resumable_uploads_session_data', $filter_callback );
+		add_filter( 'uploads_unleashed_session_data', $filter_callback );
 
 		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
 		$upload_id = $this->session->create(
@@ -324,7 +324,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 
 		$data = $this->session->get( $upload_id );
 
-		remove_filter( 'resumable_uploads_session_data', $filter_callback );
+		remove_filter( 'uploads_unleashed_session_data', $filter_callback );
 
 		$this->assertArrayHasKey( 'custom_field', $data );
 		$this->assertSame( 'custom_value', $data['custom_field'] );

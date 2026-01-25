@@ -2,7 +2,7 @@
 /**
  * REST API: REST_TUS_Controller class
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 /**
@@ -10,7 +10,7 @@
  *
  * Implements the TUS 1.0.0 protocol for resumable file uploads.
  *
- * @since 0.2.0
+ * @since 0.1.0
  *
  * @see WP_REST_Controller
  * @see https://tus.io/protocols/resumable-upload
@@ -20,7 +20,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * TUS protocol version.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 * @var string
 	 */
 	const TUS_VERSION = '1.0.0';
@@ -28,7 +28,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Supported TUS extensions.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 * @var string
 	 */
 	const TUS_EXTENSIONS = 'creation,expiration,termination,checksum';
@@ -36,7 +36,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * The namespace for the REST route.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 * @var string
 	 */
 	protected $namespace = 'wp/v2';
@@ -44,7 +44,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * The base of the REST route.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 * @var string
 	 */
 	protected $rest_base = 'media/tus';
@@ -52,7 +52,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Registers the routes for the TUS controller.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 */
 	public function register_routes(): void {
 		// POST for upload creation.
@@ -76,7 +76,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			array(
 				'args' => array(
 					'id' => array(
-						'description' => __( 'Unique identifier for the upload.', 'resumable-uploads' ),
+						'description' => __( 'Unique identifier for the upload.', 'uploads-unleashed' ),
 						'type'        => 'string',
 						'required'    => true,
 					),
@@ -109,7 +109,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Adds TUS headers to OPTIONS responses.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Response $response The response object.
 	 * @param WP_REST_Request  $request  The request object.
@@ -122,12 +122,12 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 *
 		 * Allows plugins to override the maximum allowed upload size.
 		 *
-		 * @since 0.2.0
+		 * @since 0.1.0
 		 *
 		 * @param int             $max_size The maximum upload size in bytes.
 		 * @param WP_REST_Request $request  The request object.
 		 */
-		$max_size = apply_filters( 'resumable_uploads_max_upload_size', wp_max_upload_size(), $request );
+		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
 
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
 		$response->header( 'Tus-Version', self::TUS_VERSION );
@@ -140,14 +140,14 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks if a given request has access to create uploads.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
 	 */
 	public function create_item_permissions_check( $request ) {
 		if ( ! current_user_can( 'upload_files' ) ) {
-			return new WP_Error( 'rest_cannot_create_upload', __( 'Sorry, you are not allowed to upload files.', 'resumable-uploads' ), array( 'status' => rest_authorization_required_code() ) );
+			return new WP_Error( 'rest_cannot_create_upload', __( 'Sorry, you are not allowed to upload files.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
 		return true;
@@ -156,14 +156,14 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks if a given request has access to read/update an upload.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
 	 */
 	public function get_item_permissions_check( $request ) {
 		if ( ! current_user_can( 'upload_files' ) ) {
-			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'resumable-uploads' ), array( 'status' => rest_authorization_required_code() ) );
+			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
 		$upload_id = $request->get_param( 'id' );
@@ -171,11 +171,11 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$upload    = $session->get( $upload_id );
 
 		if ( ! $upload ) {
-			return new WP_Error( 'rest_upload_not_found', __( 'Upload not found.', 'resumable-uploads' ), array( 'status' => 404 ) );
+			return new WP_Error( 'rest_upload_not_found', __( 'Upload not found.', 'uploads-unleashed' ), array( 'status' => 404 ) );
 		}
 
 		if ( get_current_user_id() !== $upload['user_id'] ) {
-			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'resumable-uploads' ), array( 'status' => 403 ) );
+			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'uploads-unleashed' ), array( 'status' => 403 ) );
 		}
 
 		return true;
@@ -184,7 +184,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks if a given request has access to delete an upload.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
@@ -199,7 +199,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @param WP_REST_Request $request Full details about the request.
 	 *
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 */
 	public function method_override_permissions_check( WP_REST_Request $request ) {
 		$override_method = $request->get_header( 'X-HTTP-Method-Override' );
@@ -207,7 +207,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		if ( empty( $override_method ) ) {
 			return new WP_Error(
 				'rest_method_override_required',
-				__( 'X-HTTP-Method-Override header is required for POST requests to this endpoint.', 'resumable-uploads' ),
+				__( 'X-HTTP-Method-Override header is required for POST requests to this endpoint.', 'uploads-unleashed' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -218,7 +218,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		if ( ! in_array( $override_method, array( 'HEAD', 'PATCH', 'DELETE' ), true ) ) {
 			return new WP_Error(
 				'rest_invalid_method_override',
-				__( 'Invalid X-HTTP-Method-Override value. Must be HEAD, PATCH, or DELETE.', 'resumable-uploads' ),
+				__( 'Invalid X-HTTP-Method-Override value. Must be HEAD, PATCH, or DELETE.', 'uploads-unleashed' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -237,7 +237,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * This enables TUS protocol support in environments where PATCH, DELETE,
 	 * or HEAD methods are blocked by firewalls or server configuration.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -258,7 +258,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			default:
 				return new WP_Error(
 					'rest_invalid_method_override',
-					__( 'Invalid X-HTTP-Method-Override value. Must be HEAD, PATCH, or DELETE.', 'resumable-uploads' ),
+					__( 'Invalid X-HTTP-Method-Override value. Must be HEAD, PATCH, or DELETE.', 'uploads-unleashed' ),
 					array( 'status' => 400 )
 				);
 		}
@@ -267,7 +267,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Creates a new upload resource.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -276,20 +276,20 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$upload_length = $request->get_header( 'Upload-Length' );
 
 		if ( null === $upload_length ) {
-			return new WP_Error( 'rest_upload_length_required', __( 'Upload-Length header is required.', 'resumable-uploads' ), array( 'status' => 400 ) );
+			return new WP_Error( 'rest_upload_length_required', __( 'Upload-Length header is required.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
 		$upload_length = (int) $upload_length;
 
 		/** This filter is documented in includes/class-rest-tus-controller.php */
-		$max_size = apply_filters( 'resumable_uploads_max_upload_size', wp_max_upload_size(), $request );
+		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
 
 		if ( $upload_length > $max_size ) {
 			return new WP_Error(
 				'rest_upload_too_large',
 				sprintf(
 					/* translators: %s: Available space. */
-					__( 'Not enough space. You have %s available.', 'resumable-uploads' ),
+					__( 'Not enough space. You have %s available.', 'uploads-unleashed' ),
 					size_format( $max_size )
 				),
 				array( 'status' => 413 )
@@ -317,13 +317,13 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		/**
 		 * Fires after an upload session is created.
 		 *
-		 * @since 0.2.0
+		 * @since 0.1.0
 		 *
 		 * @param string          $upload_id The upload ID.
 		 * @param array           $upload    The upload session data.
 		 * @param WP_REST_Request $request   The request object.
 		 */
-		do_action( 'resumable_uploads_upload_created', $upload_id, $upload, $request );
+		do_action( 'uploads_unleashed_upload_created', $upload_id, $upload, $request );
 
 		$response = new WP_REST_Response( null, 201 );
 		$response->header( 'Location', rest_url( sprintf( '%s/%s/%s', $this->namespace, $this->rest_base, $upload_id ) ) );
@@ -336,7 +336,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Returns the current offset of an upload.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -352,7 +352,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			$storage = new TUS_Chunk_Storage();
 			$storage->delete( $upload_id );
 
-			return new WP_Error( 'rest_upload_expired', __( 'Upload has expired.', 'resumable-uploads' ), array( 'status' => 410 ) );
+			return new WP_Error( 'rest_upload_expired', __( 'Upload has expired.', 'uploads-unleashed' ), array( 'status' => 410 ) );
 		}
 
 		$response = new WP_REST_Response( null, 200 );
@@ -368,7 +368,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Uploads a chunk of data.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
@@ -377,7 +377,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		// Validate Content-Type.
 		$content_type = $request->get_content_type();
 		if ( ! $content_type || 'application/offset+octet-stream' !== $content_type['value'] ) {
-			return new WP_Error( 'rest_invalid_content_type', __( 'Content-Type must be application/offset+octet-stream.', 'resumable-uploads' ), array( 'status' => 415 ) );
+			return new WP_Error( 'rest_invalid_content_type', __( 'Content-Type must be application/offset+octet-stream.', 'uploads-unleashed' ), array( 'status' => 415 ) );
 		}
 
 		$upload_id = $request->get_param( 'id' );
@@ -390,13 +390,13 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			$storage = new TUS_Chunk_Storage();
 			$storage->delete( $upload_id );
 
-			return new WP_Error( 'rest_upload_expired', __( 'Upload has expired.', 'resumable-uploads' ), array( 'status' => 410 ) );
+			return new WP_Error( 'rest_upload_expired', __( 'Upload has expired.', 'uploads-unleashed' ), array( 'status' => 410 ) );
 		}
 
 		// Validate offset.
 		$client_offset = $request->get_header( 'Upload-Offset' );
 		if ( null === $client_offset ) {
-			return new WP_Error( 'rest_offset_required', __( 'Upload-Offset header is required.', 'resumable-uploads' ), array( 'status' => 400 ) );
+			return new WP_Error( 'rest_offset_required', __( 'Upload-Offset header is required.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
 		$client_offset = (int) $client_offset;
@@ -404,13 +404,13 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		// 409 Conflict: Do NOT store any data on offset mismatch.
 		if ( $client_offset !== $server_offset ) {
-			return new WP_Error( 'rest_offset_mismatch', __( 'Upload offset mismatch.', 'resumable-uploads' ), array( 'status' => 409 ) );
+			return new WP_Error( 'rest_offset_mismatch', __( 'Upload offset mismatch.', 'uploads-unleashed' ), array( 'status' => 409 ) );
 		}
 
 		// Get chunk data.
 		$chunk_data = $request->get_body();
 		if ( empty( $chunk_data ) ) {
-			return new WP_Error( 'rest_empty_chunk', __( 'No data received.', 'resumable-uploads' ), array( 'status' => 400 ) );
+			return new WP_Error( 'rest_empty_chunk', __( 'No data received.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
 		// Verify checksum if provided.
@@ -433,14 +433,14 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		/**
 		 * Fires after a chunk is received and stored.
 		 *
-		 * @since 0.2.0
+		 * @since 0.1.0
 		 *
 		 * @param string          $upload_id  The upload ID.
 		 * @param int             $new_offset The new byte offset after this chunk.
 		 * @param array           $upload     The upload session data.
 		 * @param WP_REST_Request $request    The request object.
 		 */
-		do_action( 'resumable_uploads_chunk_received', $upload_id, $new_offset, $upload, $request );
+		do_action( 'uploads_unleashed_chunk_received', $upload_id, $new_offset, $upload, $request );
 
 		// Check if upload is complete.
 		if ( $new_offset >= $upload['length'] ) {
@@ -467,7 +467,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Deletes an upload.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
 	 * @return WP_REST_Response Response object on success.
@@ -485,12 +485,12 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		/**
 		 * Fires after an upload is deleted/canceled.
 		 *
-		 * @since 0.2.0
+		 * @since 0.1.0
 		 *
 		 * @param string     $upload_id   The upload ID.
 		 * @param array|null $upload_data The upload session data (null if already deleted).
 		 */
-		do_action( 'resumable_uploads_upload_deleted', $upload_id, $upload_data );
+		do_action( 'uploads_unleashed_upload_deleted', $upload_id, $upload_data );
 
 		$response = new WP_REST_Response( null, 204 );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
@@ -501,7 +501,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Finalizes an upload and creates the attachment.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $upload_id   The upload ID.
 	 * @param array  $upload_data The upload session data.
@@ -517,14 +517,14 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 *
 		 * Allows plugins to validate or abort finalization. Return WP_Error to abort.
 		 *
-		 * @since 0.2.0
+		 * @since 0.1.0
 		 *
 		 * @param true|WP_Error $proceed     Whether to proceed with finalization.
 		 * @param string        $upload_id   The upload ID.
 		 * @param array         $upload_data The upload session data.
 		 * @param string        $chunk_path  Path to the uploaded file.
 		 */
-		$proceed = apply_filters( 'resumable_uploads_pre_finalize', true, $upload_id, $upload_data, $chunk_path );
+		$proceed = apply_filters( 'uploads_unleashed_pre_finalize', true, $upload_id, $upload_data, $chunk_path );
 
 		if ( is_wp_error( $proceed ) ) {
 			$storage->delete( $upload_id );
@@ -540,14 +540,14 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 * to use as the response data, WP_Error to abort, or null to continue
 		 * with default finalization.
 		 *
-		 * @since 0.2.0
+		 * @since 0.1.0
 		 *
 		 * @param array|WP_Error|null $result      The result to return, or null to use default.
 		 * @param string              $upload_id   The upload ID.
 		 * @param array               $upload_data The upload session data.
 		 * @param string              $chunk_path  Path to the uploaded file.
 		 */
-		$custom_result = apply_filters( 'resumable_uploads_finalize_upload', null, $upload_id, $upload_data, $chunk_path );
+		$custom_result = apply_filters( 'uploads_unleashed_finalize_upload', null, $upload_id, $upload_data, $chunk_path );
 
 		if ( is_wp_error( $custom_result ) ) {
 			$storage->delete( $upload_id );
@@ -566,13 +566,13 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			/**
 			 * Fires after an upload is finalized.
 			 *
-			 * @since 0.2.0
+			 * @since 0.1.0
 			 *
 			 * @param int    $attachment_id The attachment ID (0 if custom finalization didn't create one).
 			 * @param string $upload_id     The upload ID.
 			 * @param array  $upload_data   The upload session data.
 			 */
-			do_action( 'resumable_uploads_upload_complete', $attachment_id, $upload_id, $upload_data );
+			do_action( 'uploads_unleashed_upload_complete', $attachment_id, $upload_id, $upload_data );
 
 			return $custom_result;
 		}
@@ -618,7 +618,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		/** This action is documented in includes/class-rest-tus-controller.php */
-		do_action( 'resumable_uploads_upload_complete', $attachment_id, $upload_id, $upload_data );
+		do_action( 'uploads_unleashed_upload_complete', $attachment_id, $upload_id, $upload_data );
 
 		// Get attachment data in REST API format.
 		$attachment_data = $this->prepare_attachment_for_response( $attachment_id );
@@ -628,13 +628,13 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 *
 		 * Allows plugins to add custom fields to the response.
 		 *
-		 * @since 0.2.0
+		 * @since 0.1.0
 		 *
 		 * @param array $attachment_data The attachment data in REST API format.
 		 * @param int   $attachment_id   The attachment ID.
 		 * @param array $upload_data     The upload session data.
 		 */
-		return apply_filters( 'resumable_uploads_attachment_data', $attachment_data, $attachment_id, $upload_data );
+		return apply_filters( 'uploads_unleashed_attachment_data', $attachment_data, $attachment_id, $upload_data );
 	}
 
 	/**
@@ -643,7 +643,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * Checks MIME type against allowed types and verifies image content
 	 * to prevent PHP-in-image attacks.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The original filename.
@@ -655,18 +655,18 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		if ( ! $validated['type'] ) {
 			return new WP_Error(
 				'rest_invalid_file_type',
-				__( 'Sorry, you are not allowed to upload this file type.', 'resumable-uploads' ),
+				__( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ),
 				array( 'status' => 400 )
 			);
 		}
 
 		// For images, verify actual image data (prevents PHP-in-image attacks).
-		if ( str_starts_with( $validated['type'], 'image/' ) ) {
+		if ( 0 === strpos( $validated['type'], 'image/' ) ) {
 			$actual_mime = wp_get_image_mime( $file_path );
 			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
 				return new WP_Error(
 					'rest_invalid_image',
-					__( 'File is not a valid image.', 'resumable-uploads' ),
+					__( 'File is not a valid image.', 'uploads-unleashed' ),
 					array( 'status' => 400 )
 				);
 			}
@@ -687,7 +687,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Applies pre-upload filters (virus scanners, etc.).
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The sanitized filename.
@@ -716,7 +716,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Checks multisite quota constraints.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @return true|WP_Error True if quota OK, WP_Error if exceeded.
@@ -731,7 +731,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$file_size_mb  = filesize( $file_path ) / MB_IN_BYTES;
 
 		if ( $space_used + $file_size_mb > $space_allowed ) {
-			return new WP_Error( 'rest_quota_exceeded', __( 'You have used your space quota.', 'resumable-uploads' ), array( 'status' => 400 ) );
+			return new WP_Error( 'rest_quota_exceeded', __( 'You have used your space quota.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
 		return true;
@@ -742,7 +742,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 *
 	 * Handles cross-filesystem moves by falling back to copy + delete.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $source_path The source file path.
 	 * @param string $filename    The sanitized filename.
@@ -759,7 +759,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			// Try copy + delete as fallback (cross-filesystem moves).
 			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Fallback for cross-filesystem moves.
 			if ( ! @copy( $source_path, $new_path ) ) {
-				return new WP_Error( 'rest_move_failed', __( 'Could not move uploaded file.', 'resumable-uploads' ), array( 'status' => 500 ) );
+				return new WP_Error( 'rest_move_failed', __( 'Could not move uploaded file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 			}
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
 			@unlink( $source_path );
@@ -778,7 +778,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Creates the WordPress attachment post.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param array $upload_result The upload result from move_to_uploads().
 	 * @return int|WP_Error Attachment ID on success, WP_Error on failure.
@@ -816,7 +816,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * Uses WP_REST_Attachments_Controller to ensure consistent format
 	 * with the standard /wp/v2/media endpoint.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param int $attachment_id The attachment ID.
 	 * @return array Attachment data in REST API format.
@@ -835,7 +835,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Parses the Upload-Metadata header.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string|null $header The Upload-Metadata header value.
 	 * @return array Parsed metadata as key-value pairs.
@@ -873,7 +873,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * The Upload-Checksum header format is: "{algorithm} {base64-encoded-checksum}"
 	 * Example: "sha256 aGVsbG8gd29ybGQ="
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param WP_REST_Request $request    The request object.
 	 * @param string          $chunk_data The raw chunk data to verify.
@@ -892,7 +892,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		if ( count( $parts ) !== 2 ) {
 			return new WP_Error(
 				'rest_invalid_checksum_format',
-				__( 'Invalid Upload-Checksum header format. Expected: "algorithm base64checksum".', 'resumable-uploads' ),
+				__( 'Invalid Upload-Checksum header format. Expected: "algorithm base64checksum".', 'uploads-unleashed' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -907,7 +907,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 				'rest_unsupported_checksum_algorithm',
 				sprintf(
 					/* translators: 1: received algorithm, 2: comma-separated list of supported algorithms */
-					__( 'Unsupported checksum algorithm "%1$s". Supported: %2$s.', 'resumable-uploads' ),
+					__( 'Unsupported checksum algorithm "%1$s". Supported: %2$s.', 'uploads-unleashed' ),
 					$algorithm,
 					implode( ', ', $supported_algorithms )
 				),
@@ -920,7 +920,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		if ( false === $expected_checksum ) {
 			return new WP_Error(
 				'rest_invalid_checksum_encoding',
-				__( 'Invalid base64 encoding in Upload-Checksum header.', 'resumable-uploads' ),
+				__( 'Invalid base64 encoding in Upload-Checksum header.', 'uploads-unleashed' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -932,7 +932,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		if ( ! hash_equals( $expected_checksum, $actual_checksum ) ) {
 			return new WP_Error(
 				'rest_checksum_mismatch',
-				__( 'Checksum mismatch. The uploaded data does not match the provided checksum.', 'resumable-uploads' ),
+				__( 'Checksum mismatch. The uploaded data does not match the provided checksum.', 'uploads-unleashed' ),
 				array( 'status' => 460 ) // TUS-specific status code for checksum mismatch.
 			);
 		}
@@ -943,7 +943,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Retrieves the upload schema, conforming to JSON Schema.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @return array Item schema data.
 	 */
@@ -958,25 +958,25 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			'type'       => 'object',
 			'properties' => array(
 				'id'       => array(
-					'description' => __( 'Unique identifier for the upload.', 'resumable-uploads' ),
+					'description' => __( 'Unique identifier for the upload.', 'uploads-unleashed' ),
 					'type'        => 'string',
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
 				'offset'   => array(
-					'description' => __( 'Current byte offset of the upload.', 'resumable-uploads' ),
+					'description' => __( 'Current byte offset of the upload.', 'uploads-unleashed' ),
 					'type'        => 'integer',
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
 				'length'   => array(
-					'description' => __( 'Total size of the upload in bytes.', 'resumable-uploads' ),
+					'description' => __( 'Total size of the upload in bytes.', 'uploads-unleashed' ),
 					'type'        => 'integer',
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,
 				),
 				'filename' => array(
-					'description' => __( 'Name of the file being uploaded.', 'resumable-uploads' ),
+					'description' => __( 'Name of the file being uploaded.', 'uploads-unleashed' ),
 					'type'        => 'string',
 					'context'     => array( 'view', 'edit' ),
 					'readonly'    => true,

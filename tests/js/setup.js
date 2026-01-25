@@ -1,5 +1,5 @@
 /**
- * Jest test setup for Resumable Uploads.
+ * Jest test setup for Uploads Unleashed.
  *
  * Mocks WordPress globals and browser APIs needed for testing.
  */
@@ -27,8 +27,8 @@ const localStorageMock = ( () => {
 
 Object.defineProperty( window, 'localStorage', { value: localStorageMock } );
 
-// Mock window.resumableUploads config
-Object.defineProperty( window, 'resumableUploads', {
+// Mock window.uploadsUnleashed config
+Object.defineProperty( window, 'uploadsUnleashed', {
 	value: {
 		endpoint: '/wp-json/wp/v2/media/tus',
 		nonce: 'test-nonce-123',

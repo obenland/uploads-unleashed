@@ -30,9 +30,9 @@ jest.mock( 'tus-js-client', () => {
 	};
 } );
 
-// Setup window.resumableUploads
+// Setup window.uploadsUnleashed
 beforeEach( () => {
-	window.resumableUploads = {
+	window.uploadsUnleashed = {
 		endpoint: '/wp-json/wp/v2/media/tus',
 		nonce: 'test-nonce',
 	};
@@ -132,8 +132,8 @@ describe( 'createUpload', () => {
 		);
 	} );
 
-	it( 'uses default endpoint when window.resumableUploads is not set', () => {
-		window.resumableUploads = undefined;
+	it( 'uses default endpoint when window.uploadsUnleashed is not set', () => {
+		window.uploadsUnleashed = undefined;
 		const file = new File( [ 'test' ], 'test.txt' );
 
 		createUpload( file );

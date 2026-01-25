@@ -2,20 +2,20 @@
 /**
  * TUS Chunk Storage class.
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 /**
  * Manages TUS upload chunk storage.
  *
- * @since 0.2.0
+ * @since 0.1.0
  */
 class TUS_Chunk_Storage {
 
 	/**
 	 * Base directory for chunk storage.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 * @var string
 	 */
 	protected string $base_dir;
@@ -23,7 +23,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Constructor.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 */
 	public function __construct() {
 		$upload_dir     = wp_upload_dir();
@@ -35,7 +35,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Creates the chunk storage directory if it doesn't exist.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 */
 	protected function maybe_create_directory(): void {
 		if ( file_exists( $this->base_dir ) ) {
@@ -61,7 +61,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Returns the path to a chunk file.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return string The full path to the chunk file.
@@ -76,7 +76,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Appends data to a chunk file.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @param string $data      The binary data to append.
@@ -89,7 +89,7 @@ class TUS_Chunk_Storage {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Direct file operation needed.
 		$handle = fopen( $path, 'ab' );
 		if ( ! $handle ) {
-			return new WP_Error( 'tus_chunk_open_failed', __( 'Could not open chunk file for writing.', 'resumable-uploads' ), array( 'status' => 500 ) );
+			return new WP_Error( 'tus_chunk_open_failed', __( 'Could not open chunk file for writing.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
 		// Lock for concurrent access protection.
@@ -97,7 +97,7 @@ class TUS_Chunk_Storage {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Direct file operation needed.
 			fclose( $handle );
 
-			return new WP_Error( 'tus_chunk_lock_failed', __( 'Could not acquire lock on chunk file.', 'resumable-uploads' ), array( 'status' => 500 ) );
+			return new WP_Error( 'tus_chunk_lock_failed', __( 'Could not acquire lock on chunk file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
 		// Verify current file size matches expected offset.
@@ -111,7 +111,7 @@ class TUS_Chunk_Storage {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Direct file operation needed.
 			fclose( $handle );
 
-			return new WP_Error( 'tus_chunk_offset_mismatch', __( 'File offset does not match expected value.', 'resumable-uploads' ), array( 'status' => 409 ) );
+			return new WP_Error( 'tus_chunk_offset_mismatch', __( 'File offset does not match expected value.', 'uploads-unleashed' ), array( 'status' => 409 ) );
 		}
 
 		// Seek to offset and write data.
@@ -124,7 +124,7 @@ class TUS_Chunk_Storage {
 		fclose( $handle );
 
 		if ( false === $written ) {
-			return new WP_Error( 'tus_chunk_write_failed', __( 'Could not write to chunk file.', 'resumable-uploads' ), array( 'status' => 500 ) );
+			return new WP_Error( 'tus_chunk_write_failed', __( 'Could not write to chunk file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
 		return $offset + $written;
@@ -133,7 +133,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Deletes a chunk file.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True on success, false on failure.
@@ -152,7 +152,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Cleans up storage for an upload (alias for delete).
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True on success, false on failure.
@@ -164,7 +164,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Returns the current size of a chunk file.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return int File size in bytes, or 0 if file doesn't exist.
@@ -184,7 +184,7 @@ class TUS_Chunk_Storage {
 	/**
 	 * Checks if a chunk file exists.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True if the file exists, false otherwise.
@@ -199,7 +199,7 @@ class TUS_Chunk_Storage {
 	 * This sums the expected final size (not current progress) of all
 	 * in-progress uploads, useful for quota calculations.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 *
 	 * @return int Total pending upload size in bytes.
 	 */
@@ -231,7 +231,7 @@ class TUS_Chunk_Storage {
 	 *
 	 * This method is intended to be called via WP-Cron.
 	 *
-	 * @since 0.2.0
+	 * @since 0.1.0
 	 */
 	public static function cleanup_expired(): void {
 		$storage = new self();

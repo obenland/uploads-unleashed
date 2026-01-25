@@ -18,8 +18,8 @@ interface PendingUpload {
 	size: number;
 }
 
-const endpoint = window.resumableUploads?.endpoint || '';
-const nonce = window.resumableUploads?.nonce || '';
+const endpoint = window.uploadsUnleashed?.endpoint || '';
+const nonce = window.uploadsUnleashed?.nonce || '';
 
 /**
  * Parses localStorage for pending TUS uploads.
@@ -191,7 +191,7 @@ async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
 				/* translators: 1: filename, 2: file size */
 				__(
 					'Please select the original file: %1$s (%2$s)',
-					'resumable-uploads'
+					'uploads-unleashed'
 				),
 				upload.filename,
 				formatFileSize( upload.size )
@@ -219,9 +219,9 @@ async function resumeUpload( upload: PendingUpload ): Promise< boolean > {
  * Renders the pending uploads list.
  */
 function renderPendingUploads(): void {
-	const container = document.getElementById( 'resumable-uploads-pending' );
+	const container = document.getElementById( 'uploads-unleashed-pending' );
 	const list = container?.querySelector(
-		'.resumable-uploads-list'
+		'.uploads-unleashed-list'
 	) as HTMLUListElement | null;
 	if ( ! container || ! list ) {
 		return;
@@ -242,11 +242,11 @@ function renderPendingUploads(): void {
 			<span class="filesize">(${ formatFileSize( upload.size ) })</span>
 			<button type="button" class="button resume-upload">${ __(
 				'Resume',
-				'resumable-uploads'
+				'uploads-unleashed'
 			) }</button>
 			<button type="button" class="button discard-upload">${ __(
 				'Discard',
-				'resumable-uploads'
+				'uploads-unleashed'
 			) }</button>
 		</li>
 	`
@@ -303,8 +303,8 @@ function renderPendingUploads(): void {
  * @param size     File size to match.
  */
 function removePendingEntry( filename: string, size: number ): void {
-	const container = document.getElementById( 'resumable-uploads-pending' );
-	const list = container?.querySelector( '.resumable-uploads-list' );
+	const container = document.getElementById( 'uploads-unleashed-pending' );
+	const list = container?.querySelector( '.uploads-unleashed-list' );
 	if ( ! container || ! list ) {
 		return;
 	}
