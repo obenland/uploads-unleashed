@@ -1,10 +1,10 @@
 # Hooks Reference
 
-The Resumable Uploads plugin provides filters and actions that allow other plugins to extend its functionality. This enables custom metadata handling, file processing, and more.
+The Uploads Unleashed plugin provides filters and actions that allow other plugins to extend its functionality. This enables custom metadata handling, file processing, and more.
 
 ## Filters
 
-### `resumable_uploads_max_upload_size`
+### `uploads_unleashed_max_upload_size`
 
 Override the maximum allowed upload size.
 
@@ -16,7 +16,7 @@ Override the maximum allowed upload size.
 
 **Example:**
 ```php
-add_filter( 'resumable_uploads_max_upload_size', function( $max_size, $request ) {
+add_filter( 'uploads_unleashed_max_upload_size', function( $max_size, $request ) {
     // Premium users get larger uploads
     if ( current_user_can( 'upload_large_files' ) ) {
         return 10 * GB_IN_BYTES;
@@ -27,7 +27,7 @@ add_filter( 'resumable_uploads_max_upload_size', function( $max_size, $request )
 
 ---
 
-### `resumable_uploads_session_data`
+### `uploads_unleashed_session_data`
 
 Filter session data before it's stored. Add custom fields to persist throughout the upload.
 
@@ -39,7 +39,7 @@ Filter session data before it's stored. Add custom fields to persist throughout 
 
 **Example:**
 ```php
-add_filter( 'resumable_uploads_session_data', function( $session_data, $request ) {
+add_filter( 'uploads_unleashed_session_data', function( $session_data, $request ) {
     // Store custom data from a header with the session
     $custom = $request->get_header( 'X-Custom-Metadata' );
     if ( $custom ) {
@@ -51,7 +51,7 @@ add_filter( 'resumable_uploads_session_data', function( $session_data, $request 
 
 ---
 
-### `resumable_uploads_pre_finalize`
+### `uploads_unleashed_pre_finalize`
 
 Validate or abort finalization before it begins. Use for custom validation rules.
 
@@ -67,7 +67,7 @@ Validate or abort finalization before it begins. Use for custom validation rules
 
 **Example:**
 ```php
-add_filter( 'resumable_uploads_pre_finalize', function( $proceed, $upload_id, $upload_data, $chunk_path ) {
+add_filter( 'uploads_unleashed_pre_finalize', function( $proceed, $upload_id, $upload_data, $chunk_path ) {
     // Custom validation for video files
     if ( str_starts_with( $upload_data['filetype'], 'video/' ) ) {
         $duration = my_get_video_duration( $chunk_path );
@@ -85,7 +85,7 @@ add_filter( 'resumable_uploads_pre_finalize', function( $proceed, $upload_id, $u
 
 ---
 
-### `resumable_uploads_finalize_upload`
+### `uploads_unleashed_finalize_upload`
 
 Completely override the finalization process. Use for custom file handling (e.g., video transcoding, document processing).
 
@@ -102,7 +102,7 @@ Completely override the finalization process. Use for custom file handling (e.g.
 
 **Example:**
 ```php
-add_filter( 'resumable_uploads_finalize_upload', function( $result, $upload_id, $upload_data, $chunk_path ) {
+add_filter( 'uploads_unleashed_finalize_upload', function( $result, $upload_id, $upload_data, $chunk_path ) {
     // Custom handling for video files
     if ( ! str_starts_with( $upload_data['filetype'], 'video/' ) ) {
         return null; // Use default for non-videos
@@ -136,7 +136,7 @@ add_filter( 'resumable_uploads_finalize_upload', function( $result, $upload_id, 
 
 ---
 
-### `resumable_uploads_attachment_data`
+### `uploads_unleashed_attachment_data`
 
 Filter the attachment data returned after successful finalization. Add custom fields to the response.
 
@@ -149,7 +149,7 @@ Filter the attachment data returned after successful finalization. Add custom fi
 
 **Example:**
 ```php
-add_filter( 'resumable_uploads_attachment_data', function( $data, $attachment_id, $upload_data ) {
+add_filter( 'uploads_unleashed_attachment_data', function( $data, $attachment_id, $upload_data ) {
     // Add processing status for videos
     $job_id = get_post_meta( $attachment_id, '_processing_job_id', true );
     if ( $job_id ) {
@@ -166,7 +166,7 @@ add_filter( 'resumable_uploads_attachment_data', function( $data, $attachment_id
 
 ## Actions
 
-### `resumable_uploads_upload_created`
+### `uploads_unleashed_upload_created`
 
 Fires after an upload session is created.
 
@@ -177,7 +177,7 @@ Fires after an upload session is created.
 
 **Example:**
 ```php
-add_action( 'resumable_uploads_upload_created', function( $upload_id, $upload_data, $request ) {
+add_action( 'uploads_unleashed_upload_created', function( $upload_id, $upload_data, $request ) {
     // Log upload start
     error_log( sprintf(
         'Upload started: %s (%s bytes)',
@@ -189,7 +189,7 @@ add_action( 'resumable_uploads_upload_created', function( $upload_id, $upload_da
 
 ---
 
-### `resumable_uploads_chunk_received`
+### `uploads_unleashed_chunk_received`
 
 Fires after each chunk is received and stored.
 
@@ -201,7 +201,7 @@ Fires after each chunk is received and stored.
 
 **Example:**
 ```php
-add_action( 'resumable_uploads_chunk_received', function( $upload_id, $new_offset, $upload_data, $request ) {
+add_action( 'uploads_unleashed_chunk_received', function( $upload_id, $new_offset, $upload_data, $request ) {
     // Track progress
     $progress = ( $new_offset / $upload_data['length'] ) * 100;
     my_update_upload_progress( $upload_id, $progress );
@@ -210,7 +210,7 @@ add_action( 'resumable_uploads_chunk_received', function( $upload_id, $new_offse
 
 ---
 
-### `resumable_uploads_upload_complete`
+### `uploads_unleashed_upload_complete`
 
 Fires after an upload is successfully finalized.
 
@@ -221,7 +221,7 @@ Fires after an upload is successfully finalized.
 
 **Example:**
 ```php
-add_action( 'resumable_uploads_upload_complete', function( $attachment_id, $upload_id, $upload_data ) {
+add_action( 'uploads_unleashed_upload_complete', function( $attachment_id, $upload_id, $upload_data ) {
     // Notify user
     wp_mail(
         get_userdata( $upload_data['user_id'] )->user_email,
@@ -233,7 +233,7 @@ add_action( 'resumable_uploads_upload_complete', function( $attachment_id, $uplo
 
 ---
 
-### `resumable_uploads_upload_deleted`
+### `uploads_unleashed_upload_deleted`
 
 Fires after an upload is canceled/deleted.
 
@@ -243,7 +243,7 @@ Fires after an upload is canceled/deleted.
 
 **Example:**
 ```php
-add_action( 'resumable_uploads_upload_deleted', function( $upload_id, $upload_data ) {
+add_action( 'uploads_unleashed_upload_deleted', function( $upload_id, $upload_data ) {
     if ( $upload_data ) {
         error_log( sprintf( 'Upload canceled: %s', $upload_data['filename'] ) );
     }
@@ -259,12 +259,12 @@ This example shows how to build a complete extension that adds custom video proc
 ```php
 <?php
 /**
- * Plugin Name: Video Processor for Resumable Uploads
- * Description: Extends Resumable Uploads with video processing.
+ * Plugin Name: Video Processor for Uploads Unleashed
+ * Description: Extends Uploads Unleashed with video processing.
  */
 
 // 1. Store Custom Data in Session
-add_filter( 'resumable_uploads_session_data', 'vidproc_session_data', 10, 2 );
+add_filter( 'uploads_unleashed_session_data', 'vidproc_session_data', 10, 2 );
 function vidproc_session_data( $session, $request ) {
     $custom_meta = $request->get_header( 'X-Video-Metadata' );
     if ( $custom_meta ) {
@@ -274,7 +274,7 @@ function vidproc_session_data( $session, $request ) {
 }
 
 // 2. Custom Video Finalization
-add_filter( 'resumable_uploads_finalize_upload', 'vidproc_finalize', 10, 4 );
+add_filter( 'uploads_unleashed_finalize_upload', 'vidproc_finalize', 10, 4 );
 function vidproc_finalize( $result, $upload_id, $upload_data, $chunk_path ) {
     // Only handle videos
     if ( ! str_starts_with( $upload_data['filetype'], 'video/' ) ) {
@@ -308,7 +308,7 @@ function vidproc_finalize( $result, $upload_id, $upload_data, $chunk_path ) {
 }
 
 // 3. Add Processing Status to All Responses
-add_filter( 'resumable_uploads_attachment_data', 'vidproc_attachment_data', 10, 3 );
+add_filter( 'uploads_unleashed_attachment_data', 'vidproc_attachment_data', 10, 3 );
 function vidproc_attachment_data( $data, $attachment_id, $upload_data ) {
     $job_id = get_post_meta( $attachment_id, '_vidproc_job_id', true );
     if ( $job_id ) {
@@ -319,7 +319,7 @@ function vidproc_attachment_data( $data, $attachment_id, $upload_data ) {
 }
 
 // 4. Log Completed Uploads
-add_action( 'resumable_uploads_upload_complete', 'vidproc_log_complete', 10, 3 );
+add_action( 'uploads_unleashed_upload_complete', 'vidproc_log_complete', 10, 3 );
 function vidproc_log_complete( $attachment_id, $upload_id, $upload_data ) {
     do_action( 'vidproc_upload_complete', $attachment_id );
 }
@@ -327,10 +327,10 @@ function vidproc_log_complete( $attachment_id, $upload_id, $upload_data ) {
 
 ## Best Practices
 
-1. **Return `null` to use defaults** - For `resumable_uploads_finalize_upload`, return `null` to let the default finalization handle files you don't need to customize.
+1. **Return `null` to use defaults** - For `uploads_unleashed_finalize_upload`, return `null` to let the default finalization handle files you don't need to customize.
 
 2. **Clean up on errors** - If your custom finalization fails, return a `WP_Error`. The plugin will clean up the temporary files automatically.
 
-3. **Store persistent data in session** - Use `resumable_uploads_session_data` to store data that needs to persist across chunks and be available during finalization.
+3. **Store persistent data in session** - Use `uploads_unleashed_session_data` to store data that needs to persist across chunks and be available during finalization.
 
-4. **Use upload_data for context** - The `$upload_data` array contains useful information like `filename`, `filetype`, `length`, `user_id`, and any custom fields you added via `resumable_uploads_session_data`.
+4. **Use upload_data for context** - The `$upload_data` array contains useful information like `filename`, `filetype`, `length`, `user_id`, and any custom fields you added via `uploads_unleashed_session_data`.

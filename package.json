@@ -1,7 +1,7 @@
 {
-	"name": "resumable-uploads",
-	"version": "0.2.0",
-	"description": "TUS protocol support for resumable media uploads in WordPress",
+	"name": "uploads-unleashed",
+	"version": "0.1.0",
+	"description": "Upload large files to WordPress without hitting size limits or losing progress when your connection drops.",
 	"author": "Konstantin Obenland",
 	"license": "GPL-2.0-or-later",
 	"keywords": [
@@ -11,13 +11,13 @@
 		"upload",
 		"media"
 	],
-	"homepage": "https://github.com/obenland/resumable-uploads",
+	"homepage": "https://github.com/obenland/uploads-unleashed",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/obenland/resumable-uploads.git"
+		"url": "git+https://github.com/obenland/uploads-unleashed.git"
 	},
 	"bugs": {
-		"url": "https://github.com/obenland/resumable-uploads/issues"
+		"url": "https://github.com/obenland/uploads-unleashed/issues"
 	},
 	"dependencies": {
 		"tus-js-client": "^4.3.1"
@@ -34,9 +34,9 @@
 		"wp-env": "wp-env",
 		"start": "wp-env start",
 		"stop": "wp-env stop",
-		"test": "wp-env run tests-cli --env-cwd=\"wp-content/plugins/resumable-uploads\" vendor/bin/phpunit",
-		"test:coverage": "wp-env run tests-cli --env-cwd=\"wp-content/plugins/resumable-uploads\" vendor/bin/phpunit --coverage-html coverage",
-		"test:coverage:text": "wp-env run tests-cli --env-cwd=\"wp-content/plugins/resumable-uploads\" vendor/bin/phpunit --coverage-text",
+		"test": "wp-env run tests-cli --env-cwd=\"wp-content/plugins/uploads-unleashed\" vendor/bin/phpunit",
+		"test:coverage": "wp-env run tests-cli --env-cwd=\"wp-content/plugins/uploads-unleashed\" vendor/bin/phpunit --coverage-html coverage",
+		"test:coverage:text": "wp-env run tests-cli --env-cwd=\"wp-content/plugins/uploads-unleashed\" vendor/bin/phpunit --coverage-text",
 		"test:js": "wp-scripts test-unit-js",
 		"test:js:coverage": "wp-scripts test-unit-js --coverage --coverageDirectory=coverage/js",
 		"test:js:watch": "wp-scripts test-unit-js --watch",

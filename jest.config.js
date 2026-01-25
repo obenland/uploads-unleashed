@@ -1,5 +1,5 @@
 /**
- * Jest configuration for Resumable Uploads.
+ * Jest configuration for Uploads Unleashed.
  *
  * @type {import('@jest/types').Config.InitialOptions}
  */

@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the architecture of the Resumable Uploads plugin, which implements the [TUS 1.0.0 protocol](https://tus.io/protocols/resumable-upload.html) for WordPress.
+This document describes the architecture of the Uploads Unleashed plugin, which implements the [TUS 1.0.0 protocol](https://tus.io/protocols/resumable-upload.html) for WordPress.
 
 ## Overview
 
@@ -227,20 +227,20 @@ Manages physical chunk files on disk:
 
 | Filter | Purpose |
 |--------|---------|
-| `resumable_uploads_max_upload_size` | Modify max file size |
-| `resumable_uploads_session_data` | Add custom session data |
-| `resumable_uploads_pre_finalize` | Validate before finalizing |
-| `resumable_uploads_finalize_upload` | Custom finalization |
-| `resumable_uploads_attachment_data` | Modify response |
+| `uploads_unleashed_max_upload_size` | Modify max file size |
+| `uploads_unleashed_session_data` | Add custom session data |
+| `uploads_unleashed_pre_finalize` | Validate before finalizing |
+| `uploads_unleashed_finalize_upload` | Custom finalization |
+| `uploads_unleashed_attachment_data` | Modify response |
 
 ### Actions
 
 | Action | Purpose |
 |--------|---------|
-| `resumable_uploads_upload_created` | After session created |
-| `resumable_uploads_chunk_received` | After each chunk |
-| `resumable_uploads_upload_complete` | After finalization |
-| `resumable_uploads_upload_deleted` | After cancellation |
+| `uploads_unleashed_upload_created` | After session created |
+| `uploads_unleashed_chunk_received` | After each chunk |
+| `uploads_unleashed_upload_complete` | After finalization |
+| `uploads_unleashed_upload_deleted` | After cancellation |
 
 See [docs/hooks.md](hooks.md) for detailed documentation.
 

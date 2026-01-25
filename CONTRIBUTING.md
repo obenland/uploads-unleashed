@@ -1,6 +1,6 @@
-# Contributing to Resumable Uploads
+# Contributing to Uploads Unleashed
 
-Thank you for your interest in contributing to Resumable Uploads! This guide will help you get started.
+Thank you for your interest in contributing to Uploads Unleashed! This guide will help you get started.
 
 ## Development Environment Setup
 
@@ -15,8 +15,8 @@ Thank you for your interest in contributing to Resumable Uploads! This guide wil
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/obenland/resumable-uploads.git
-   cd resumable-uploads
+   git clone https://github.com/obenland/uploads-unleashed.git
+   cd uploads-unleashed
    ```
 
 2. Install PHP dependencies:
@@ -144,7 +144,7 @@ npm run format
 ## Project Structure
 
 ```
-resumable-uploads/
+uploads-unleashed/
 ├── includes/               # PHP backend classes
 │   ├── class-rest-tus-controller.php
 │   ├── class-tus-upload-session.php

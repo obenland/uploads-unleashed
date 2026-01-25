@@ -28,17 +28,17 @@ jobs:
       - name: Create release zip
         run: |
           # Create archive using git archive (respects .gitattributes export-ignore)
-          git archive --format=zip --prefix=resumable-uploads/ HEAD > resumable-uploads.zip
+          git archive --format=zip --prefix=uploads-unleashed/ HEAD > uploads-unleashed.zip
 
           # Add build/ directory (not in git, but needed for distribution)
-          mkdir -p resumable-uploads
-          cp -r build/ resumable-uploads/
-          zip -r resumable-uploads.zip resumable-uploads/build/
+          mkdir -p uploads-unleashed
+          cp -r build/ uploads-unleashed/
+          zip -r uploads-unleashed.zip uploads-unleashed/build/
 
           # Clean up temp directory
-          rm -rf resumable-uploads
+          rm -rf uploads-unleashed
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: resumable-uploads.zip
+          files: uploads-unleashed.zip

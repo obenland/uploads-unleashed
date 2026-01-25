@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
-<ruleset name="Resumable Uploads">
-	<description>Coding standards for Resumable Uploads plugin</description>
+<ruleset name="Uploads Unleashed">
+	<description>Coding standards for Uploads Unleashed plugin</description>
 
 	<file>.</file>
 
@@ -17,7 +17,7 @@
 	<rule ref="WordPress.WP.I18n">
 		<properties>
 			<property name="text_domain" type="array">
-				<element value="resumable-uploads"/>
+				<element value="uploads-unleashed"/>
 			</property>
 		</properties>
 	</rule>

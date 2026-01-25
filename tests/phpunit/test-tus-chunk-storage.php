@@ -2,7 +2,7 @@
 /**
  * TUS Chunk Storage tests.
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 /**

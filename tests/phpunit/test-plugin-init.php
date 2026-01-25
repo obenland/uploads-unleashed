@@ -2,7 +2,7 @@
 /**
  * Plugin initialization tests.
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 /**
@@ -14,70 +14,70 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 * Test that required constants are defined.
 	 */
 	public function test_constants_are_defined() {
-		$this->assertTrue( defined( 'RESUMABLE_UPLOADS_VERSION' ) );
-		$this->assertTrue( defined( 'RESUMABLE_UPLOADS_PLUGIN_DIR' ) );
-		$this->assertTrue( defined( 'RESUMABLE_UPLOADS_PLUGIN_URL' ) );
+		$this->assertTrue( defined( 'UPLOADS_UNLEASHED_VERSION' ) );
+		$this->assertTrue( defined( 'UPLOADS_UNLEASHED_PLUGIN_DIR' ) );
+		$this->assertTrue( defined( 'UPLOADS_UNLEASHED_PLUGIN_URL' ) );
 
-		$this->assertSame( '0.2.0', RESUMABLE_UPLOADS_VERSION );
+		$this->assertSame( '0.1.0', UPLOADS_UNLEASHED_VERSION );
 	}
 
 	/**
 	 * Test that plugin init hook is registered.
 	 */
 	public function test_init_hook_registered() {
-		$this->assertSame( 10, has_action( 'plugins_loaded', 'resumable_uploads_init' ) );
+		$this->assertSame( 10, has_action( 'plugins_loaded', 'uploads_unleashed_init' ) );
 	}
 
 	/**
 	 * Test that script registration hook is registered.
 	 */
 	public function test_register_scripts_hook_registered() {
-		$this->assertSame( 10, has_action( 'init', 'resumable_uploads_register_scripts' ) );
+		$this->assertSame( 10, has_action( 'init', 'uploads_unleashed_register_scripts' ) );
 	}
 
 	/**
 	 * Test that enqueue hooks are registered.
 	 */
 	public function test_enqueue_hooks_registered() {
-		$this->assertSame( 10, has_action( 'wp_enqueue_media', 'resumable_uploads_enqueue_scripts' ) );
-		$this->assertSame( 10, has_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_scripts' ) );
-		$this->assertSame( 10, has_action( 'admin_print_scripts-media-new.php', 'resumable_uploads_enqueue_ui' ) );
-		$this->assertSame( 10, has_action( 'enqueue_block_editor_assets', 'resumable_uploads_enqueue_block_editor' ) );
+		$this->assertSame( 10, has_action( 'wp_enqueue_media', 'uploads_unleashed_enqueue_scripts' ) );
+		$this->assertSame( 10, has_action( 'admin_print_scripts-media-new.php', 'uploads_unleashed_enqueue_scripts' ) );
+		$this->assertSame( 10, has_action( 'admin_print_scripts-media-new.php', 'uploads_unleashed_enqueue_ui' ) );
+		$this->assertSame( 10, has_action( 'enqueue_block_editor_assets', 'uploads_unleashed_enqueue_block_editor' ) );
 	}
 
 	/**
 	 * Test that REST routes hook is registered.
 	 */
 	public function test_rest_routes_hook_registered() {
-		$this->assertSame( 10, has_action( 'rest_api_init', 'resumable_uploads_register_routes' ) );
+		$this->assertSame( 10, has_action( 'rest_api_init', 'uploads_unleashed_register_routes' ) );
 	}
 
 	/**
 	 * Test that OPTIONS headers filter is registered.
 	 */
 	public function test_options_headers_filter_registered() {
-		$this->assertSame( 10, has_filter( 'rest_post_dispatch', 'resumable_uploads_add_options_headers' ) );
+		$this->assertSame( 10, has_filter( 'rest_post_dispatch', 'uploads_unleashed_add_options_headers' ) );
 	}
 
 	/**
 	 * Test that cleanup action is registered.
 	 */
 	public function test_cleanup_action_registered() {
-		$this->assertSame( 10, has_action( 'resumable_uploads_cleanup', 'resumable_uploads_cleanup' ) );
+		$this->assertSame( 10, has_action( 'uploads_unleashed_cleanup', 'uploads_unleashed_cleanup' ) );
 	}
 
 	/**
 	 * Test that upload size limit filter is registered.
 	 */
 	public function test_upload_size_limit_filter_registered() {
-		$this->assertSame( 20, has_filter( 'upload_size_limit', 'resumable_uploads_filter_upload_size_limit' ) );
+		$this->assertSame( 20, has_filter( 'upload_size_limit', 'uploads_unleashed_filter_upload_size_limit' ) );
 	}
 
 	/**
 	 * Test that pending UI hook is registered.
 	 */
 	public function test_pending_ui_hook_registered() {
-		$this->assertSame( 10, has_action( 'post-plupload-upload-ui', 'resumable_uploads_pending_ui' ) );
+		$this->assertSame( 10, has_action( 'post-plupload-upload-ui', 'uploads_unleashed_pending_ui' ) );
 	}
 
 	/**
@@ -85,16 +85,16 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 */
 	public function test_cron_scheduled_on_init() {
 		// Clear any existing scheduled event.
-		$timestamp = wp_next_scheduled( 'resumable_uploads_cleanup' );
+		$timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
 		if ( $timestamp ) {
-			wp_unschedule_event( $timestamp, 'resumable_uploads_cleanup' );
+			wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
 		}
 
 		// Call init.
-		resumable_uploads_init();
+		uploads_unleashed_init();
 
 		// Verify cron is scheduled.
-		$this->assertNotFalse( wp_next_scheduled( 'resumable_uploads_cleanup' ) );
+		$this->assertNotFalse( wp_next_scheduled( 'uploads_unleashed_cleanup' ) );
 	}
 
 	/**
@@ -102,23 +102,23 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 */
 	public function test_cron_not_rescheduled() {
 		// Clear any existing scheduled event first.
-		$existing_timestamp = wp_next_scheduled( 'resumable_uploads_cleanup' );
+		$existing_timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
 		if ( $existing_timestamp ) {
-			wp_unschedule_event( $existing_timestamp, 'resumable_uploads_cleanup' );
+			wp_unschedule_event( $existing_timestamp, 'uploads_unleashed_cleanup' );
 		}
 
 		// Schedule the event at a specific future time.
 		$first_timestamp = time() + HOUR_IN_SECONDS;
-		wp_schedule_event( $first_timestamp, 'daily', 'resumable_uploads_cleanup' );
+		wp_schedule_event( $first_timestamp, 'daily', 'uploads_unleashed_cleanup' );
 
 		// Call init again.
-		resumable_uploads_init();
+		uploads_unleashed_init();
 
 		// Verify timestamp hasn't changed.
-		$this->assertSame( $first_timestamp, wp_next_scheduled( 'resumable_uploads_cleanup' ) );
+		$this->assertSame( $first_timestamp, wp_next_scheduled( 'uploads_unleashed_cleanup' ) );
 
 		// Cleanup.
-		wp_unschedule_event( $first_timestamp, 'resumable_uploads_cleanup' );
+		wp_unschedule_event( $first_timestamp, 'uploads_unleashed_cleanup' );
 	}
 
 	/**
@@ -126,23 +126,23 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 */
 	public function test_deactivation_clears_cron() {
 		// Clear any existing scheduled events first.
-		$existing_timestamp = wp_next_scheduled( 'resumable_uploads_cleanup' );
+		$existing_timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
 		if ( $existing_timestamp ) {
-			wp_unschedule_event( $existing_timestamp, 'resumable_uploads_cleanup' );
+			wp_unschedule_event( $existing_timestamp, 'uploads_unleashed_cleanup' );
 		}
 
 		// Schedule the event.
 		$timestamp = time() + HOUR_IN_SECONDS;
-		wp_schedule_event( $timestamp, 'daily', 'resumable_uploads_cleanup' );
+		wp_schedule_event( $timestamp, 'daily', 'uploads_unleashed_cleanup' );
 
 		// Verify it's scheduled.
-		$this->assertNotFalse( wp_next_scheduled( 'resumable_uploads_cleanup' ) );
+		$this->assertNotFalse( wp_next_scheduled( 'uploads_unleashed_cleanup' ) );
 
 		// Deactivate.
-		resumable_uploads_deactivate();
+		uploads_unleashed_deactivate();
 
 		// Verify cron is cleared.
-		$this->assertFalse( wp_next_scheduled( 'resumable_uploads_cleanup' ) );
+		$this->assertFalse( wp_next_scheduled( 'uploads_unleashed_cleanup' ) );
 	}
 
 	/**
@@ -150,15 +150,15 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 */
 	public function test_deactivation_handles_no_scheduled_event() {
 		// Clear any existing scheduled event.
-		$timestamp = wp_next_scheduled( 'resumable_uploads_cleanup' );
+		$timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
 		if ( $timestamp ) {
-			wp_unschedule_event( $timestamp, 'resumable_uploads_cleanup' );
+			wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
 		}
 
 		// Deactivate should not throw error.
-		resumable_uploads_deactivate();
+		uploads_unleashed_deactivate();
 
-		$this->assertFalse( wp_next_scheduled( 'resumable_uploads_cleanup' ) );
+		$this->assertFalse( wp_next_scheduled( 'uploads_unleashed_cleanup' ) );
 	}
 
 	/**
@@ -166,14 +166,14 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 */
 	public function test_pending_ui_output() {
 		ob_start();
-		resumable_uploads_pending_ui();
+		uploads_unleashed_pending_ui();
 		$output = ob_get_clean();
 
-		$this->assertStringContainsString( 'id="resumable-uploads-pending"', $output );
-		$this->assertStringContainsString( 'class="resumable-uploads-pending', $output );
+		$this->assertStringContainsString( 'id="uploads-unleashed-pending"', $output );
+		$this->assertStringContainsString( 'class="uploads-unleashed-pending', $output );
 		$this->assertStringContainsString( 'notice notice-alt notice-info', $output );
-		$this->assertStringContainsString( 'resumable-uploads-notice', $output );
-		$this->assertStringContainsString( 'resumable-uploads-list', $output );
+		$this->assertStringContainsString( 'uploads-unleashed-notice', $output );
+		$this->assertStringContainsString( 'uploads-unleashed-list', $output );
 		$this->assertStringContainsString( 'display: none', $output );
 	}
 
@@ -202,7 +202,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		$this->assertTrue( $storage->exists( $upload_id ) );
 
 		// Run cleanup.
-		resumable_uploads_cleanup();
+		uploads_unleashed_cleanup();
 
 		// Verify chunk is deleted.
 		$this->assertFalse( $storage->exists( $upload_id ) );
@@ -215,7 +215,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		$request  = new WP_REST_Request( 'GET', '/wp/v2/media/tus' );
 		$response = new WP_REST_Response();
 
-		$result = resumable_uploads_add_options_headers( $response, rest_get_server(), $request );
+		$result = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
 
 		$headers = $result->get_headers();
 		$this->assertArrayNotHasKey( 'Tus-Resumable', $headers );
@@ -228,7 +228,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/posts' );
 		$response = new WP_REST_Response();
 
-		$result = resumable_uploads_add_options_headers( $response, rest_get_server(), $request );
+		$result = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
 
 		$headers = $result->get_headers();
 		$this->assertArrayNotHasKey( 'Tus-Resumable', $headers );
@@ -241,7 +241,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus' );
 		$response = new WP_REST_Response();
 
-		$result = resumable_uploads_add_options_headers( $response, rest_get_server(), $request );
+		$result = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
 
 		$headers = $result->get_headers();
 		$this->assertArrayHasKey( 'Tus-Resumable', $headers );
@@ -257,7 +257,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus/abc-123' );
 		$response = new WP_REST_Response();
 
-		$result = resumable_uploads_add_options_headers( $response, rest_get_server(), $request );
+		$result = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
 
 		$headers = $result->get_headers();
 		$this->assertArrayHasKey( 'Tus-Resumable', $headers );
@@ -278,9 +278,9 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 */
 	public static function tear_down_after_class() {
 		// Clean up any scheduled events.
-		$timestamp = wp_next_scheduled( 'resumable_uploads_cleanup' );
+		$timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
 		if ( $timestamp ) {
-			wp_unschedule_event( $timestamp, 'resumable_uploads_cleanup' );
+			wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
 		}
 
 		// Clean up storage directory.

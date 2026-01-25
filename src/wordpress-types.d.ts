@@ -4,7 +4,7 @@
  * Shared type definitions for the WordPress global objects used across
  * multiple entry points (wp-uploader.ts, media-utils.ts, resumable-ui.ts).
  *
- * @package resumable-uploads
+ * @package uploads-unleashed
  */
 
 interface ApiFetchOptions {
@@ -82,7 +82,7 @@ declare global {
 				queue?: BackboneCollection;
 			};
 		};
-		resumableUploads?: {
+		uploadsUnleashed?: {
 			endpoint: string;
 			nonce: string;
 		};

@@ -1,4 +1,4 @@
-# Resumable Uploads
+# Uploads Unleashed
 
 TUS protocol support for resumable media uploads in WordPress.
 
@@ -25,8 +25,8 @@ Download the latest release zip and install through WordPress, or clone the repo
 
 ```bash
 cd wp-content/plugins
-git clone https://github.com/obenland/resumable-uploads.git
-cd resumable-uploads
+git clone https://github.com/obenland/uploads-unleashed.git
+cd uploads-unleashed
 composer install --no-dev
 npm install
 npm run build
