@@ -10,9 +10,9 @@ const path = require( 'path' );
 module.exports = {
 	...defaultConfig,
 	entry: {
-		index: path.resolve( __dirname, 'src/index.ts' ),
-		'wp-uploader': path.resolve( __dirname, 'src/wp-uploader.ts' ),
-		'resumable-ui': path.resolve( __dirname, 'src/resumable-ui.ts' ),
-		'media-utils': path.resolve( __dirname, 'src/media-utils.ts' ),
+		'block-editor': path.resolve( __dirname, 'src/block-editor.js' ),
+		plupload: path.resolve( __dirname, 'src/plupload.js' ),
+		'resume-ui': path.resolve( __dirname, 'src/resume-ui.js' ),
+		'tus-client': path.resolve( __dirname, 'src/tus-client.js' ),
 	},
 };

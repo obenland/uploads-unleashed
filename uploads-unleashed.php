@@ -49,13 +49,13 @@ add_action( 'plugins_loaded', 'uploads_unleashed_init' );
  */
 function uploads_unleashed_register_scripts() {
 	// Register core TUS library.
-	$index_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/index.asset.php';
+	$tus_client_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/tus-client.asset.php';
 
 	wp_register_script(
 		'uploads-unleashed',
-		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/index.js',
-		$index_asset['dependencies'],
-		$index_asset['version'],
+		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/tus-client.js',
+		$tus_client_asset['dependencies'],
+		$tus_client_asset['version'],
 		true
 	);
 	wp_localize_script(
@@ -68,10 +68,10 @@ function uploads_unleashed_register_scripts() {
 	);
 
 	// Register and enqueue the pending uploads UI script.
-	$ui_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/resumable-ui.asset.php';
+	$ui_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/resume-ui.asset.php';
 	wp_register_script(
 		'uploads-unleashed-ui',
-		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/resumable-ui.js',
+		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/resume-ui.js',
 		array_merge( $ui_asset['dependencies'], array( 'uploads-unleashed' ) ),
 		$ui_asset['version'],
 		true
@@ -81,30 +81,30 @@ function uploads_unleashed_register_scripts() {
 
 	wp_register_style(
 		'uploads-unleashed-ui',
-		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/resumable-ui.css',
+		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/resume-ui.css',
 		array(),
 		$ui_asset['version']
 	);
 
-	// Register WordPress media uploader integration.
-	$uploader_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/wp-uploader.asset.php';
+	// Register WordPress media uploader integration (plupload-based).
+	$plupload_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/plupload.asset.php';
 
 	wp_register_script(
-		'uploads-unleashed-wp-uploader',
-		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/wp-uploader.js',
-		array_merge( $uploader_asset['dependencies'], array( 'uploads-unleashed', 'wp-plupload', 'plupload-handlers' ) ),
-		$uploader_asset['version'],
+		'uploads-unleashed-plupload',
+		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/plupload.js',
+		array_merge( $plupload_asset['dependencies'], array( 'uploads-unleashed', 'wp-plupload', 'plupload-handlers' ) ),
+		$plupload_asset['version'],
 		true
 	);
 
 	// Register block editor integration.
-	$media_utils_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/media-utils.asset.php';
+	$block_editor_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/block-editor.asset.php';
 
 	wp_register_script(
-		'uploads-unleashed-media-utils',
-		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/media-utils.js',
-		array_merge( $media_utils_asset['dependencies'], array( 'uploads-unleashed', 'wp-api-fetch' ) ),
-		$media_utils_asset['version'],
+		'uploads-unleashed-block-editor',
+		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/block-editor.js',
+		array_merge( $block_editor_asset['dependencies'], array( 'uploads-unleashed', 'wp-api-fetch' ) ),
+		$block_editor_asset['version'],
 		true
 	);
 }
@@ -116,7 +116,7 @@ add_action( 'init', 'uploads_unleashed_register_scripts' );
  * @since 0.1.0
  */
 function uploads_unleashed_enqueue_scripts() {
-	wp_enqueue_script( 'uploads-unleashed-wp-uploader' );
+	wp_enqueue_script( 'uploads-unleashed-plupload' );
 }
 add_action( 'wp_enqueue_media', 'uploads_unleashed_enqueue_scripts' );
 add_action( 'admin_print_scripts-media-new.php', 'uploads_unleashed_enqueue_scripts' );
@@ -138,7 +138,7 @@ add_action( 'admin_print_scripts-media-new.php', 'uploads_unleashed_enqueue_ui' 
  * @since 0.1.0
  */
 function uploads_unleashed_enqueue_block_editor() {
-	wp_enqueue_script( 'uploads-unleashed-media-utils' );
+	wp_enqueue_script( 'uploads-unleashed-block-editor' );
 }
 add_action( 'enqueue_block_editor_assets', 'uploads_unleashed_enqueue_block_editor' );
 
