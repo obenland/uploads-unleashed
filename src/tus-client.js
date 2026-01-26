@@ -20,7 +20,7 @@ const UPLOAD_EXPIRATION_MS = 24 * 60 * 60 * 1000;
  * @return {string} TUS endpoint URL.
  */
 function getEndpoint() {
-	return window.uploadsUnleashed?.endpoint || '/wp-json/wp/v2/media/tus';
+	return window.uploadsUnleashed?.endpoint || '/wp-json/wp/v2/media';
 }
 
 /**

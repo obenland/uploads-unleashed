@@ -33,7 +33,7 @@ jest.mock( 'tus-js-client', () => {
 // Setup window.uploadsUnleashed
 beforeEach( () => {
 	window.uploadsUnleashed = {
-		endpoint: '/wp-json/wp/v2/media/tus',
+		endpoint: '/wp-json/wp/v2/media',
 		nonce: 'test-nonce',
 	};
 	capturedCallbacks = {};
@@ -51,7 +51,7 @@ describe( 'upload', () => {
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
 			expect.objectContaining( {
-				endpoint: '/wp-json/wp/v2/media/tus',
+				endpoint: '/wp-json/wp/v2/media',
 				headers: { 'X-WP-Nonce': 'test-nonce' },
 				metadata: {
 					filename: 'test.txt',
@@ -127,7 +127,7 @@ describe( 'upload', () => {
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
 			expect.objectContaining( {
-				endpoint: '/wp-json/wp/v2/media/tus',
+				endpoint: '/wp-json/wp/v2/media',
 				headers: { 'X-WP-Nonce': '' },
 			} )
 		);

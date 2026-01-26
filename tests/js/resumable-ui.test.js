@@ -24,7 +24,7 @@ beforeEach( () => {
 
 	// Setup uploadsUnleashed config
 	window.uploadsUnleashed = {
-		endpoint: '/wp-json/wp/v2/media/tus',
+		endpoint: '/wp-json/wp/v2/media',
 		nonce: 'test-nonce',
 	};
 
@@ -69,7 +69,7 @@ describe( 'parsePendingUploads', () => {
 
 	it( 'should parse TUS fingerprints with expiration from localStorage', () => {
 		// Add a mock TUS fingerprint entry with expiration (4-part key format)
-		const endpoint = '/wp-json/wp/v2/media/tus';
+		const endpoint = '/wp-json/wp/v2/media';
 		const filename = encodeURIComponent( 'test.txt' );
 		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
 		const expiresAt = Date.now() + 86400000; // 24 hours from now
@@ -104,13 +104,13 @@ describe( 'parsePendingUploads', () => {
 
 		// Entry doesn't match our endpoint, so would be filtered
 		const key = localStorage.key( 0 );
-		expect( key ).not.toContain( '/wp-json/wp/v2/media/tus' );
+		expect( key ).not.toContain( '/wp-json/wp/v2/media' );
 	} );
 } );
 
 describe( 'parsePendingUploads expiration handling', () => {
 	it( 'should parse key with 4 parts correctly', () => {
-		const endpoint = '/wp-json/wp/v2/media/tus';
+		const endpoint = '/wp-json/wp/v2/media';
 		const filename = encodeURIComponent( 'test.txt' );
 		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
 		const expiresAt = Date.now() + 86400000;
@@ -126,7 +126,7 @@ describe( 'parsePendingUploads expiration handling', () => {
 	} );
 
 	it( 'should parse fingerprint parts correctly', () => {
-		const endpoint = '/wp-json/wp/v2/media/tus';
+		const endpoint = '/wp-json/wp/v2/media';
 		const filename = encodeURIComponent( 'test file.txt' );
 		const fingerprint = `tus-br|${ filename }|2048|9876543210|${ endpoint }`;
 
@@ -160,7 +160,7 @@ describe( 'parsePendingUploads expiration handling', () => {
 	} );
 
 	it( 'should remove expired entries from localStorage', () => {
-		const endpoint = '/wp-json/wp/v2/media/tus';
+		const endpoint = '/wp-json/wp/v2/media';
 		const filename = encodeURIComponent( 'test.txt' );
 		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
 		const pastExpiry = Date.now() - 1000;
@@ -183,7 +183,7 @@ describe( 'parsePendingUploads expiration handling', () => {
 	} );
 
 	it( 'should keep non-expired entries in localStorage', () => {
-		const endpoint = '/wp-json/wp/v2/media/tus';
+		const endpoint = '/wp-json/wp/v2/media';
 		const filename = encodeURIComponent( 'test.txt' );
 		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
 		const futureExpiry = Date.now() + 86400000;
@@ -248,7 +248,7 @@ describe( 'cancelServerUpload', () => {
 		const mockFetch = jest.fn().mockResolvedValue( {} );
 		global.fetch = mockFetch;
 
-		const uploadUrl = '/wp-json/wp/v2/media/tus/test-id';
+		const uploadUrl = '/wp-json/wp/v2/media/test-id';
 
 		// Simulate the cancelServerUpload behavior
 		await fetch( uploadUrl, {
@@ -270,7 +270,7 @@ describe( 'cancelServerUpload', () => {
 
 		// Should not throw
 		try {
-			await fetch( '/wp-json/wp/v2/media/tus/test-id', {
+			await fetch( '/wp-json/wp/v2/media/test-id', {
 				method: 'DELETE',
 				headers: { 'X-WP-Nonce': 'test-nonce' },
 			} );

@@ -259,7 +259,7 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		wp_set_current_user( $admin_id );
 
 		$session = new TUS_Upload_Session();
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 
 		// Create sessions with specific upload IDs and lengths.
 		$upload_id1 = $session->create(
@@ -303,7 +303,7 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		wp_set_current_user( $admin_id );
 
 		$session = new TUS_Upload_Session();
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 
 		// Create one with session, one without.
 		$upload_id_with_session = $session->create(

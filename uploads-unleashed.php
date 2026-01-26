@@ -65,7 +65,7 @@ function uploads_unleashed_register_scripts() {
 		'uploads-unleashed',
 		'uploadsUnleashed',
 		array(
-			'endpoint' => rest_url( 'wp/v2/media/tus' ),
+			'endpoint' => rest_url( 'wp/v2/media' ),
 			'nonce'    => wp_create_nonce( 'wp_rest' ),
 		)
 	);
@@ -190,7 +190,7 @@ function uploads_unleashed_add_options_headers( WP_REST_Response $response, WP_R
 	}
 
 	$route = $request->get_route();
-	if ( 0 !== strpos( $route, '/wp/v2/media/tus' ) ) {
+	if ( 0 !== strpos( $route, '/wp/v2/media' ) ) {
 		return $response;
 	}
 
@@ -198,6 +198,97 @@ function uploads_unleashed_add_options_headers( WP_REST_Response $response, WP_R
 	return $controller->add_options_headers( $response, $request );
 }
 add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_options_headers', 10, 3 );
+
+/**
+ * Adds TUS headers to the CORS allowed headers list.
+ *
+ * These are request headers that the server accepts from cross-origin clients.
+ *
+ * @since 0.2.0
+ *
+ * @param string[] $headers The list of allowed headers.
+ * @return string[] Modified list with TUS headers.
+ */
+function uploads_unleashed_cors_allowed_headers( array $headers ): array {
+	return array_merge(
+		$headers,
+		array(
+			'Tus-Resumable',
+			'Upload-Length',
+			'Upload-Offset',
+			'Upload-Metadata',
+			'Upload-Checksum',
+			'X-HTTP-Method-Override',
+		)
+	);
+}
+add_filter( 'rest_allowed_cors_headers', 'uploads_unleashed_cors_allowed_headers' );
+
+/**
+ * Exposes TUS headers in CORS responses.
+ *
+ * These are response headers that the browser allows JavaScript to read
+ * in cross-origin contexts.
+ *
+ * @since 0.2.0
+ *
+ * @param string[] $headers The list of exposed headers.
+ * @return string[] Modified list with TUS headers.
+ */
+function uploads_unleashed_cors_exposed_headers( array $headers ): array {
+	return array_merge(
+		$headers,
+		array(
+			'Tus-Resumable',
+			'Upload-Offset',
+			'Upload-Length',
+			'Upload-Expires',
+			'Tus-Version',
+			'Tus-Extension',
+			'Tus-Max-Size',
+			'Location',
+		)
+	);
+}
+add_filter( 'rest_exposed_cors_headers', 'uploads_unleashed_cors_exposed_headers' );
+
+/**
+ * Intercepts TUS upload creation on the standard media endpoint.
+ *
+ * Detects POST requests to /wp/v2/media with an Upload-Length header
+ * and routes them to the TUS controller for session creation.
+ *
+ * @since 0.2.0
+ *
+ * @param mixed           $result  Response to replace the requested version with. Can be anything
+ *                                 a normal endpoint can return, or null to not hijack the request.
+ * @param WP_REST_Server  $server  Server instance.
+ * @param WP_REST_Request $request Request used to generate the response.
+ * @return mixed|WP_REST_Response|WP_Error Original result, TUS response, or error.
+ */
+function uploads_unleashed_intercept_tus_creation( $result, $server, $request ) {
+	if ( 'POST' !== $request->get_method() ) {
+		return $result;
+	}
+
+	if ( '/wp/v2/media' !== $request->get_route() ) {
+		return $result;
+	}
+
+	if ( null === $request->get_header( 'upload_length' ) ) {
+		return $result;
+	}
+
+	$controller = new REST_TUS_Controller();
+
+	$permission = $controller->create_item_permissions_check( $request );
+	if ( is_wp_error( $permission ) ) {
+		return $permission;
+	}
+
+	return $controller->create_item( $request );
+}
+add_filter( 'rest_pre_dispatch', 'uploads_unleashed_intercept_tus_creation', 10, 3 );
 
 /**
  * Cleans up expired uploads.

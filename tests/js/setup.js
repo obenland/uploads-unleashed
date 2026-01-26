@@ -30,7 +30,7 @@ Object.defineProperty( window, 'localStorage', { value: localStorageMock } );
 // Mock window.uploadsUnleashed config
 Object.defineProperty( window, 'uploadsUnleashed', {
 	value: {
-		endpoint: '/wp-json/wp/v2/media/tus',
+		endpoint: '/wp-json/wp/v2/media',
 		nonce: 'test-nonce-123',
 		chunkSize: 5 * 1024 * 1024,
 	},
