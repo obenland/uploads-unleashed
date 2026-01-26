@@ -28,7 +28,8 @@
 		"@wordpress/scripts": "^31.3.0"
 	},
 	"scripts": {
-		"build": "wp-scripts build",
+		"build": "wp-scripts build && npm run build:vendor",
+		"build:vendor": "terser src/vendor/tus.js -o build/tus.min.js --compress --mangle",
 		"dev": "wp-scripts start",
 		"format": "wp-scripts format",
 		"wp-env": "wp-env",

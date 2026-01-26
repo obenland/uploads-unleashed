@@ -48,6 +48,9 @@ add_action( 'plugins_loaded', 'uploads_unleashed_init' );
  * @since 0.1.0
  */
 function uploads_unleashed_register_scripts() {
+	// Register vendored tus-js-client library.
+	wp_register_script( 'uploads-unleashed-tus', UPLOADS_UNLEASHED_PLUGIN_URL . 'build/tus.min.js', array(), '4.3.1', true );
+
 	// Register core TUS library.
 	$tus_client_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/tus-client.asset.php';
 
