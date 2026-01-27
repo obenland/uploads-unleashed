@@ -60,6 +60,67 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that CORS allowed headers filter is registered.
+	 */
+	public function test_cors_allowed_headers_filter_registered() {
+		$this->assertSame( 10, has_filter( 'rest_allowed_cors_headers', 'uploads_unleashed_cors_allowed_headers' ) );
+	}
+
+	/**
+	 * Test that CORS exposed headers filter is registered.
+	 */
+	public function test_cors_exposed_headers_filter_registered() {
+		$this->assertSame( 10, has_filter( 'rest_exposed_cors_headers', 'uploads_unleashed_cors_exposed_headers' ) );
+	}
+
+	/**
+	 * Test that CORS allowed headers include TUS headers.
+	 */
+	public function test_cors_allowed_headers_includes_tus_headers() {
+		$headers = uploads_unleashed_cors_allowed_headers( array() );
+
+		$this->assertContains( 'Tus-Resumable', $headers );
+		$this->assertContains( 'Upload-Length', $headers );
+		$this->assertContains( 'Upload-Offset', $headers );
+		$this->assertContains( 'Upload-Metadata', $headers );
+		$this->assertContains( 'Upload-Checksum', $headers );
+		$this->assertContains( 'X-HTTP-Method-Override', $headers );
+	}
+
+	/**
+	 * Test that CORS exposed headers include TUS headers.
+	 */
+	public function test_cors_exposed_headers_includes_tus_headers() {
+		$headers = uploads_unleashed_cors_exposed_headers( array() );
+
+		$this->assertContains( 'Tus-Resumable', $headers );
+		$this->assertContains( 'Upload-Offset', $headers );
+		$this->assertContains( 'Upload-Length', $headers );
+		$this->assertContains( 'Upload-Expires', $headers );
+		$this->assertContains( 'Location', $headers );
+	}
+
+	/**
+	 * Test that CORS allowed headers preserves existing headers.
+	 */
+	public function test_cors_allowed_headers_preserves_existing() {
+		$headers = uploads_unleashed_cors_allowed_headers( array( 'Authorization' ) );
+
+		$this->assertContains( 'Authorization', $headers );
+		$this->assertContains( 'Tus-Resumable', $headers );
+	}
+
+	/**
+	 * Test that CORS exposed headers preserves existing headers.
+	 */
+	public function test_cors_exposed_headers_preserves_existing() {
+		$headers = uploads_unleashed_cors_exposed_headers( array( 'X-WP-Total' ) );
+
+		$this->assertContains( 'X-WP-Total', $headers );
+		$this->assertContains( 'Tus-Resumable', $headers );
+	}
+
+	/**
 	 * Test that cleanup action is registered.
 	 */
 	public function test_cleanup_action_registered() {
@@ -212,7 +273,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 * Test OPTIONS headers filter ignores non-OPTIONS requests.
 	 */
 	public function test_options_headers_ignores_non_options() {
-		$request  = new WP_REST_Request( 'GET', '/wp/v2/media/tus' );
+		$request  = new WP_REST_Request( 'GET', '/wp/v2/media' );
 		$response = new WP_REST_Response();
 
 		$result = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
@@ -238,7 +299,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 * Test OPTIONS headers filter adds TUS headers for TUS route.
 	 */
 	public function test_options_headers_adds_tus_headers() {
-		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus' );
+		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media' );
 		$response = new WP_REST_Response();
 
 		$result = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
@@ -254,7 +315,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 * Test OPTIONS headers filter works for upload-specific routes.
 	 */
 	public function test_options_headers_works_for_upload_routes() {
-		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus/abc-123' );
+		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/00000000-0000-4000-8000-000000000000' );
 		$response = new WP_REST_Response();
 
 		$result = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
@@ -269,8 +330,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	public function test_routes_are_registered() {
 		$routes = rest_get_server()->get_routes();
 
-		$this->assertArrayHasKey( '/wp/v2/media/tus', $routes );
-		$this->assertArrayHasKey( '/wp/v2/media/tus/(?P<id>[a-zA-Z0-9-]+)', $routes );
+		$this->assertArrayHasKey( '/wp/v2/media/(?P<id>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', $routes );
 	}
 
 	/**

@@ -5,3 +5,6 @@
 # Dependencies
 /vendor/
 /node_modules/
+
+# Vendored third-party libraries
+/src/vendor/

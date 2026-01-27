@@ -96,7 +96,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 			$data
 		);
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', (string) $data['length'] );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( $data['filename'] ) );
@@ -299,7 +299,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		}
 
 		// Try to create an upload larger than available space.
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', (string) ( $expected_space + 1024 ) );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'huge.txt' ) );

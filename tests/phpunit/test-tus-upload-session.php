@@ -59,7 +59,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that create returns a valid UUID.
 	 */
 	public function test_create_returns_valid_uuid() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -80,7 +80,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that create stores correct session data.
 	 */
 	public function test_create_stores_correct_session_data() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'document.pdf',
@@ -107,7 +107,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that create sanitizes the filename.
 	 */
 	public function test_create_sanitizes_filename() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => '../../../etc/passwd',
@@ -136,7 +136,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that update_offset updates the offset correctly.
 	 */
 	public function test_update_offset_updates_correctly() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -158,7 +158,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that update_offset preserves other session data.
 	 */
 	public function test_update_offset_preserves_other_data() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -192,7 +192,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that delete removes the session.
 	 */
 	public function test_delete_removes_session() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -214,7 +214,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that verify_ownership returns true for the owner.
 	 */
 	public function test_verify_ownership_returns_true_for_owner() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -231,7 +231,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that verify_ownership returns false for different user.
 	 */
 	public function test_verify_ownership_returns_false_for_different_user() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -260,7 +260,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that is_expired returns false for fresh session.
 	 */
 	public function test_is_expired_returns_false_for_fresh_session() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -286,7 +286,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that session expiration is set correctly.
 	 */
 	public function test_session_expiration_is_set_correctly() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -312,7 +312,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 		};
 		add_filter( 'uploads_unleashed_session_data', $filter_callback );
 
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.txt',
@@ -334,7 +334,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that create handles missing filename gracefully.
 	 */
 	public function test_create_handles_missing_filename() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filetype' => 'text/plain',
@@ -352,7 +352,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 * Tests that create handles missing filetype gracefully.
 	 */
 	public function test_create_handles_missing_filetype() {
-		$request   = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$upload_id = $this->session->create(
 			array(
 				'filename' => 'test.bin',

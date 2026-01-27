@@ -2,7 +2,7 @@
  * Tests for the TUS uploader core module.
  */
 
-import { createUpload, uploadFile, abortUpload } from '../../src/index';
+import { upload, abort } from '../../src/tus-client';
 import * as tus from 'tus-js-client';
 
 // Store callbacks for testing
@@ -33,25 +33,25 @@ jest.mock( 'tus-js-client', () => {
 // Setup window.uploadsUnleashed
 beforeEach( () => {
 	window.uploadsUnleashed = {
-		endpoint: '/wp-json/wp/v2/media/tus',
+		endpoint: '/wp-json/wp/v2/media',
 		nonce: 'test-nonce',
 	};
 	capturedCallbacks = {};
 	jest.clearAllMocks();
 } );
 
-describe( 'createUpload', () => {
-	it( 'creates a TUS upload instance', () => {
+describe( 'upload', () => {
+	it( 'creates a TUS upload instance with correct options', () => {
 		const file = new File( [ 'test content' ], 'test.txt', {
 			type: 'text/plain',
 		} );
 
-		const upload = createUpload( file );
+		upload( file );
 
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
 			expect.objectContaining( {
-				endpoint: '/wp-json/wp/v2/media/tus',
+				endpoint: '/wp-json/wp/v2/media',
 				headers: { 'X-WP-Nonce': 'test-nonce' },
 				metadata: {
 					filename: 'test.txt',
@@ -59,13 +59,12 @@ describe( 'createUpload', () => {
 				},
 			} )
 		);
-		expect( upload ).toBeDefined();
 	} );
 
-	it( 'uses default chunk size of 5MB', () => {
+	it( 'uses fixed 5MB chunk size', () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		createUpload( file );
+		upload( file );
 
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
@@ -75,23 +74,10 @@ describe( 'createUpload', () => {
 		);
 	} );
 
-	it( 'allows custom chunk size', () => {
-		const file = new File( [ 'test' ], 'test.txt' );
-
-		createUpload( file, { chunkSize: 1024 * 1024 } );
-
-		expect( tus.Upload ).toHaveBeenCalledWith(
-			file,
-			expect.objectContaining( {
-				chunkSize: 1024 * 1024,
-			} )
-		);
-	} );
-
 	it( 'sets retry delays', () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		createUpload( file );
+		upload( file );
 
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
@@ -101,10 +87,10 @@ describe( 'createUpload', () => {
 		);
 	} );
 
-	it( 'sets removeFingerprintOnSuccess to true by default', () => {
+	it( 'sets removeFingerprintOnSuccess to true', () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		createUpload( file );
+		upload( file );
 
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
@@ -119,7 +105,7 @@ describe( 'createUpload', () => {
 		// Force no type
 		Object.defineProperty( file, 'type', { value: '' } );
 
-		createUpload( file );
+		upload( file );
 
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
@@ -136,253 +122,21 @@ describe( 'createUpload', () => {
 		window.uploadsUnleashed = undefined;
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		createUpload( file );
+		upload( file );
 
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
 			expect.objectContaining( {
-				endpoint: '/wp-json/wp/v2/media/tus',
+				endpoint: '/wp-json/wp/v2/media',
 				headers: { 'X-WP-Nonce': '' },
 			} )
 		);
 	} );
 
-	describe( 'onProgress callback', () => {
-		it( 'calculates percentage and calls user callback', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onProgress = jest.fn();
-
-			createUpload( file, { onProgress } );
-
-			// Simulate progress
-			capturedCallbacks.onProgress( 500, 1000 );
-
-			expect( onProgress ).toHaveBeenCalledWith( '50.00', 500, 1000 );
-		} );
-
-		it( 'works without user callback', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-
-			createUpload( file );
-
-			// Should not throw
-			expect( () => {
-				capturedCallbacks.onProgress( 500, 1000 );
-			} ).not.toThrow();
-		} );
-	} );
-
-	describe( 'onSuccess callback', () => {
-		it( 'parses attachment data from response body', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onSuccess = jest.fn();
-			const attachmentData = { id: 123, title: { rendered: 'Test' } };
-
-			createUpload( file, { onSuccess } );
-
-			const mockPayload = {
-				lastResponse: {
-					getStatus: () => 200,
-					getBody: () => JSON.stringify( attachmentData ),
-				},
-			};
-
-			capturedCallbacks.onSuccess( mockPayload );
-
-			expect( onSuccess ).toHaveBeenCalledWith(
-				attachmentData,
-				expect.anything()
-			);
-		} );
-
-		it( 'handles empty response body', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onSuccess = jest.fn();
-
-			createUpload( file, { onSuccess } );
-
-			const mockPayload = {
-				lastResponse: {
-					getStatus: () => 200,
-					getBody: () => null,
-				},
-			};
-
-			capturedCallbacks.onSuccess( mockPayload );
-
-			expect( onSuccess ).toHaveBeenCalledWith( null, expect.anything() );
-		} );
-
-		it( 'handles invalid JSON in response body', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onSuccess = jest.fn();
-
-			createUpload( file, { onSuccess } );
-
-			const mockPayload = {
-				lastResponse: {
-					getStatus: () => 200,
-					getBody: () => 'not valid json',
-				},
-			};
-
-			capturedCallbacks.onSuccess( mockPayload );
-
-			expect( onSuccess ).toHaveBeenCalledWith( null, expect.anything() );
-		} );
-
-		it( 'calls onError for error status codes', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onError = jest.fn();
-			const onSuccess = jest.fn();
-
-			createUpload( file, { onError, onSuccess } );
-
-			const mockPayload = {
-				lastResponse: {
-					getStatus: () => 400,
-					getBody: () => JSON.stringify( { message: 'Bad request' } ),
-				},
-			};
-
-			capturedCallbacks.onSuccess( mockPayload );
-
-			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( { message: 'Bad request' } )
-			);
-			expect( onSuccess ).not.toHaveBeenCalled();
-		} );
-
-		it( 'uses default error message for error status without message', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onError = jest.fn();
-
-			createUpload( file, { onError } );
-
-			const mockPayload = {
-				lastResponse: {
-					getStatus: () => 500,
-					getBody: () => null,
-				},
-			};
-
-			capturedCallbacks.onSuccess( mockPayload );
-
-			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( { message: 'Upload failed' } )
-			);
-		} );
-	} );
-
-	describe( 'onError callback', () => {
-		it( 'calls user callback with error', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onError = jest.fn();
-
-			createUpload( file, { onError } );
-
-			const error = new Error( 'Network error' );
-			capturedCallbacks.onError( error );
-
-			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( { message: 'Network error' } )
-			);
-		} );
-
-		it( 'extracts WordPress error message from TUS DetailedError', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onError = jest.fn();
-
-			createUpload( file, { onError } );
-
-			const detailedError = {
-				message: 'TUS error',
-				originalResponse: {
-					getBody: () =>
-						JSON.stringify( {
-							message: 'WordPress error message',
-						} ),
-				},
-			};
-
-			capturedCallbacks.onError( detailedError );
-
-			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( {
-					message: 'WordPress error message',
-				} )
-			);
-		} );
-
-		it( 'handles missing originalResponse body', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onError = jest.fn();
-
-			createUpload( file, { onError } );
-
-			const detailedError = {
-				message: 'TUS error',
-				originalResponse: {
-					getBody: () => null,
-				},
-			};
-
-			capturedCallbacks.onError( detailedError );
-
-			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( { message: 'TUS error' } )
-			);
-		} );
-
-		it( 'handles invalid JSON in originalResponse', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onError = jest.fn();
-
-			createUpload( file, { onError } );
-
-			const detailedError = {
-				message: 'TUS error',
-				originalResponse: {
-					getBody: () => 'not json',
-				},
-			};
-
-			capturedCallbacks.onError( detailedError );
-
-			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( { message: 'TUS error' } )
-			);
-		} );
-
-		it( 'uses default message when error has no message', () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const onError = jest.fn();
-
-			createUpload( file, { onError } );
-
-			capturedCallbacks.onError( {} );
-
-			expect( onError ).toHaveBeenCalledWith(
-				expect.objectContaining( { message: 'Upload failed' } )
-			);
-		} );
-	} );
-} );
-
-describe( 'uploadFile', () => {
-	it( 'returns a promise', () => {
-		const file = new File( [ 'test' ], 'test.txt' );
-
-		const result = uploadFile( file );
-
-		expect( result ).toBeInstanceOf( Promise );
-	} );
-
 	it( 'starts the upload', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		// Start upload but don't wait for completion
-		uploadFile( file );
+		upload( file );
 
 		// Wait for findPreviousUploads to complete
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -394,7 +148,7 @@ describe( 'uploadFile', () => {
 	it( 'checks for previous uploads to resume', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		uploadFile( file );
+		upload( file );
 
 		// Wait for async operations
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -405,35 +159,35 @@ describe( 'uploadFile', () => {
 
 	it( 'resumes from previous upload when available', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
-		const previousUpload = { uploadUrl: '/previous' };
+		const previousUploadData = { uploadUrl: '/previous' };
 
 		// Create the upload first to get the mock instance
-		uploadFile( file );
+		upload( file );
 
 		// Get the mock upload instance that was just created
 		const mockUpload = tus.Upload.mock.results[ 0 ]?.value;
 
 		// Reconfigure findPreviousUploads for next call
 		mockUpload.findPreviousUploads.mockResolvedValueOnce( [
-			previousUpload,
+			previousUploadData,
 		] );
 
 		// Create another upload that will use the reconfigured mock
-		uploadFile( file );
+		upload( file );
 
 		// Wait for async operations
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
 		expect( mockUpload?.resumeFromPreviousUpload ).toHaveBeenCalledWith(
-			previousUpload
+			previousUploadData
 		);
 	} );
 
 	it( 'resolves with attachment data on success', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
-		const attachmentData = { id: 123 };
+		const attachmentData = { id: 123, title: { rendered: 'Test' } };
 
-		const promise = uploadFile( file );
+		const promise = upload( file );
 
 		// Wait for upload to start
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -447,80 +201,242 @@ describe( 'uploadFile', () => {
 		} );
 
 		const result = await promise;
-		expect( result.attachment ).toEqual( attachmentData );
-		expect( result.upload ).toBeDefined();
+		expect( result ).toEqual( attachmentData );
 	} );
 
-	it( 'calls user onSuccess callback', async () => {
+	it( 'rejects when no attachment data in response', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
-		const onSuccess = jest.fn();
-		const attachmentData = { id: 123 };
 
-		const promise = uploadFile( file, { onSuccess } );
+		const promise = upload( file );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
 		capturedCallbacks.onSuccess( {
 			lastResponse: {
 				getStatus: () => 200,
-				getBody: () => JSON.stringify( attachmentData ),
+				getBody: () => null,
 			},
 		} );
 
-		await promise;
-		expect( onSuccess ).toHaveBeenCalledWith(
-			attachmentData,
-			expect.anything()
+		await expect( promise ).rejects.toThrow(
+			'Upload completed but no attachment data received'
 		);
 	} );
 
-	it( 'rejects on error', async () => {
+	it( 'rejects when response body is invalid JSON', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		const promise = uploadFile( file );
+		const promise = upload( file );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-		capturedCallbacks.onError( new Error( 'Upload failed' ) );
+		capturedCallbacks.onSuccess( {
+			lastResponse: {
+				getStatus: () => 200,
+				getBody: () => 'not valid json',
+			},
+		} );
+
+		await expect( promise ).rejects.toThrow(
+			'Upload completed but no attachment data received'
+		);
+	} );
+
+	it( 'rejects on error status codes', async () => {
+		const file = new File( [ 'test' ], 'test.txt' );
+
+		const promise = upload( file );
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		capturedCallbacks.onSuccess( {
+			lastResponse: {
+				getStatus: () => 400,
+				getBody: () => JSON.stringify( { message: 'Bad request' } ),
+			},
+		} );
+
+		await expect( promise ).rejects.toThrow( 'Bad request' );
+	} );
+
+	it( 'uses default error message for error status without body', async () => {
+		const file = new File( [ 'test' ], 'test.txt' );
+
+		const promise = upload( file );
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		capturedCallbacks.onSuccess( {
+			lastResponse: {
+				getStatus: () => 500,
+				getBody: () => null,
+			},
+		} );
 
 		await expect( promise ).rejects.toThrow( 'Upload failed' );
 	} );
 
-	it( 'calls user onError callback', async () => {
-		const file = new File( [ 'test' ], 'test.txt' );
-		const onError = jest.fn();
+	describe( 'onProgress callback', () => {
+		it( 'calls onProgress with percent and bytes', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const onProgress = jest.fn();
 
-		const promise = uploadFile( file, { onError } );
+			upload( file, { onProgress } );
 
-		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-		capturedCallbacks.onError( new Error( 'Upload failed' ) );
+			// Simulate progress: 500 of 1000 bytes
+			capturedCallbacks.onProgress( 500, 1000 );
 
-		try {
-			await promise;
-		} catch {
-			// Expected to reject
-		}
+			expect( onProgress ).toHaveBeenCalledWith( 50, 500, 1000 );
+		} );
 
-		expect( onError ).toHaveBeenCalled();
+		it( 'works without onProgress callback', () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			upload( file );
+
+			// Should not throw
+			expect( () => {
+				capturedCallbacks.onProgress( 500, 1000 );
+			} ).not.toThrow();
+		} );
+	} );
+
+	describe( 'onError callback', () => {
+		it( 'rejects on upload error', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			capturedCallbacks.onError( new Error( 'Network error' ) );
+
+			await expect( promise ).rejects.toThrow( 'Network error' );
+		} );
+
+		it( 'extracts WordPress error message from TUS DetailedError', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			const detailedError = {
+				message: 'TUS error',
+				originalResponse: {
+					getBody: () =>
+						JSON.stringify( {
+							message: 'WordPress error message',
+						} ),
+				},
+			};
+
+			capturedCallbacks.onError( detailedError );
+
+			await expect( promise ).rejects.toThrow(
+				'WordPress error message'
+			);
+		} );
+
+		it( 'handles missing originalResponse body', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			const detailedError = {
+				message: 'TUS error',
+				originalResponse: {
+					getBody: () => null,
+				},
+			};
+
+			capturedCallbacks.onError( detailedError );
+
+			await expect( promise ).rejects.toThrow( 'TUS error' );
+		} );
+
+		it( 'handles invalid JSON in originalResponse', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			const detailedError = {
+				message: 'TUS error',
+				originalResponse: {
+					getBody: () => 'not json',
+				},
+			};
+
+			capturedCallbacks.onError( detailedError );
+
+			await expect( promise ).rejects.toThrow( 'TUS error' );
+		} );
+
+		it( 'uses default message when error has no message', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			capturedCallbacks.onError( {} );
+
+			await expect( promise ).rejects.toThrow( 'Upload failed' );
+		} );
+	} );
+
+	describe( 'AbortSignal', () => {
+		it( 'rejects immediately with already-aborted signal', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const controller = new AbortController();
+			controller.abort();
+
+			await expect(
+				upload( file, { signal: controller.signal } )
+			).rejects.toThrow( 'Upload aborted' );
+		} );
+
+		it( 'aborts upload when signal is triggered', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const controller = new AbortController();
+
+			const promise = upload( file, { signal: controller.signal } );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			controller.abort();
+
+			const mockUpload = tus.Upload.mock.results[ 0 ]?.value;
+			expect( mockUpload.abort ).toHaveBeenCalledWith( true );
+
+			await expect( promise ).rejects.toThrow( 'Upload aborted' );
+		} );
 	} );
 } );
 
-describe( 'abortUpload', () => {
-	it( 'calls abort on the upload with cleanup flag', async () => {
-		const file = new File( [ 'test' ], 'test.txt' );
-		const upload = createUpload( file );
+describe( 'abort', () => {
+	it( 'calls abort with cleanup flag', async () => {
+		const mockTusUpload = {
+			abort: jest.fn().mockResolvedValue( undefined ),
+		};
 
-		await abortUpload( upload );
+		await abort( mockTusUpload );
 
-		expect( upload.abort ).toHaveBeenCalledWith( true );
+		expect( mockTusUpload.abort ).toHaveBeenCalledWith( true );
 	} );
 
 	it( 'returns a promise', () => {
-		const file = new File( [ 'test' ], 'test.txt' );
-		const upload = createUpload( file );
+		const mockTusUpload = {
+			abort: jest.fn().mockResolvedValue( undefined ),
+		};
 
-		const result = abortUpload( upload );
+		const result = abort( mockTusUpload );
 
 		expect( result ).toBeInstanceOf( Promise );
 	} );
@@ -534,7 +450,7 @@ describe( 'ExpiringUrlStorage', () => {
 	it( 'passes urlStorage option to tus.Upload', () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		createUpload( file );
+		upload( file );
 
 		expect( tus.Upload ).toHaveBeenCalledWith(
 			file,
@@ -552,13 +468,13 @@ describe( 'ExpiringUrlStorage', () => {
 	describe( 'addUpload', () => {
 		it( 'stores entry with expiration in key', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			// Get the urlStorage from the mock call
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
-			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+			const fp = 'tus-br|test.txt|100|12345|/endpoint';
 
-			const key = await urlStorage.addUpload( fingerprint, {
+			const key = await urlStorage.addUpload( fp, {
 				uploadUrl: '/test',
 			} );
 
@@ -566,13 +482,13 @@ describe( 'ExpiringUrlStorage', () => {
 			const parts = key.split( '::' );
 			expect( parts.length ).toBe( 4 );
 			expect( parts[ 0 ] ).toBe( 'tus' );
-			expect( parts[ 1 ] ).toBe( fingerprint );
+			expect( parts[ 1 ] ).toBe( fp );
 			expect( parseInt( parts[ 2 ], 10 ) ).toBeGreaterThan( Date.now() );
 		} );
 
 		it( 'sets expiration to 24 hours from now', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
 			const now = Date.now();
@@ -597,21 +513,20 @@ describe( 'ExpiringUrlStorage', () => {
 	describe( 'findUploadsByFingerprint', () => {
 		it( 'returns non-expired entries matching fingerprint', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
-			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+			const fp = 'tus-br|test.txt|100|12345|/endpoint';
 			const futureExpiry = Date.now() + 86400000;
 
 			// Add a valid entry directly to localStorage
-			const key = `tus::${ fingerprint }::${ futureExpiry }::123`;
+			const key = `tus::${ fp }::${ futureExpiry }::123`;
 			localStorage.setItem(
 				key,
 				JSON.stringify( { uploadUrl: '/test' } )
 			);
 
-			const results =
-				await urlStorage.findUploadsByFingerprint( fingerprint );
+			const results = await urlStorage.findUploadsByFingerprint( fp );
 
 			expect( results.length ).toBe( 1 );
 			expect( results[ 0 ].uploadUrl ).toBe( '/test' );
@@ -619,21 +534,20 @@ describe( 'ExpiringUrlStorage', () => {
 
 		it( 'filters out and removes expired entries', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
-			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+			const fp = 'tus-br|test.txt|100|12345|/endpoint';
 			const pastExpiry = Date.now() - 1000;
 
 			// Add an expired entry
-			const key = `tus::${ fingerprint }::${ pastExpiry }::123`;
+			const key = `tus::${ fp }::${ pastExpiry }::123`;
 			localStorage.setItem(
 				key,
 				JSON.stringify( { uploadUrl: '/test' } )
 			);
 
-			const results =
-				await urlStorage.findUploadsByFingerprint( fingerprint );
+			const results = await urlStorage.findUploadsByFingerprint( fp );
 
 			expect( results.length ).toBe( 0 );
 			expect( localStorage.getItem( key ) ).toBeNull();
@@ -641,20 +555,19 @@ describe( 'ExpiringUrlStorage', () => {
 
 		it( 'removes entries with invalid expiration values', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
-			const fingerprint = 'tus-br|test.txt|100|12345|/endpoint';
+			const fp = 'tus-br|test.txt|100|12345|/endpoint';
 
 			// Add entry with invalid expiration (NaN)
-			const key = `tus::${ fingerprint }::invalid::123`;
+			const key = `tus::${ fp }::invalid::123`;
 			localStorage.setItem(
 				key,
 				JSON.stringify( { uploadUrl: '/test' } )
 			);
 
-			const results =
-				await urlStorage.findUploadsByFingerprint( fingerprint );
+			const results = await urlStorage.findUploadsByFingerprint( fp );
 
 			expect( results.length ).toBe( 0 );
 			expect( localStorage.getItem( key ) ).toBeNull();
@@ -664,7 +577,7 @@ describe( 'ExpiringUrlStorage', () => {
 	describe( 'findAllUploads', () => {
 		it( 'returns all non-expired entries', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
 			const futureExpiry = Date.now() + 86400000;
@@ -686,7 +599,7 @@ describe( 'ExpiringUrlStorage', () => {
 
 		it( 'removes malformed entries with less than 4 parts', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
 
@@ -706,7 +619,7 @@ describe( 'ExpiringUrlStorage', () => {
 	describe( 'removeUpload', () => {
 		it( 'removes entry from localStorage', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			createUpload( file );
+			upload( file );
 
 			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
 			const key = 'tus::fingerprint::12345::123';

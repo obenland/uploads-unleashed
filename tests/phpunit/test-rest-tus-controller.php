@@ -109,7 +109,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 			$data
 		);
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', (string) $data['length'] );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( $data['filename'] ) );
 
@@ -122,15 +122,14 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_register_routes() {
 		$routes = rest_get_server()->get_routes();
 
-		$this->assertArrayHasKey( '/wp/v2/media/tus', $routes );
-		$this->assertArrayHasKey( '/wp/v2/media/tus/(?P<id>[a-zA-Z0-9-]+)', $routes );
+		$this->assertArrayHasKey( '/wp/v2/media/(?P<id>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', $routes );
 	}
 
 	/**
 	 * Test OPTIONS request returns TUS headers.
 	 */
 	public function test_options_returns_tus_headers() {
-		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus' );
+		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media' );
 		$response = rest_get_server()->dispatch( $request );
 
 		// The rest_post_dispatch filter isn't applied in test environment,
@@ -150,7 +149,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_create_upload_requires_auth() {
 		wp_set_current_user( 0 );
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
 
@@ -165,7 +164,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_create_upload_requires_capability() {
 		wp_set_current_user( self::$subscriber_id );
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
 
@@ -178,12 +177,16 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test create upload requires Upload-Length header.
 	 */
 	public function test_create_upload_requires_length() {
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
 
-		$response = rest_get_server()->dispatch( $request );
+		// Without Upload-Length, the rest_pre_dispatch filter does not
+		// intercept, so call the controller directly.
+		$controller = new REST_TUS_Controller();
+		$response   = $controller->create_item( $request );
 
-		$this->assertErrorResponse( 'rest_upload_length_required', $response, 400 );
+		$this->assertWPError( $response );
+		$this->assertSame( 'rest_upload_length_required', $response->get_error_code() );
 	}
 
 	/**
@@ -192,7 +195,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_head_returns_offset() {
 		$upload_id = $this->create_upload_session();
 
-		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/tus/' . $upload_id );
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 		$headers  = $response->get_headers();
 
@@ -206,7 +209,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test HEAD request for non-existent upload returns 404.
 	 */
 	public function test_head_not_found() {
-		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/tus/nonexistent-id' );
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/00000000-0000-4000-8000-000000000000' );
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertErrorResponse( 'rest_upload_not_found', $response, 404 );
@@ -218,7 +221,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_requires_content_type() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		// Use text/plain instead of application/json to avoid WordPress JSON parsing.
 		$request->set_header( 'Content-Type', 'text/plain' );
 		$request->set_header( 'Upload-Offset', '0' );
@@ -237,7 +240,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_requires_offset() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_body( 'test data' );
 
@@ -252,7 +255,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_offset_mismatch() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '100' ); // Wrong offset, should be 0.
 		$request->set_body( 'test data' );
@@ -269,7 +272,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( $chunk_data );
@@ -297,7 +300,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$other_admin = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $other_admin );
 
-		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/tus/' . $upload_id );
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertErrorResponse( 'rest_cannot_view_upload', $response, 403 );
@@ -309,7 +312,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_complete_upload_creates_attachment() {
 		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -340,7 +343,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_complete_upload_returns_rest_api_format() {
 		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -419,26 +422,31 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test getting item schema.
 	 */
 	public function test_get_item_schema() {
-		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus' );
-		$response = rest_get_server()->dispatch( $request );
-		$data     = $response->get_data();
+		$controller = new REST_TUS_Controller();
+		$schema     = $controller->get_item_schema();
 
-		$this->assertArrayHasKey( 'schema', $data );
-		$this->assertSame( 'tus-upload', $data['schema']['title'] );
+		$this->assertSame( 'tus-upload', $schema['title'] );
+		$this->assertArrayHasKey( 'id', $schema['properties'] );
+		$this->assertArrayHasKey( 'offset', $schema['properties'] );
+		$this->assertArrayHasKey( 'length', $schema['properties'] );
+		$this->assertArrayHasKey( 'filename', $schema['properties'] );
 	}
 
 	/**
 	 * Test creating item.
 	 */
 	public function test_create_item() {
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) . ',filetype ' . base64_encode( 'text/plain' ) );
 
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 201, $response->get_status() );
-		$this->assertStringContainsString( '/wp/v2/media/tus/', $response->get_headers()['Location'] );
+		$this->assertMatchesRegularExpression(
+			'|/wp/v2/media/[a-f0-9-]{36}|',
+			$response->get_headers()['Location']
+		);
 		$this->assertSame( '1.0.0', $response->get_headers()['Tus-Resumable'] );
 		$this->assertArrayHasKey( 'Upload-Expires', $response->get_headers() );
 	}
@@ -449,7 +457,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_delete_item() {
 		$upload_id = $this->create_upload_session();
 
-		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/media/tus/' . $upload_id );
+		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/media/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 204, $response->get_status() );
@@ -471,7 +479,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_method_override_head() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'HEAD' );
 
 		$response = rest_get_server()->dispatch( $request );
@@ -489,7 +497,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'PATCH' );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
@@ -508,7 +516,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_method_override_delete() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'DELETE' );
 
 		$response = rest_get_server()->dispatch( $request );
@@ -523,7 +531,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_method_override_required() {
 		$upload_id = $this->create_upload_session();
 
-		$request  = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request  = new WP_REST_Request( 'POST', '/wp/v2/media/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 400, $response->get_status() );
@@ -537,7 +545,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_method_override_invalid() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'PUT' );
 
 		$response = rest_get_server()->dispatch( $request );
@@ -553,7 +561,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_method_override_case_insensitive() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'X-HTTP-Method-Override', 'head' ); // Lowercase.
 
 		$response = rest_get_server()->dispatch( $request );
@@ -567,7 +575,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test that checksum extension is advertised.
 	 */
 	public function test_checksum_extension_advertised() {
-		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media/tus' );
+		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media' );
 		$response = rest_get_server()->dispatch( $request );
 
 		// Apply the filter manually since rest_post_dispatch isn't called in tests.
@@ -586,7 +594,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$checksum = 'sha256 ' . base64_encode( hash( 'sha256', $chunk_data, true ) );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_header( 'Upload-Checksum', $checksum );
@@ -607,7 +615,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$wrong_checksum = 'sha256 ' . base64_encode( hash( 'sha256', 'different data', true ) );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_header( 'Upload-Checksum', $wrong_checksum );
@@ -627,7 +635,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		// No Upload-Checksum header.
@@ -647,7 +655,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$checksum = 'unsupported_algo ' . base64_encode( 'somehash' );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_header( 'Upload-Checksum', $checksum );
@@ -667,7 +675,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_header( 'Upload-Checksum', 'sha256-without-space' ); // Missing space.
@@ -689,7 +697,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$checksum = 'sha1 ' . base64_encode( hash( 'sha1', $chunk_data, true ) );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_header( 'Upload-Checksum', $checksum );
@@ -709,7 +717,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$checksum = 'md5 ' . base64_encode( hash( 'md5', $chunk_data, true ) );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_header( 'Upload-Checksum', $checksum );
@@ -727,7 +735,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_header( 'Upload-Checksum', 'sha256 not-valid-base64!!!' );
@@ -746,7 +754,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_with_empty_body_returns_error() {
 		$upload_id = $this->create_upload_session();
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( '' );
@@ -775,7 +783,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		);
 		set_transient( 'tus_upload_' . $upload_id, $session_data, DAY_IN_SECONDS );
 
-		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/tus/' . $upload_id );
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 410, $response->get_status() );
@@ -800,7 +808,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		);
 		set_transient( 'tus_upload_' . $upload_id, $session_data, DAY_IN_SECONDS );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -827,7 +835,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 			)
 		);
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( $php_content );
@@ -850,7 +858,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_filter( 'uploads_unleashed_pre_finalize', $filter_callback );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -879,7 +887,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_filter( 'uploads_unleashed_finalize_upload', $filter_callback );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -905,7 +913,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_filter( 'uploads_unleashed_finalize_upload', $filter_callback );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -935,7 +943,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_action( 'uploads_unleashed_upload_created', $action_callback, 10, 2 );
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'action-test.txt' ) );
 
@@ -966,7 +974,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_action( 'uploads_unleashed_chunk_received', $action_callback, 10, 2 );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( str_repeat( 'a', 512 ) );
@@ -998,7 +1006,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_action( 'uploads_unleashed_upload_deleted', $action_callback, 10, 2 );
 
-		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/media/tus/' . $upload_id );
+		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/media/' . $upload_id );
 		$response = rest_get_server()->dispatch( $request );
 
 		remove_action( 'uploads_unleashed_upload_deleted', $action_callback );
@@ -1026,7 +1034,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_action( 'uploads_unleashed_upload_complete', $action_callback, 10, 2 );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -1047,7 +1055,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test metadata parsing handles empty header.
 	 */
 	public function test_create_handles_empty_metadata() {
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		// No Upload-Metadata header.
 
@@ -1060,7 +1068,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test metadata parsing handles multiple values.
 	 */
 	public function test_create_parses_multiple_metadata_values() {
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		$request->set_header(
 			'Upload-Metadata',
@@ -1091,7 +1099,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_filter( 'uploads_unleashed_max_upload_size', $filter_callback );
 
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media/tus' );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
 
@@ -1114,7 +1122,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_filter( 'uploads_unleashed_attachment_data', $filter_callback );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );
@@ -1143,7 +1151,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		};
 		add_filter( 'wp_handle_upload_prefilter', $filter_callback );
 
-		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/tus/' . $upload_id );
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
 		$request->set_body( 'test data' );

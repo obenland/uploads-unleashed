@@ -47,7 +47,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @since 0.1.0
 	 * @var string
 	 */
-	protected $rest_base = 'media/tus';
+	protected $rest_base = 'media';
 
 	/**
 	 * Registers the routes for the TUS controller.
@@ -55,24 +55,11 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @since 0.1.0
 	 */
 	public function register_routes(): void {
-		// POST for upload creation.
-		register_rest_route(
-			$this->namespace,
-			'/' . $this->rest_base,
-			array(
-				array(
-					'methods'             => WP_REST_Server::CREATABLE,
-					'callback'            => array( $this, 'create_item' ),
-					'permission_callback' => array( $this, 'create_item_permissions_check' ),
-				),
-				'schema' => array( $this, 'get_public_item_schema' ),
-			)
-		);
-
 		// HEAD, PATCH, DELETE for individual uploads.
+		// Creation is handled via rest_pre_dispatch on POST /wp/v2/media.
 		register_rest_route(
 			$this->namespace,
-			'/' . $this->rest_base . '/(?P<id>[a-zA-Z0-9-]+)',
+			'/' . $this->rest_base . '/(?P<id>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
 			array(
 				'args' => array(
 					'id' => array(
