@@ -1140,16 +1140,16 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	}
 
 	/**
-	 * Test wp_handle_upload_prefilter integration.
+	 * Test wp_handle_sideload_prefilter integration.
 	 */
-	public function test_upload_prefilter_can_reject_upload() {
+	public function test_sideload_prefilter_can_reject_upload() {
 		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
 
 		$filter_callback = function ( $file ) {
 			$file['error'] = 'File rejected by security scan';
 			return $file;
 		};
-		add_filter( 'wp_handle_upload_prefilter', $filter_callback );
+		add_filter( 'wp_handle_sideload_prefilter', $filter_callback );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -1158,7 +1158,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		$response = rest_get_server()->dispatch( $request );
 
-		remove_filter( 'wp_handle_upload_prefilter', $filter_callback );
+		remove_filter( 'wp_handle_sideload_prefilter', $filter_callback );
 
 		$this->assertSame( 400, $response->get_status() );
 		$data = $response->get_data();

@@ -545,7 +545,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		if ( is_array( $custom_result ) ) {
 			// Custom finalization provided - clean up and return.
-			$storage->cleanup( $upload_id );
+			$storage->delete( $upload_id );
 			$session->delete( $upload_id );
 
 			$attachment_id = $custom_result['id'] ?? 0;
@@ -573,14 +573,6 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			return $validated;
 		}
 
-		$file_array = $this->apply_upload_prefilter( $chunk_path, $validated['filename'], $validated['type'] );
-		if ( is_wp_error( $file_array ) ) {
-			$storage->delete( $upload_id );
-			$session->delete( $upload_id );
-
-			return $file_array;
-		}
-
 		$quota_check = $this->check_multisite_quota( $chunk_path );
 		if ( is_wp_error( $quota_check ) ) {
 			$storage->delete( $upload_id );
@@ -589,13 +581,16 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			return $quota_check;
 		}
 
-		$upload_result = $this->move_to_uploads( $chunk_path, $validated['filename'], $validated['type'] );
+		$upload_result = $this->sideload_to_uploads( $chunk_path, $validated['filename'], $validated['type'] );
 		if ( is_wp_error( $upload_result ) ) {
 			$storage->delete( $upload_id );
 			$session->delete( $upload_id );
 
 			return $upload_result;
 		}
+
+		// Clean up chunk file in case sideload copied instead of moved.
+		$storage->delete( $upload_id );
 
 		$attachment_id = $this->create_attachment( $upload_result );
 		$session->delete( $upload_id );
@@ -672,35 +667,6 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * Applies pre-upload filters (virus scanners, etc.).
-	 *
-	 * @since 0.1.0
-	 *
-	 * @param string $file_path The path to the uploaded file.
-	 * @param string $filename  The sanitized filename.
-	 * @param string $mime_type The validated MIME type.
-	 * @return array|WP_Error File array on success, WP_Error on failure.
-	 */
-	protected function apply_upload_prefilter( string $file_path, string $filename, string $mime_type ) {
-		$file_array = array(
-			'name'     => $filename,
-			'type'     => $mime_type,
-			'tmp_name' => $file_path,
-			'size'     => filesize( $file_path ),
-			'error'    => 0,
-		);
-
-		/** This filter is documented in wp-admin/includes/file.php */
-		$file_array = apply_filters( 'wp_handle_upload_prefilter', $file_array ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Intentionally calling core filter.
-
-		if ( ! empty( $file_array['error'] ) && is_string( $file_array['error'] ) ) {
-			return new WP_Error( 'rest_upload_error', $file_array['error'], array( 'status' => 400 ) );
-		}
-
-		return $file_array;
-	}
-
-	/**
 	 * Checks multisite quota constraints.
 	 *
 	 * @since 0.1.0
@@ -725,41 +691,36 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * Moves the file to the uploads directory.
+	 * Sideloads the completed upload into the WordPress uploads directory.
 	 *
-	 * Handles cross-filesystem moves by falling back to copy + delete.
+	 * Uses wp_handle_sideload() to validate, move, and apply filters,
+	 * matching how WordPress core handles REST API uploads.
 	 *
 	 * @since 0.1.0
 	 *
-	 * @param string $source_path The source file path.
-	 * @param string $filename    The sanitized filename.
-	 * @param string $mime_type   The validated MIME type.
+	 * @param string $file_path The path to the uploaded file.
+	 * @param string $filename  The sanitized filename.
+	 * @param string $mime_type The validated MIME type.
 	 * @return array|WP_Error Upload result array on success, WP_Error on failure.
 	 */
-	protected function move_to_uploads( string $source_path, string $filename, string $mime_type ) {
-		$upload_dir      = wp_upload_dir();
-		$unique_filename = wp_unique_filename( $upload_dir['path'], $filename );
-		$new_path        = trailingslashit( $upload_dir['path'] ) . $unique_filename;
+	protected function sideload_to_uploads( string $file_path, string $filename, string $mime_type ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
 
-		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- Silencing rename errors to handle gracefully.
-		if ( ! @rename( $source_path, $new_path ) ) {
-			// Try copy + delete as fallback (cross-filesystem moves).
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_copy -- Fallback for cross-filesystem moves.
-			if ( ! @copy( $source_path, $new_path ) ) {
-				return new WP_Error( 'rest_move_failed', __( 'Could not move uploaded file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
-			}
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
-			@unlink( $source_path );
-		}
-
-		$upload_result = array(
-			'file' => $new_path,
-			'url'  => trailingslashit( $upload_dir['url'] ) . $unique_filename,
-			'type' => $mime_type,
+		$file_data = array(
+			'error'    => 0,
+			'tmp_name' => $file_path,
+			'name'     => $filename,
+			'type'     => $mime_type,
+			'size'     => filesize( $file_path ),
 		);
 
-		/** This filter is documented in wp-admin/includes/file.php */
-		return apply_filters( 'wp_handle_upload', $upload_result, 'upload' ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Intentionally calling core filter.
+		$result = wp_handle_sideload( $file_data, array( 'test_form' => false ) );
+
+		if ( isset( $result['error'] ) ) {
+			return new WP_Error( 'rest_upload_error', $result['error'], array( 'status' => 400 ) );
+		}
+
+		return $result;
 	}
 
 	/**
@@ -767,7 +728,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 *
 	 * @since 0.1.0
 	 *
-	 * @param array $upload_result The upload result from move_to_uploads().
+	 * @param array $upload_result The upload result from sideload_to_uploads().
 	 * @return int|WP_Error Attachment ID on success, WP_Error on failure.
 	 */
 	protected function create_attachment( array $upload_result ) {
@@ -783,8 +744,8 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$attachment_id = wp_insert_attachment( $attachment, $upload_result['file'] );
 
 		if ( is_wp_error( $attachment_id ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
-			@unlink( $upload_result['file'] );
+			wp_delete_file( $upload_result['file'] );
+
 			return $attachment_id;
 		}
 
