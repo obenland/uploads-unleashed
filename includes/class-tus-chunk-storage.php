@@ -150,18 +150,6 @@ class TUS_Chunk_Storage {
 	}
 
 	/**
-	 * Cleans up storage for an upload (alias for delete).
-	 *
-	 * @since 0.1.0
-	 *
-	 * @param string $upload_id The upload ID.
-	 * @return bool True on success, false on failure.
-	 */
-	public function cleanup( string $upload_id ): bool {
-		return $this->delete( $upload_id );
-	}
-
-	/**
 	 * Returns the current size of a chunk file.
 	 *
 	 * @since 0.1.0

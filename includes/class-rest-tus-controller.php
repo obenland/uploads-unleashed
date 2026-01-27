@@ -545,7 +545,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		if ( is_array( $custom_result ) ) {
 			// Custom finalization provided - clean up and return.
-			$storage->cleanup( $upload_id );
+			$storage->delete( $upload_id );
 			$session->delete( $upload_id );
 
 			$attachment_id = $custom_result['id'] ?? 0;

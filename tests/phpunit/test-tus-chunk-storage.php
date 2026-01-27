@@ -182,7 +182,7 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$this->storage->append( $upload_id, 'test data', 0 );
 		$this->assertTrue( $this->storage->exists( $upload_id ) );
 
-		$result = $this->storage->cleanup( $upload_id );
+		$result = $this->storage->delete( $upload_id );
 
 		$this->assertTrue( $result );
 		$this->assertFalse( $this->storage->exists( $upload_id ) );
