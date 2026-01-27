@@ -133,39 +133,4 @@ class TUS_Upload_Session {
 		return delete_transient( self::TRANSIENT_PREFIX . $upload_id );
 	}
 
-	/**
-	 * Verifies that the current user owns the upload.
-	 *
-	 * @since 0.1.0
-	 *
-	 * @param string $upload_id The upload ID.
-	 * @return bool True if the current user owns the upload, false otherwise.
-	 */
-	public function verify_ownership( string $upload_id ): bool {
-		$data = $this->get( $upload_id );
-
-		if ( ! $data ) {
-			return false;
-		}
-
-		return get_current_user_id() === $data['user_id'];
-	}
-
-	/**
-	 * Checks if an upload has expired.
-	 *
-	 * @since 0.1.0
-	 *
-	 * @param string $upload_id The upload ID.
-	 * @return bool True if expired, false otherwise.
-	 */
-	public function is_expired( string $upload_id ): bool {
-		$data = $this->get( $upload_id );
-
-		if ( ! $data ) {
-			return true;
-		}
-
-		return time() > $data['expires_at'];
-	}
 }
