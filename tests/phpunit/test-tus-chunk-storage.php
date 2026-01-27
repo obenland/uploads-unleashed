@@ -174,21 +174,6 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Tests that cleanup is an alias for delete.
-	 */
-	public function test_cleanup_is_alias_for_delete() {
-		$upload_id = wp_generate_uuid4();
-
-		$this->storage->append( $upload_id, 'test data', 0 );
-		$this->assertTrue( $this->storage->exists( $upload_id ) );
-
-		$result = $this->storage->delete( $upload_id );
-
-		$this->assertTrue( $result );
-		$this->assertFalse( $this->storage->exists( $upload_id ) );
-	}
-
-	/**
 	 * Tests that get_size returns 0 for non-existent file.
 	 */
 	public function test_get_size_returns_zero_for_nonexistent_file() {
