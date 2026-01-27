@@ -132,8 +132,6 @@ Manages upload session metadata using WordPress transients:
 - `get()` - Retrieve session data
 - `update_offset()` - Update upload progress
 - `delete()` - Remove session
-- `verify_ownership()` - Check user owns upload
-- `is_expired()` - Check if session expired
 
 **Session Data:**
 ```php
