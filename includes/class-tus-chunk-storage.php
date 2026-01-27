@@ -27,7 +27,7 @@ class TUS_Chunk_Storage {
 	 */
 	public function __construct() {
 		$upload_dir     = wp_upload_dir();
-		$this->base_dir = trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks';
+		$this->base_dir = trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
 
 		$this->maybe_create_directory();
 	}
@@ -45,13 +45,13 @@ class TUS_Chunk_Storage {
 		wp_mkdir_p( $this->base_dir );
 
 		// Protect directory from direct access.
-		$htaccess_file = trailingslashit( $this->base_dir ) . '.htaccess';
+		$htaccess_file = $this->base_dir . '.htaccess';
 		if ( ! file_exists( $htaccess_file ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Simple file write.
 			file_put_contents( $htaccess_file, "Deny from all\n" );
 		}
 
-		$index_file = trailingslashit( $this->base_dir ) . 'index.php';
+		$index_file = $this->base_dir . 'index.php';
 		if ( ! file_exists( $index_file ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Simple file write.
 			file_put_contents( $index_file, "<?php\n// Silence is golden.\n" );
@@ -70,7 +70,7 @@ class TUS_Chunk_Storage {
 		// Sanitize upload ID to prevent directory traversal.
 		$safe_id = preg_replace( '/[^a-zA-Z0-9-]/', '', $upload_id );
 
-		return trailingslashit( $this->base_dir ) . $safe_id . '.part';
+		return $this->base_dir . $safe_id . '.part';
 	}
 
 	/**
@@ -150,18 +150,6 @@ class TUS_Chunk_Storage {
 	}
 
 	/**
-	 * Cleans up storage for an upload (alias for delete).
-	 *
-	 * @since 0.1.0
-	 *
-	 * @param string $upload_id The upload ID.
-	 * @return bool True on success, false on failure.
-	 */
-	public function cleanup( string $upload_id ): bool {
-		return $this->delete( $upload_id );
-	}
-
-	/**
 	 * Returns the current size of a chunk file.
 	 *
 	 * @since 0.1.0
@@ -204,7 +192,7 @@ class TUS_Chunk_Storage {
 	 * @return int Total pending upload size in bytes.
 	 */
 	public function get_total_pending_size(): int {
-		$files = glob( trailingslashit( $this->base_dir ) . '*.part' );
+		$files = glob( $this->base_dir . '*.part' );
 
 		if ( ! $files ) {
 			return 0;
@@ -237,7 +225,7 @@ class TUS_Chunk_Storage {
 		$storage = new self();
 		$session = new TUS_Upload_Session();
 
-		$files = glob( trailingslashit( $storage->base_dir ) . '*.part' );
+		$files = glob( $storage->base_dir . '*.part' );
 
 		if ( ! $files ) {
 			return;
