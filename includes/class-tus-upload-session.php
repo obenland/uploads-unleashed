@@ -132,5 +132,4 @@ class TUS_Upload_Session {
 	public function delete( string $upload_id ): bool {
 		return delete_transient( self::TRANSIENT_PREFIX . $upload_id );
 	}
-
 }
