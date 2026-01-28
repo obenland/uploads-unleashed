@@ -50,13 +50,23 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	protected $rest_base = 'media';
 
 	/**
+	 * Cached upload session data for the current request.
+	 *
+	 * Set during permission check and reused by handlers to avoid
+	 * redundant transient lookups.
+	 *
+	 * @since 0.1.0
+	 * @var array|null
+	 */
+	private ?array $current_upload = null;
+
+	/**
 	 * Registers the routes for the TUS controller.
 	 *
 	 * @since 0.1.0
 	 */
 	public function register_routes(): void {
 		// HEAD, PATCH, DELETE for individual uploads.
-		// Creation is handled via rest_pre_dispatch on POST /wp/v2/media.
 		register_rest_route(
 			$this->namespace,
 			'/' . $this->rest_base . '/(?P<id>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
@@ -149,20 +159,18 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
 	 */
 	public function get_item_permissions_check( $request ) {
-		if ( ! current_user_can( 'upload_files' ) ) {
-			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
+		$result = $this->can_access_upload( $request );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
 		}
 
-		$upload_id = $request->get_param( 'id' );
-		$session   = new TUS_Upload_Session();
-		$upload    = $session->get( $upload_id );
+		// Check expiration for HEAD/PATCH (not DELETE - expired uploads can still be deleted).
+		if ( time() > $this->current_upload['expires_at'] ) {
+			$upload_id = $request->get_param( 'id' );
+			$this->delete_upload( $upload_id );
 
-		if ( ! $upload ) {
-			return new WP_Error( 'rest_upload_not_found', __( 'Upload not found.', 'uploads-unleashed' ), array( 'status' => 404 ) );
-		}
-
-		if ( get_current_user_id() !== $upload['user_id'] ) {
-			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'uploads-unleashed' ), array( 'status' => 403 ) );
+			return new WP_Error( 'rest_upload_expired', __( 'Upload has expired.', 'uploads-unleashed' ), array( 'status' => 410 ) );
 		}
 
 		return true;
@@ -177,7 +185,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
 	 */
 	public function delete_item_permissions_check( $request ) {
-		return $this->get_item_permissions_check( $request );
+		return $this->can_access_upload( $request );
 	}
 
 	/**
@@ -234,7 +242,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		switch ( $override_method ) {
 			case 'HEAD':
-				return $this->get_item_offset( $request );
+				return $this->get_item_offset();
 
 			case 'PATCH':
 				return $this->upload_chunk( $request );
@@ -325,26 +333,12 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 *
 	 * @since 0.1.0
 	 *
-	 * @param WP_REST_Request $request Full details about the request.
-	 * @return WP_REST_Response|WP_Error Response object on success, or WP_Error on failure.
+	 * @return WP_REST_Response Response object on success, or WP_Error on failure.
 	 */
-	public function get_item_offset( WP_REST_Request $request ) {
-		$upload_id = $request->get_param( 'id' );
-		$session   = new TUS_Upload_Session();
-		$upload    = $session->get( $upload_id );
-
-		// Check if expired.
-		if ( time() > $upload['expires_at'] ) {
-			$session->delete( $upload_id );
-			$storage = new TUS_Chunk_Storage();
-			$storage->delete( $upload_id );
-
-			return new WP_Error( 'rest_upload_expired', __( 'Upload has expired.', 'uploads-unleashed' ), array( 'status' => 410 ) );
-		}
-
+	public function get_item_offset(): WP_REST_Response {
 		$response = new WP_REST_Response( null, 200 );
-		$response->header( 'Upload-Offset', $upload['offset'] );
-		$response->header( 'Upload-Length', $upload['length'] );
+		$response->header( 'Upload-Offset', $this->current_upload['offset'] );
+		$response->header( 'Upload-Length', $this->current_upload['length'] );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
 		// CRITICAL: Prevent proxy caching of offset.
 		$response->header( 'Cache-Control', 'no-store' );
@@ -368,17 +362,6 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$upload_id = $request->get_param( 'id' );
-		$session   = new TUS_Upload_Session();
-		$upload    = $session->get( $upload_id );
-
-		// Check if expired.
-		if ( time() > $upload['expires_at'] ) {
-			$session->delete( $upload_id );
-			$storage = new TUS_Chunk_Storage();
-			$storage->delete( $upload_id );
-
-			return new WP_Error( 'rest_upload_expired', __( 'Upload has expired.', 'uploads-unleashed' ), array( 'status' => 410 ) );
-		}
 
 		// Validate offset.
 		$client_offset = $request->get_header( 'Upload-Offset' );
@@ -387,7 +370,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$client_offset = (int) $client_offset;
-		$server_offset = (int) $upload['offset'];
+		$server_offset = (int) $this->current_upload['offset'];
 
 		// 409 Conflict: Do NOT store any data on offset mismatch.
 		if ( $client_offset !== $server_offset ) {
@@ -407,15 +390,13 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Write chunk.
-		$storage    = new TUS_Chunk_Storage();
-		$new_offset = $storage->append( $upload_id, $chunk_data, $server_offset );
-
+		$new_offset = ( new TUS_Chunk_Storage() )->append( $upload_id, $chunk_data, $server_offset );
 		if ( is_wp_error( $new_offset ) ) {
 			return $new_offset;
 		}
 
 		// Update session.
-		$session->update_offset( $upload_id, $new_offset );
+		( new TUS_Upload_Session() )->update_offset( $upload_id, $new_offset );
 
 		/**
 		 * Fires after a chunk is received and stored.
@@ -427,11 +408,11 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		 * @param array           $upload     The upload session data.
 		 * @param WP_REST_Request $request    The request object.
 		 */
-		do_action( 'uploads_unleashed_chunk_received', $upload_id, $new_offset, $upload, $request );
+		do_action( 'uploads_unleashed_chunk_received', $upload_id, $new_offset, $this->current_upload, $request );
 
 		// Check if upload is complete.
-		if ( $new_offset >= $upload['length'] ) {
-			$attachment = $this->finalize_upload( $upload_id, $upload );
+		if ( $new_offset >= $this->current_upload['length'] ) {
+			$attachment = $this->finalize_upload( $upload_id, $this->current_upload );
 
 			if ( is_wp_error( $attachment ) ) {
 				return $attachment;
@@ -460,14 +441,10 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response Response object on success.
 	 */
 	public function delete_item( $request ): WP_REST_Response {
-		$upload_id = $request->get_param( 'id' );
+		$upload_id   = $request->get_param( 'id' );
+		$upload_data = $this->current_upload ?? ( new TUS_Upload_Session() )->get( $upload_id );
 
-		$session     = new TUS_Upload_Session();
-		$storage     = new TUS_Chunk_Storage();
-		$upload_data = $session->get( $upload_id );
-
-		$session->delete( $upload_id );
-		$storage->delete( $upload_id );
+		$this->delete_upload( $upload_id );
 
 		/**
 		 * Fires after an upload is deleted/canceled.
@@ -495,9 +472,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @return array|WP_Error Attachment data from wp_prepare_attachment_for_js() on success, WP_Error on failure.
 	 */
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
-		$storage    = new TUS_Chunk_Storage();
-		$session    = new TUS_Upload_Session();
-		$chunk_path = $storage->get_path( $upload_id );
+		$chunk_path = ( new TUS_Chunk_Storage() )->get_path( $upload_id );
 
 		/**
 		 * Filters whether to proceed with finalization.
@@ -514,8 +489,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$proceed = apply_filters( 'uploads_unleashed_pre_finalize', true, $upload_id, $upload_data, $chunk_path );
 
 		if ( is_wp_error( $proceed ) ) {
-			$storage->delete( $upload_id );
-			$session->delete( $upload_id );
+			$this->delete_upload( $upload_id );
 
 			return $proceed;
 		}
@@ -537,16 +511,14 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		$custom_result = apply_filters( 'uploads_unleashed_finalize_upload', null, $upload_id, $upload_data, $chunk_path );
 
 		if ( is_wp_error( $custom_result ) ) {
-			$storage->delete( $upload_id );
-			$session->delete( $upload_id );
+			$this->delete_upload( $upload_id );
 
 			return $custom_result;
 		}
 
 		if ( is_array( $custom_result ) ) {
 			// Custom finalization provided - clean up and return.
-			$storage->delete( $upload_id );
-			$session->delete( $upload_id );
+			$this->delete_upload( $upload_id );
 
 			$attachment_id = $custom_result['id'] ?? 0;
 
@@ -567,33 +539,29 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		// Default finalization pipeline.
 		$validated = $this->validate_file( $chunk_path, $upload_data['filename'] );
 		if ( is_wp_error( $validated ) ) {
-			$storage->delete( $upload_id );
-			$session->delete( $upload_id );
+			$this->delete_upload( $upload_id );
 
 			return $validated;
 		}
 
 		$quota_check = $this->check_multisite_quota( $chunk_path );
 		if ( is_wp_error( $quota_check ) ) {
-			$storage->delete( $upload_id );
-			$session->delete( $upload_id );
+			$this->delete_upload( $upload_id );
 
 			return $quota_check;
 		}
 
 		$upload_result = $this->sideload_to_uploads( $chunk_path, $validated['filename'], $validated['type'] );
 		if ( is_wp_error( $upload_result ) ) {
-			$storage->delete( $upload_id );
-			$session->delete( $upload_id );
+			$this->delete_upload( $upload_id );
 
 			return $upload_result;
 		}
 
-		// Clean up chunk file in case sideload copied instead of moved.
-		$storage->delete( $upload_id );
+		// Clean up upload data (chunk may already be moved by sideload).
+		$this->delete_upload( $upload_id );
 
 		$attachment_id = $this->create_attachment( $upload_result );
-		$session->delete( $upload_id );
 
 		if ( is_wp_error( $attachment_id ) ) {
 			return $attachment_id;
@@ -933,5 +901,47 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		);
 
 		return $this->add_additional_fields_schema( $this->schema );
+	}
+
+	/**
+	 * Checks basic upload access (exists, belongs to user).
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param WP_REST_Request $request Full details about the request.
+	 * @return true|WP_Error True if the request has access, WP_Error otherwise.
+	 */
+	private function can_access_upload( WP_REST_Request $request ) {
+		if ( ! current_user_can( 'upload_files' ) ) {
+			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
+		}
+
+		$upload_id = $request->get_param( 'id' );
+		$upload    = ( new TUS_Upload_Session() )->get( $upload_id );
+
+		if ( ! $upload ) {
+			return new WP_Error( 'rest_upload_not_found', __( 'Upload not found.', 'uploads-unleashed' ), array( 'status' => 404 ) );
+		}
+
+		if ( get_current_user_id() !== $upload['user_id'] ) {
+			return new WP_Error( 'rest_cannot_view_upload', __( 'Sorry, you are not allowed to view this upload.', 'uploads-unleashed' ), array( 'status' => 403 ) );
+		}
+
+		// Cache for reuse in handlers.
+		$this->current_upload = $upload;
+
+		return true;
+	}
+
+	/**
+	 * Deletes an upload's chunk file and session data.
+	 *
+	 * @since 0.1.0
+	 *
+	 * @param string $upload_id The upload ID to delete.
+	 */
+	private function delete_upload( string $upload_id ): void {
+		( new TUS_Chunk_Storage() )->delete( $upload_id );
+		( new TUS_Upload_Session() )->delete( $upload_id );
 	}
 }
