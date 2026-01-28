@@ -16,9 +16,9 @@ class TUS_Chunk_Storage {
 	 * Base directory for chunk storage.
 	 *
 	 * @since 0.1.0
-	 * @var string
+	 * @var ?string
 	 */
-	protected string $base_dir;
+	protected static ?string $base_dir = null;
 
 	/**
 	 * Constructor.
@@ -26,10 +26,12 @@ class TUS_Chunk_Storage {
 	 * @since 0.1.0
 	 */
 	public function __construct() {
-		$upload_dir     = wp_upload_dir();
-		$this->base_dir = trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
+		if ( null === self::$base_dir ) {
+			$upload_dir     = wp_upload_dir();
+			self::$base_dir = trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
 
-		$this->maybe_create_directory();
+			$this->maybe_create_directory();
+		}
 	}
 
 	/**
@@ -38,20 +40,20 @@ class TUS_Chunk_Storage {
 	 * @since 0.1.0
 	 */
 	protected function maybe_create_directory(): void {
-		if ( file_exists( $this->base_dir ) ) {
+		if ( file_exists( self::$base_dir ) ) {
 			return;
 		}
 
-		wp_mkdir_p( $this->base_dir );
+		wp_mkdir_p( self::$base_dir );
 
 		// Protect directory from direct access.
-		$htaccess_file = $this->base_dir . '.htaccess';
+		$htaccess_file = self::$base_dir . '.htaccess';
 		if ( ! file_exists( $htaccess_file ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
 			file_put_contents( $htaccess_file, "Deny from all\n" );
 		}
 
-		$index_file = $this->base_dir . 'index.php';
+		$index_file = self::$base_dir . 'index.php';
 		if ( ! file_exists( $index_file ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
 			file_put_contents( $index_file, "<?php\n// Silence is golden.\n" );
@@ -70,7 +72,7 @@ class TUS_Chunk_Storage {
 		// Sanitize upload ID to prevent directory traversal.
 		$safe_id = preg_replace( '/[^a-zA-Z0-9-]/', '', $upload_id );
 
-		return $this->base_dir . $safe_id . '.part';
+		return self::$base_dir . $safe_id . '.part';
 	}
 
 	/**
@@ -191,7 +193,7 @@ class TUS_Chunk_Storage {
 	 * @return int Total pending upload size in bytes.
 	 */
 	public function get_total_pending_size(): int {
-		$files = glob( $this->base_dir . '*.part' );
+		$files = glob( self::$base_dir . '*.part' );
 
 		if ( ! $files ) {
 			return 0;
@@ -224,7 +226,7 @@ class TUS_Chunk_Storage {
 		$storage = new self();
 		$session = new TUS_Upload_Session();
 
-		$files = glob( $storage->base_dir . '*.part' );
+		$files = glob( self::$base_dir . '*.part' );
 
 		if ( ! $files ) {
 			return;

@@ -74,29 +74,6 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	}
 
 	/**
-	 * Clean up after all tests in the class.
-	 */
-	public static function tear_down_after_class() {
-		// Remove the TUS chunk storage directory and its protection files.
-		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
-
-		if ( is_dir( $chunks_dir ) ) {
-			wp_delete_file( trailingslashit( $chunks_dir ) . '.htaccess' );
-			wp_delete_file( trailingslashit( $chunks_dir ) . 'index.php' );
-
-			if ( ! function_exists( 'WP_Filesystem' ) ) {
-				require_once ABSPATH . 'wp-admin/includes/file.php';
-			}
-			WP_Filesystem();
-
-			global $wp_filesystem;
-			$wp_filesystem->rmdir( $chunks_dir );
-		}
-
-		parent::tear_down_after_class();
-	}
-
-	/**
 	 * Helper method to create an upload session with a mock request.
 	 *
 	 * @param array $data Optional. Upload data (filename, filetype, length).

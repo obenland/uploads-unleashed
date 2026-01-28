@@ -343,27 +343,6 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 			wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
 		}
 
-		// Clean up storage directory.
-		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
-
-		if ( is_dir( $chunks_dir ) ) {
-			wp_delete_file( trailingslashit( $chunks_dir ) . '.htaccess' );
-			wp_delete_file( trailingslashit( $chunks_dir ) . 'index.php' );
-
-			$files = glob( trailingslashit( $chunks_dir ) . '*.part' );
-			if ( $files ) {
-				array_map( 'wp_delete_file', $files );
-			}
-
-			if ( ! function_exists( 'WP_Filesystem' ) ) {
-				require_once ABSPATH . 'wp-admin/includes/file.php';
-			}
-			WP_Filesystem();
-
-			global $wp_filesystem;
-			$wp_filesystem->rmdir( $chunks_dir );
-		}
-
 		parent::tear_down_after_class();
 	}
 }
