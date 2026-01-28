@@ -242,7 +242,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		switch ( $override_method ) {
 			case 'HEAD':
-				return $this->get_item_offset();
+				return $this->get_item_offset( $request );
 
 			case 'PATCH':
 				return $this->upload_chunk( $request );
@@ -333,9 +333,10 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 *
 	 * @since 0.1.0
 	 *
-	 * @return WP_REST_Response Response object on success, or WP_Error on failure.
+	 * @param WP_REST_Request $request Full details about the request.
+	 * @return WP_REST_Response Response object.
 	 */
-	public function get_item_offset(): WP_REST_Response {
+	public function get_item_offset( WP_REST_Request $request ): WP_REST_Response {
 		$response = new WP_REST_Response( null, 200 );
 		$response->header( 'Upload-Offset', $this->current_upload['offset'] );
 		$response->header( 'Upload-Length', $this->current_upload['length'] );
