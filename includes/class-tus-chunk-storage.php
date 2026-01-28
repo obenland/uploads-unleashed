@@ -142,8 +142,7 @@ class TUS_Chunk_Storage {
 		$path = $this->get_path( $upload_id );
 
 		if ( file_exists( $path ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation needed.
-			return @unlink( $path );
+			return wp_delete_file( $path );
 		}
 
 		return true;
