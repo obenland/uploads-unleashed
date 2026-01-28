@@ -37,35 +37,70 @@ function getNonce() {
 // ============================================================================
 
 /**
- * Custom URL storage that embeds expiration timestamp in localStorage keys.
+ * TUS URL storage that embeds expiration timestamp in localStorage keys.
+ *
  * Key format: tus::{fingerprint}::{expiresAt}::{id}
  */
 class ExpiringUrlStorage {
+	/**
+	 * Stores upload state in localStorage with expiration metadata.
+	 *
+	 * @param {string} uploadFingerprint Unique identifier for the file.
+	 * @param {Object} previousUpload    Upload state to persist.
+	 * @return {Promise<string>} The localStorage key.
+	 */
 	addUpload( uploadFingerprint, previousUpload ) {
 		const id = Math.round( Math.random() * 1e12 );
 		const expiresAt = Date.now() + UPLOAD_EXPIRATION_MS;
 		const key = `tus::${ uploadFingerprint }::${ expiresAt }::${ id }`;
+
 		localStorage.setItem( key, JSON.stringify( previousUpload ) );
+
 		return Promise.resolve( key );
 	}
 
+	/**
+	 * Finds stored uploads matching a fingerprint.
+	 *
+	 * @param {string} uploadFingerprint Fingerprint to search for.
+	 * @return {Promise<Array>} Matching upload entries.
+	 */
 	findUploadsByFingerprint( uploadFingerprint ) {
 		return Promise.resolve(
 			this._findEntries( `tus::${ uploadFingerprint }::` )
 		);
 	}
 
+	/**
+	 * Returns all stored uploads.
+	 *
+	 * @return {Promise<Array>} All upload entries.
+	 */
 	findAllUploads() {
 		return Promise.resolve( this._findEntries( 'tus::' ) );
 	}
 
+	/**
+	 * Removes an upload entry from storage.
+	 *
+	 * @param {string} urlStorageKey The localStorage key to remove.
+	 * @return {Promise<void>}
+	 */
 	removeUpload( urlStorageKey ) {
 		localStorage.removeItem( urlStorageKey );
+
 		return Promise.resolve();
 	}
 
+	/**
+	 * Finds entries by key prefix, cleaning up expired/malformed entries.
+	 *
+	 * @param {string} prefix Key prefix to match.
+	 * @return {Array} Valid upload entries.
+	 */
 	_findEntries( prefix ) {
 		const results = [];
+
 		// Iterate backwards to safely remove items during iteration
 		for ( let i = localStorage.length - 1; i >= 0; i-- ) {
 			const key = localStorage.key( i );
@@ -99,11 +134,10 @@ class ExpiringUrlStorage {
 				localStorage.removeItem( key );
 			}
 		}
+
 		return results;
 	}
 }
-
-const urlStorage = new ExpiringUrlStorage();
 
 // ============================================================================
 // Internal Functions
@@ -136,7 +170,7 @@ const DEFAULT_TUS_OPTIONS = {
 	retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
 	removeFingerprintOnSuccess: true,
 	fingerprint,
-	urlStorage,
+	urlStorage: new ExpiringUrlStorage(),
 };
 
 /**
@@ -399,13 +433,4 @@ export async function discardPendingUpload( pendingUpload ) {
 
 	// Remove from localStorage
 	localStorage.removeItem( pendingUpload.key );
-}
-
-/**
- * Remove a pending upload entry by localStorage key.
- *
- * @param {string} key LocalStorage key to remove.
- */
-export function removePendingUploadByKey( key ) {
-	localStorage.removeItem( key );
 }
