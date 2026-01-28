@@ -1165,4 +1165,113 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$this->assertSame( 'rest_upload_error', $data['code'] );
 		$this->assertStringContainsString( 'security scan', $data['message'] );
 	}
+
+	/**
+	 * Test multi-chunk upload creates attachment.
+	 */
+	public function test_multi_chunk_upload_creates_attachment() {
+		$chunk1 = str_repeat( 'a', 100 );
+		$chunk2 = str_repeat( 'b', 100 );
+		$chunk3 = str_repeat( 'c', 100 );
+
+		$upload_id = $this->create_upload_session( array( 'length' => 300 ) );
+
+		// First chunk.
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $chunk1 );
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 204, $response->get_status() );
+		$this->assertSame( '100', (string) $response->get_headers()['Upload-Offset'] );
+
+		// Second chunk.
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '100' );
+		$request->set_body( $chunk2 );
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 204, $response->get_status() );
+		$this->assertSame( '200', (string) $response->get_headers()['Upload-Offset'] );
+
+		// Third chunk (completes upload).
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '200' );
+		$request->set_body( $chunk3 );
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 200, $response->get_status() );
+
+		$data       = $response->get_data();
+		$attachment = get_post( $data['id'] );
+		$this->assertSame( 'attachment', $attachment->post_type );
+
+		// Verify file content.
+		$file_path = get_attached_file( $data['id'] );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading file in test.
+		$content = file_get_contents( $file_path );
+		$this->assertSame( $chunk1 . $chunk2 . $chunk3, $content );
+
+		// Cleanup.
+		wp_delete_attachment( $data['id'], true );
+	}
+
+	/**
+	 * Test PATCH after upload completion returns 404.
+	 */
+	public function test_patch_after_completion_returns_404() {
+		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+
+		// Complete the upload.
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data' );
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 200, $response->get_status() );
+		$attachment_id = $response->get_data()['id'];
+
+		// Try to PATCH again - session should be deleted.
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '9' );
+		$request->set_body( 'more data' );
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 404, $response->get_status() );
+
+		// Cleanup.
+		wp_delete_attachment( $attachment_id, true );
+	}
+
+	/**
+	 * Test concurrent PATCH at same offset returns 409 for second request.
+	 */
+	public function test_concurrent_patch_returns_offset_mismatch() {
+		$upload_id = $this->create_upload_session( array( 'length' => 200 ) );
+
+		// First PATCH at offset 0 succeeds.
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( str_repeat( 'a', 100 ) );
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 204, $response->get_status() );
+		$this->assertSame( '100', (string) $response->get_headers()['Upload-Offset'] );
+
+		// Second PATCH at offset 0 fails (offset is now 100).
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( str_repeat( 'b', 100 ) );
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 409, $response->get_status() );
+		$this->assertSame( 'rest_offset_mismatch', $response->get_data()['code'] );
+	}
 }
