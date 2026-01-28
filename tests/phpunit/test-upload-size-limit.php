@@ -59,24 +59,6 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Clean up after all tests in the class.
-	 */
-	public static function tear_down_after_class() {
-		// Remove the TUS chunk storage directory and its protection files.
-		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
-
-		if ( is_dir( $chunks_dir ) ) {
-			wp_delete_file( trailingslashit( $chunks_dir ) . '.htaccess' );
-			wp_delete_file( trailingslashit( $chunks_dir ) . 'index.php' );
-
-			global $wp_filesystem;
-			$wp_filesystem->rmdir( $chunks_dir );
-		}
-
-		parent::tear_down_after_class();
-	}
-
-	/**
 	 * Helper method to create an upload session with a mock request.
 	 *
 	 * @param array $data Optional. Upload data (filename, filetype, length).
