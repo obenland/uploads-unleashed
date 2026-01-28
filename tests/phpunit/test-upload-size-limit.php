@@ -23,6 +23,11 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	public static function set_up_before_class() {
 		parent::set_up_before_class();
 
+		if ( ! function_exists( 'WP_Filesystem' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		WP_Filesystem();
+
 		self::$admin_id = self::factory()->user->create(
 			array(
 				'role' => 'administrator',
@@ -47,8 +52,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		$files      = glob( trailingslashit( $chunks_dir ) . '*.part' );
 
 		if ( $files ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct file operation in tests.
-			array_map( 'unlink', $files );
+			array_map( 'wp_delete_file', $files );
 		}
 
 		parent::tear_down();
@@ -62,19 +66,11 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
 
 		if ( is_dir( $chunks_dir ) ) {
-			$htaccess = trailingslashit( $chunks_dir ) . '.htaccess';
-			$index    = trailingslashit( $chunks_dir ) . 'index.php';
+			wp_delete_file( trailingslashit( $chunks_dir ) . '.htaccess' );
+			wp_delete_file( trailingslashit( $chunks_dir ) . 'index.php' );
 
-			if ( file_exists( $htaccess ) ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct file operation in tests.
-				unlink( $htaccess );
-			}
-			if ( file_exists( $index ) ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct file operation in tests.
-				unlink( $index );
-			}
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Direct file operation in tests.
-			rmdir( $chunks_dir );
+			global $wp_filesystem;
+			$wp_filesystem->rmdir( $chunks_dir );
 		}
 
 		parent::tear_down_after_class();
@@ -159,8 +155,9 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// Create a .part file so get_total_pending_size() finds it.
 		$storage = new TUS_Chunk_Storage();
 		$path    = $storage->get_path( $upload_id );
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
-		touch( $path );
+
+		global $wp_filesystem;
+		$wp_filesystem->touch( $path );
 
 		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
@@ -193,8 +190,9 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 				'length'   => 10 * MB_IN_BYTES, // 10 MB.
 			)
 		);
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
-		touch( $storage->get_path( $upload_id_1 ) );
+
+		global $wp_filesystem;
+		$wp_filesystem->touch( $storage->get_path( $upload_id_1 ) );
 
 		$upload_id_2 = $this->create_upload_session(
 			array(
@@ -202,8 +200,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 				'length'   => 20 * MB_IN_BYTES, // 20 MB.
 			)
 		);
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
-		touch( $storage->get_path( $upload_id_2 ) );
+		$wp_filesystem->touch( $storage->get_path( $upload_id_2 ) );
 
 		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
@@ -234,8 +231,9 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		);
 
 		$storage = new TUS_Chunk_Storage();
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
-		touch( $storage->get_path( $upload_id ) );
+
+		global $wp_filesystem;
+		$wp_filesystem->touch( $storage->get_path( $upload_id ) );
 
 		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 
@@ -273,8 +271,9 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 
 		// Create the .part file.
 		$storage = new TUS_Chunk_Storage();
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Direct file operation in tests.
-		touch( $storage->get_path( $upload_id ) );
+
+		global $wp_filesystem;
+		$wp_filesystem->touch( $storage->get_path( $upload_id ) );
 
 		$result = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
 

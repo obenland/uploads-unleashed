@@ -33,8 +33,7 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$files      = glob( trailingslashit( $chunks_dir ) . '*.part' );
 
 		if ( $files ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct file operation in tests.
-			array_map( 'unlink', $files );
+			array_map( 'wp_delete_file', $files );
 		}
 
 		parent::tear_down();
@@ -47,12 +46,16 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
 
 		if ( is_dir( $chunks_dir ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation in tests.
-			@unlink( trailingslashit( $chunks_dir ) . '.htaccess' );
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation in tests.
-			@unlink( trailingslashit( $chunks_dir ) . 'index.php' );
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPress.PHP.NoSilencedErrors.Discouraged -- Direct file operation in tests.
-			@rmdir( $chunks_dir );
+			wp_delete_file( trailingslashit( $chunks_dir ) . '.htaccess' );
+			wp_delete_file( trailingslashit( $chunks_dir ) . 'index.php' );
+
+			if ( ! function_exists( 'WP_Filesystem' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/file.php';
+			}
+			WP_Filesystem();
+
+			global $wp_filesystem;
+			$wp_filesystem->rmdir( $chunks_dir );
 		}
 
 		parent::tear_down_after_class();
