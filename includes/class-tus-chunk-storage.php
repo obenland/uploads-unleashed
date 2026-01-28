@@ -47,13 +47,13 @@ class TUS_Chunk_Storage {
 		// Protect directory from direct access.
 		$htaccess_file = $this->base_dir . '.htaccess';
 		if ( ! file_exists( $htaccess_file ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Simple file write.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
 			file_put_contents( $htaccess_file, "Deny from all\n" );
 		}
 
 		$index_file = $this->base_dir . 'index.php';
 		if ( ! file_exists( $index_file ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Simple file write.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
 			file_put_contents( $index_file, "<?php\n// Silence is golden.\n" );
 		}
 	}
@@ -86,7 +86,7 @@ class TUS_Chunk_Storage {
 	public function append( string $upload_id, string $data, int $offset ) {
 		$path = $this->get_path( $upload_id );
 
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Direct file operation needed.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem lacks append mode and flock support needed for TUS concurrency.
 		$handle = fopen( $path, 'ab' );
 		if ( ! $handle ) {
 			return new WP_Error( 'tus_chunk_open_failed', __( 'Could not open chunk file for writing.', 'uploads-unleashed' ), array( 'status' => 500 ) );
@@ -94,7 +94,7 @@ class TUS_Chunk_Storage {
 
 		// Lock for concurrent access protection.
 		if ( ! flock( $handle, LOCK_EX ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Direct file operation needed.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
 			fclose( $handle );
 
 			return new WP_Error( 'tus_chunk_lock_failed', __( 'Could not acquire lock on chunk file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
@@ -108,7 +108,7 @@ class TUS_Chunk_Storage {
 
 		if ( $current_size !== $offset ) {
 			flock( $handle, LOCK_UN );
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Direct file operation needed.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
 			fclose( $handle );
 
 			return new WP_Error( 'tus_chunk_offset_mismatch', __( 'File offset does not match expected value.', 'uploads-unleashed' ), array( 'status' => 409 ) );
@@ -116,11 +116,11 @@ class TUS_Chunk_Storage {
 
 		// Seek to offset and write data.
 		fseek( $handle, $offset );
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Binary chunk data requires direct fwrite.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Paired with fopen/flock above.
 		$written = fwrite( $handle, $data );
 
 		flock( $handle, LOCK_UN );
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Direct file operation needed.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
 		fclose( $handle );
 
 		if ( false === $written ) {

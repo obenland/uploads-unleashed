@@ -67,8 +67,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$files      = glob( trailingslashit( $chunks_dir ) . '*.part' );
 
 		if ( $files ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct file operation in tests.
-			array_map( 'unlink', $files );
+			array_map( 'wp_delete_file', $files );
 		}
 
 		parent::tear_down();
@@ -82,12 +81,16 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
 
 		if ( is_dir( $chunks_dir ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct file operation in tests.
-			unlink( trailingslashit( $chunks_dir ) . '.htaccess' );
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Direct file operation in tests.
-			unlink( trailingslashit( $chunks_dir ) . 'index.php' );
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Direct file operation in tests.
-			rmdir( $chunks_dir );
+			wp_delete_file( trailingslashit( $chunks_dir ) . '.htaccess' );
+			wp_delete_file( trailingslashit( $chunks_dir ) . 'index.php' );
+
+			if ( ! function_exists( 'WP_Filesystem' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/file.php';
+			}
+			WP_Filesystem();
+
+			global $wp_filesystem;
+			$wp_filesystem->rmdir( $chunks_dir );
 		}
 
 		parent::tear_down_after_class();
@@ -591,8 +594,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_with_valid_sha256_checksum() {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
-		$checksum = 'sha256 ' . base64_encode( hash( 'sha256', $chunk_data, true ) );
+		$checksum   = 'sha256 ' . base64_encode( hash( 'sha256', $chunk_data, true ) );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -612,7 +614,6 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
 		// Wrong checksum (hash of different data).
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$wrong_checksum = 'sha256 ' . base64_encode( hash( 'sha256', 'different data', true ) );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
@@ -652,8 +653,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_with_unsupported_algorithm_returns_400() {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'a', 512 );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
-		$checksum = 'unsupported_algo ' . base64_encode( 'somehash' );
+		$checksum   = 'unsupported_algo ' . base64_encode( 'somehash' );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -694,8 +694,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_with_sha1_checksum() {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'b', 256 );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
-		$checksum = 'sha1 ' . base64_encode( hash( 'sha1', $chunk_data, true ) );
+		$checksum   = 'sha1 ' . base64_encode( hash( 'sha1', $chunk_data, true ) );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -714,8 +713,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	public function test_patch_with_md5_checksum() {
 		$upload_id  = $this->create_upload_session();
 		$chunk_data = str_repeat( 'c', 128 );
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
-		$checksum = 'md5 ' . base64_encode( hash( 'md5', $chunk_data, true ) );
+		$checksum   = 'md5 ' . base64_encode( hash( 'md5', $chunk_data, true ) );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );

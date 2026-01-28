@@ -7,7 +7,7 @@
  * @package uploads-unleashed
  */
 
-// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI script.
+// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI script, runs before WordPress loads.
 
 $_tests_dir = getenv( 'WP_TESTS_DIR' );
 
@@ -22,7 +22,6 @@ if ( false !== $_phpunit_polyfills_path ) {
 }
 
 if ( ! file_exists( "{$_tests_dir}/includes/functions.php" ) ) {
-	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- CLI output.
 	echo "Could not find {$_tests_dir}/includes/functions.php, have you run bin/install-wp-tests.sh?" . PHP_EOL;
 	exit( 1 );
 }
