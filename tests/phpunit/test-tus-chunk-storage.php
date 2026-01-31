@@ -6,23 +6,23 @@
  */
 
 /**
- * Tests for the TUS_Chunk_Storage class.
+ * Tests for the Uploads_Unleashed_TUS_Chunk_Storage class.
  */
-class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
+class Test_Uploads_Unleashed_TUS_Chunk_Storage extends WP_UnitTestCase {
 
 	/**
 	 * Storage instance for tests.
 	 *
-	 * @var TUS_Chunk_Storage
+	 * @var Uploads_Unleashed_TUS_Chunk_Storage
 	 */
-	protected TUS_Chunk_Storage $storage;
+	protected Uploads_Unleashed_TUS_Chunk_Storage $storage;
 
 	/**
 	 * Set up each test.
 	 */
 	public function set_up() {
 		parent::set_up();
-		$this->storage = new TUS_Chunk_Storage();
+		$this->storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 	}
 
 	/**
@@ -225,7 +225,7 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $admin_id );
 
-		$session = new TUS_Upload_Session();
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 
 		// Create sessions with specific upload IDs and lengths.
@@ -269,7 +269,7 @@ class Test_TUS_Chunk_Storage extends WP_UnitTestCase {
 		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $admin_id );
 
-		$session = new TUS_Upload_Session();
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 
 		// Create one with session, one without.

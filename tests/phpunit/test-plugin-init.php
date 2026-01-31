@@ -257,7 +257,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		set_transient( 'tus_upload_' . $upload_id, $session_data, DAY_IN_SECONDS );
 
 		// Create the chunk file.
-		$storage = new TUS_Chunk_Storage();
+		$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 		$storage->append( $upload_id, 'test data', 0 );
 
 		$this->assertTrue( $storage->exists( $upload_id ) );

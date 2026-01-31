@@ -1,6 +1,6 @@
 <?php
 /**
- * TUS Chunk Storage class.
+ * Uploads Unleashed TUS Chunk Storage class.
  *
  * @package uploads-unleashed
  */
@@ -10,7 +10,7 @@
  *
  * @since 0.1.0
  */
-class TUS_Chunk_Storage {
+class Uploads_Unleashed_TUS_Chunk_Storage {
 
 	/**
 	 * Base directory for chunk storage.
@@ -199,7 +199,7 @@ class TUS_Chunk_Storage {
 			return 0;
 		}
 
-		$session    = new TUS_Upload_Session();
+		$session    = new Uploads_Unleashed_TUS_Upload_Session();
 		$total_size = 0;
 
 		foreach ( $files as $file ) {
@@ -224,7 +224,7 @@ class TUS_Chunk_Storage {
 	 */
 	public static function cleanup_expired(): void {
 		$storage = new self();
-		$session = new TUS_Upload_Session();
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
 
 		$files = glob( self::$base_dir . '*.part' );
 

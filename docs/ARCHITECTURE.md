@@ -35,7 +35,7 @@ The plugin enables resumable, chunked file uploads in WordPress by:
 │                         Backend                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │               REST_TUS_Controller                         │ │
+│  │            Uploads_Unleashed_TUS_Controller               │ │
 │  │                                                           │ │
 │  │  POST   /wp/v2/media/tus      → Create upload session    │ │
 │  │  HEAD   /wp/v2/media/tus/{id} → Get upload offset        │ │
@@ -44,12 +44,12 @@ The plugin enables resumable, chunked file uploads in WordPress by:
 │  └───────────────────────────────────────────────────────────┘ │
 │         │                                 │                     │
 │         ▼                                 ▼                     │
-│  ┌──────────────────┐           ┌──────────────────┐          │
-│  │ TUS_Upload       │           │ TUS_Chunk        │          │
-│  │    _Session      │           │    _Storage      │          │
-│  │                  │           │                  │          │
-│  │ (Transients)     │           │ (File System)    │          │
-│  └──────────────────┘           └──────────────────┘          │
+│  ┌────────────────────────────┐ ┌────────────────────────────┐ │
+│  │ Uploads_Unleashed_TUS      │ │ Uploads_Unleashed_TUS      │ │
+│  │        _Upload_Session     │ │        _Chunk_Storage      │ │
+│  │                            │ │                            │ │
+│  │ (Transients)               │ │ (File System)              │ │
+│  └────────────────────────────┘ └────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -98,7 +98,7 @@ Displays interrupted uploads that can be resumed:
 
 ## Backend Components
 
-### REST_TUS_Controller
+### Uploads_Unleashed_TUS_Controller
 
 The main REST API controller implementing TUS 1.0.0:
 
@@ -124,7 +124,7 @@ The main REST API controller implementing TUS 1.0.0:
 - Image content verification
 - Multisite quota checks
 
-### TUS_Upload_Session
+### Uploads_Unleashed_TUS_Upload_Session
 
 Manages upload session metadata using WordPress transients:
 
@@ -147,7 +147,7 @@ Manages upload session metadata using WordPress transients:
 ]
 ```
 
-### TUS_Chunk_Storage
+### Uploads_Unleashed_TUS_Chunk_Storage
 
 Manages physical chunk files on disk:
 
@@ -171,10 +171,10 @@ Manages physical chunk files on disk:
 1. Client sends POST /wp/v2/media/tus
    Headers: Upload-Length, Upload-Metadata
 
-2. REST_TUS_Controller::create_item()
+2. Uploads_Unleashed_TUS_Controller::create_item()
    - Validates permissions
    - Parses metadata (filename, filetype)
-   - Creates TUS_Upload_Session
+   - Creates Uploads_Unleashed_TUS_Upload_Session
 
 3. Response: 201 Created
    Headers: Location, Upload-Offset: 0
@@ -187,11 +187,11 @@ Manages physical chunk files on disk:
    Headers: Upload-Offset, Content-Type
    Body: Binary chunk data
 
-2. REST_TUS_Controller::upload_chunk()
+2. Uploads_Unleashed_TUS_Controller::upload_chunk()
    - Validates session exists
    - Verifies offset matches
    - Optional checksum verification
-   - Appends to TUS_Chunk_Storage
+   - Appends to Uploads_Unleashed_TUS_Chunk_Storage
    - Updates session offset
 
 3. If offset < length:
