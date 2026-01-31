@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name: Uploads Unleashed
- * Plugin URI: https://github.com/obenland/uploads-unleashed
+ * Plugin URI: https://en.wp.obenland.it/uploads-unleashed/
  * Description: Upload large files to WordPress without hitting size limits or losing progress when your connection drops.
  * Version: 0.1.0
  * Requires at least: 6.4
  * Requires PHP: 7.4
  * Author: Konstantin Obenland
- * Author URI: https://developer.wordpress.org
+ * Author URI: https://konstantin.obenland.it
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: uploads-unleashed
