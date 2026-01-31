@@ -35,7 +35,7 @@ The plugin enables resumable, chunked file uploads in WordPress by:
 │                         Backend                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │               Uploads_Unleashed_TUS_Controller                         │ │
+│  │            Uploads_Unleashed_TUS_Controller               │ │
 │  │                                                           │ │
 │  │  POST   /wp/v2/media/tus      → Create upload session    │ │
 │  │  HEAD   /wp/v2/media/tus/{id} → Get upload offset        │ │
@@ -44,12 +44,12 @@ The plugin enables resumable, chunked file uploads in WordPress by:
 │  └───────────────────────────────────────────────────────────┘ │
 │         │                                 │                     │
 │         ▼                                 ▼                     │
-│  ┌──────────────────┐           ┌──────────────────┐          │
-│  │ TUS_Upload       │           │ TUS_Chunk        │          │
-│  │    _Session      │           │    _Storage      │          │
-│  │                  │           │                  │          │
-│  │ (Transients)     │           │ (File System)    │          │
-│  └──────────────────┘           └──────────────────┘          │
+│  ┌────────────────────────────┐ ┌────────────────────────────┐ │
+│  │ Uploads_Unleashed_TUS      │ │ Uploads_Unleashed_TUS      │ │
+│  │        _Upload_Session     │ │        _Chunk_Storage      │ │
+│  │                            │ │                            │ │
+│  │ (Transients)               │ │ (File System)              │ │
+│  └────────────────────────────┘ └────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

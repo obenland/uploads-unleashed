@@ -58,7 +58,7 @@ npm test
 
 To run a specific test file:
 ```bash
-npm test -- --filter Test_REST_TUS_Controller
+npm test -- --filter Test_Uploads_Unleashed_TUS_Controller
 ```
 
 ### JavaScript Tests
