@@ -1,6 +1,6 @@
 <?php
 /**
- * REST API: REST_TUS_Controller class
+ * REST API: Uploads_Unleashed_TUS_Controller class
  *
  * @package uploads-unleashed
  */
@@ -15,7 +15,7 @@
  * @see WP_REST_Controller
  * @see https://tus.io/protocols/resumable-upload
  */
-class REST_TUS_Controller extends WP_REST_Controller {
+class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 	/**
 	 * TUS protocol version.
@@ -276,7 +276,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		$upload_length = (int) $upload_length;
 
-		/** This filter is documented in includes/class-rest-tus-controller.php */
+		/** This filter is documented in includes/class-uploads-unleashed-tus-controller.php */
 		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
 
 		if ( $upload_length > $max_size ) {
@@ -293,7 +293,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 
 		// Parse metadata and create upload session.
 		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
-		$session   = new TUS_Upload_Session();
+		$session   = new Uploads_Unleashed_TUS_Upload_Session();
 		$upload_id = $session->create(
 			array(
 				'filename' => $metadata['filename'] ?? 'unnamed',
@@ -391,13 +391,13 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Write chunk.
-		$new_offset = ( new TUS_Chunk_Storage() )->append( $upload_id, $chunk_data, $server_offset );
+		$new_offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, $chunk_data, $server_offset );
 		if ( is_wp_error( $new_offset ) ) {
 			return $new_offset;
 		}
 
 		// Update session.
-		( new TUS_Upload_Session() )->update_offset( $upload_id, $new_offset );
+		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $new_offset );
 
 		/**
 		 * Fires after a chunk is received and stored.
@@ -443,7 +443,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 */
 	public function delete_item( $request ): WP_REST_Response {
 		$upload_id   = $request->get_param( 'id' );
-		$upload_data = $this->current_upload ?? ( new TUS_Upload_Session() )->get( $upload_id );
+		$upload_data = $this->current_upload ?? ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id );
 
 		$this->delete_upload( $upload_id );
 
@@ -473,7 +473,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @return array|WP_Error Attachment data from wp_prepare_attachment_for_js() on success, WP_Error on failure.
 	 */
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
-		$chunk_path = ( new TUS_Chunk_Storage() )->get_path( $upload_id );
+		$chunk_path = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( $upload_id );
 
 		/**
 		 * Filters whether to proceed with finalization.
@@ -568,7 +568,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 			return $attachment_id;
 		}
 
-		/** This action is documented in includes/class-rest-tus-controller.php */
+		/** This action is documented in includes/class-uploads-unleashed-tus-controller.php */
 		do_action( 'uploads_unleashed_upload_complete', $attachment_id, $upload_id, $upload_data );
 
 		// Get attachment data in REST API format.
@@ -918,7 +918,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$upload_id = $request->get_param( 'id' );
-		$upload    = ( new TUS_Upload_Session() )->get( $upload_id );
+		$upload    = ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id );
 
 		if ( ! $upload ) {
 			return new WP_Error( 'rest_upload_not_found', __( 'Upload not found.', 'uploads-unleashed' ), array( 'status' => 404 ) );
@@ -942,7 +942,7 @@ class REST_TUS_Controller extends WP_REST_Controller {
 	 * @param string $upload_id The upload ID to delete.
 	 */
 	private function delete_upload( string $upload_id ): void {
-		( new TUS_Chunk_Storage() )->delete( $upload_id );
-		( new TUS_Upload_Session() )->delete( $upload_id );
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->delete( $upload_id );
+		( new Uploads_Unleashed_TUS_Upload_Session() )->delete( $upload_id );
 	}
 }

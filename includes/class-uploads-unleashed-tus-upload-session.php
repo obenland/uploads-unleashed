@@ -1,6 +1,6 @@
 <?php
 /**
- * TUS Upload Session class.
+ * Uploads Unleashed TUS Upload Session class.
  *
  * @package uploads-unleashed
  */
@@ -10,7 +10,7 @@
  *
  * @since 0.1.0
  */
-class TUS_Upload_Session {
+class Uploads_Unleashed_TUS_Upload_Session {
 
 	/**
 	 * Transient prefix for upload sessions.

@@ -25,9 +25,9 @@ define( 'UPLOADS_UNLEASHED_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'UPLOADS_UNLEASHED_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
 // Include required files.
-require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-tus-upload-session.php';
-require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-tus-chunk-storage.php';
-require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-rest-tus-controller.php';
+require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-tus-upload-session.php';
+require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-tus-chunk-storage.php';
+require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-tus-controller.php';
 
 /**
  * Initializes the plugin.
@@ -168,7 +168,7 @@ add_action( 'post-plupload-upload-ui', 'uploads_unleashed_pending_ui' );
  * @since 0.1.0
  */
 function uploads_unleashed_register_routes() {
-	$controller = new REST_TUS_Controller();
+	$controller = new Uploads_Unleashed_TUS_Controller();
 	$controller->register_routes();
 }
 add_action( 'rest_api_init', 'uploads_unleashed_register_routes' );
@@ -194,7 +194,7 @@ function uploads_unleashed_add_options_headers( WP_REST_Response $response, WP_R
 		return $response;
 	}
 
-	$controller = new REST_TUS_Controller();
+	$controller = new Uploads_Unleashed_TUS_Controller();
 	return $controller->add_options_headers( $response, $request );
 }
 add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_options_headers', 10, 3 );
@@ -279,7 +279,7 @@ function uploads_unleashed_intercept_tus_creation( $result, $server, $request ) 
 		return $result;
 	}
 
-	$controller = new REST_TUS_Controller();
+	$controller = new Uploads_Unleashed_TUS_Controller();
 
 	$permission = $controller->create_item_permissions_check( $request );
 	if ( is_wp_error( $permission ) ) {
@@ -296,7 +296,7 @@ add_filter( 'rest_pre_dispatch', 'uploads_unleashed_intercept_tus_creation', 10,
  * @since 0.1.0
  */
 function uploads_unleashed_cleanup() {
-	TUS_Chunk_Storage::cleanup_expired();
+	Uploads_Unleashed_TUS_Chunk_Storage::cleanup_expired();
 }
 add_action( 'uploads_unleashed_cleanup', 'uploads_unleashed_cleanup' );
 
@@ -313,7 +313,7 @@ add_action( 'uploads_unleashed_cleanup', 'uploads_unleashed_cleanup' );
  * @return int Adjusted upload size limit in bytes.
  */
 function uploads_unleashed_filter_upload_size_limit( int $size ): int {
-	$pending_size = ( new TUS_Chunk_Storage() )->get_total_pending_size();
+	$pending_size = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_total_pending_size();
 
 	if ( is_multisite() ) {
 		// On multisite, use quota-based available space.

@@ -12,9 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 // phpcs:disable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64 encoding.
 
 /**
- * Tests for the REST_TUS_Controller class.
+ * Tests for the Uploads_Unleashed_TUS_Controller class.
  */
-class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
+class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 	/**
 	 * Administrator user ID.
@@ -93,7 +93,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$request->set_header( 'Upload-Length', (string) $data['length'] );
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( $data['filename'] ) );
 
-		return ( new TUS_Upload_Session() )->create( $data, $request );
+		return ( new Uploads_Unleashed_TUS_Upload_Session() )->create( $data, $request );
 	}
 
 	/**
@@ -162,7 +162,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 
 		// Without Upload-Length, the rest_pre_dispatch filter does not
 		// intercept, so call the controller directly.
-		$controller = new REST_TUS_Controller();
+		$controller = new Uploads_Unleashed_TUS_Controller();
 		$response   = $controller->create_item( $request );
 
 		$this->assertWPError( $response );
@@ -265,7 +265,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$this->assertSame( '512', (string) $headers['Upload-Offset'] );
 
 		// Verify session was updated.
-		$upload = ( new TUS_Upload_Session() )->get( $upload_id );
+		$upload = ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id );
 		$this->assertSame( 512, (int) $upload['offset'] );
 	}
 
@@ -402,7 +402,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 	 * Test getting item schema.
 	 */
 	public function test_get_item_schema() {
-		$controller = new REST_TUS_Controller();
+		$controller = new Uploads_Unleashed_TUS_Controller();
 		$schema     = $controller->get_item_schema();
 
 		$this->assertSame( 'tus-upload', $schema['title'] );
@@ -441,7 +441,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 204, $response->get_status() );
-		$this->assertNull( ( new TUS_Upload_Session() )->get( $upload_id ) );
+		$this->assertNull( ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id ) );
 	}
 
 	/**
@@ -502,7 +502,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$response = rest_get_server()->dispatch( $request );
 
 		$this->assertSame( 204, $response->get_status() );
-		$this->assertNull( ( new TUS_Upload_Session() )->get( $upload_id ) );
+		$this->assertNull( ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id ) );
 	}
 
 	/**
@@ -1058,7 +1058,7 @@ class Test_REST_TUS_Controller extends WP_Test_REST_Controller_Testcase {
 		$location  = $response->get_headers()['Location'];
 		$upload_id = basename( $location );
 
-		$session = new TUS_Upload_Session();
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
 		$upload  = $session->get( $upload_id );
 
 		$this->assertSame( 'document.pdf', $upload['filename'] );

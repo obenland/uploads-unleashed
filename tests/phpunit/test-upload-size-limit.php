@@ -79,7 +79,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( $data['filename'] ) );
 
-		$session = new TUS_Upload_Session();
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
 		return $session->create( $data, $request );
 	}
 
@@ -135,7 +135,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		);
 
 		// Create a .part file so get_total_pending_size() finds it.
-		$storage = new TUS_Chunk_Storage();
+		$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 		$path    = $storage->get_path( $upload_id );
 
 		global $wp_filesystem;
@@ -163,7 +163,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 			$this->markTestSkipped( 'disk_free_space() not available on this system.' );
 		}
 
-		$storage = new TUS_Chunk_Storage();
+		$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 
 		// Create multiple pending uploads.
 		$upload_id_1 = $this->create_upload_session(
@@ -212,7 +212,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 			)
 		);
 
-		$storage = new TUS_Chunk_Storage();
+		$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 
 		global $wp_filesystem;
 		$wp_filesystem->touch( $storage->get_path( $upload_id ) );
@@ -252,7 +252,7 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		set_transient( 'tus_upload_' . $upload_id, $session_data, DAY_IN_SECONDS );
 
 		// Create the .part file.
-		$storage = new TUS_Chunk_Storage();
+		$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 
 		global $wp_filesystem;
 		$wp_filesystem->touch( $storage->get_path( $upload_id ) );

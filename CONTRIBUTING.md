@@ -146,9 +146,9 @@ npm run format
 ```
 uploads-unleashed/
 ├── includes/               # PHP backend classes
-│   ├── class-rest-tus-controller.php
-│   ├── class-tus-upload-session.php
-│   └── class-tus-chunk-storage.php
+│   ├── class-uploads-unleashed-tus-controller.php
+│   ├── class-uploads-unleashed-tus-upload-session.php
+│   └── class-uploads-unleashed-tus-chunk-storage.php
 ├── src/                    # TypeScript frontend source
 │   ├── index.ts            # Core TUS client wrapper
 │   ├── wp-uploader.ts      # Media Library integration

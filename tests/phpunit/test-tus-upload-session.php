@@ -10,9 +10,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Tests for the TUS_Upload_Session class.
+ * Tests for the Uploads_Unleashed_TUS_Upload_Session class.
  */
-class Test_TUS_Upload_Session extends WP_UnitTestCase {
+class Test_Uploads_Unleashed_TUS_Upload_Session extends WP_UnitTestCase {
 
 	/**
 	 * Administrator user ID.
@@ -31,9 +31,9 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	/**
 	 * Session instance for tests.
 	 *
-	 * @var TUS_Upload_Session
+	 * @var Uploads_Unleashed_TUS_Upload_Session
 	 */
-	protected TUS_Upload_Session $session;
+	protected Uploads_Unleashed_TUS_Upload_Session $session;
 
 	/**
 	 * Set up class fixtures.
@@ -51,7 +51,7 @@ class Test_TUS_Upload_Session extends WP_UnitTestCase {
 	 */
 	public function set_up() {
 		parent::set_up();
-		$this->session = new TUS_Upload_Session();
+		$this->session = new Uploads_Unleashed_TUS_Upload_Session();
 		wp_set_current_user( self::$admin_id );
 	}
 
