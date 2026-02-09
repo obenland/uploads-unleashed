@@ -1,0 +1,52 @@
+# Git/GitHub
+.git
+.gitattributes
+.gitignore
+.github
+
+# IDE/Editor
+.editorconfig
+.idea
+.claude
+
+# Development environment
+.wp-env.json
+.wp-env.override.json
+
+# Build tooling
+composer.json
+composer.lock
+jest.config.js
+package.json
+package-lock.json
+tsconfig.json
+webpack.config.js
+
+# Dependencies
+node_modules
+vendor
+
+# Testing and linting
+.eslintignore
+.eslintrc.json
+.prettierignore
+tests
+phpcs.xml.dist
+phpunit.xml.dist
+.phpunit.result.cache
+coverage
+
+# Documentation (developer-focused)
+CONTRIBUTING.md
+README.md
+docs
+
+# WordPress.org assets
+.wordpress-org
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dist
+.distignore
