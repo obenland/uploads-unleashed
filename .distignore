@@ -24,7 +24,7 @@ webpack.config.js
 
 # Dependencies
 node_modules
-vendor
+/vendor
 
 # Testing and linting
 .eslintignore
