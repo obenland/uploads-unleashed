@@ -1,44 +1,50 @@
-name: Release
+name: Release and Deploy
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - '[0-9]+.*'
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  deploy:
+    name: Release and deploy to WordPress.org
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Build assets
-        run: npm run build
+      - run: npm run build
 
-      - name: Create release zip
-        run: |
-          # Create archive using git archive (respects .gitattributes export-ignore)
-          git archive --format=zip --prefix=uploads-unleashed/ HEAD > uploads-unleashed.zip
+      - name: Deploy to WordPress.org
+        id: deploy
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        with:
+          generate-zip: true
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
 
-          # Add build/ directory (not in git, but needed for distribution)
-          mkdir -p uploads-unleashed
-          cp -r build/ uploads-unleashed/
-          zip -r uploads-unleashed.zip uploads-unleashed/build/
+      - name: Build changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: '.github/changelog_configuration.json'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # Clean up temp directory
-          rm -rf uploads-unleashed
-
-      - name: Upload release asset
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: uploads-unleashed.zip
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: ${{ steps.deploy.outputs.zip-path }}

@@ -35,3 +35,7 @@ phpunit.xml.dist export-ignore
 CONTRIBUTING.md export-ignore
 README.md export-ignore
 docs/ export-ignore
+
+# WordPress.org deployment
+node_modules/ export-ignore
+.wordpress-org/ export-ignore
