@@ -23,7 +23,7 @@ tsconfig.json
 webpack.config.js
 
 # Dependencies
-node_modules
+/node_modules
 /vendor
 
 # Testing and linting
@@ -34,15 +34,15 @@ tests
 phpcs.xml.dist
 phpunit.xml.dist
 .phpunit.result.cache
-coverage
+/coverage
 
 # Documentation (developer-focused)
 CONTRIBUTING.md
 README.md
-docs
+/docs
 
 # WordPress.org assets
-.wordpress-org
+/.wordpress-org
 
 # OS
 .DS_Store
