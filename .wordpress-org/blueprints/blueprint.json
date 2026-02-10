@@ -1,0 +1,24 @@
+{
+	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
+	"landingPage": "/wp-admin/post.php?post=1&action=edit",
+	"preferredVersions": {
+		"php": "8.4",
+		"wp": "latest"
+	},
+	"steps": [
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/mu-plugins/low-upload-limit.php",
+			"data": "<?php\n@ini_set( 'upload_max_filesize', '1M' );\n@ini_set( 'post_max_size', '1M' );"
+		},
+		{
+			"step": "login",
+			"username": "admin",
+			"password": "password"
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require_once '/wordpress/wp-load.php'; wp_update_post( array( 'ID' => 1, 'post_title' => 'Try Resumable Uploads', 'post_content' => \"<!-- wp:heading -->\\n<h2 class=\\\"wp-block-heading\\\">Welcome to Uploads Unleashed</h2>\\n<!-- /wp:heading -->\\n\\n<!-- wp:paragraph -->\\n<p>This site has a 1 MB upload limit, but Uploads Unleashed lets you upload files of any size using resumable chunked uploads. If your connection drops, your upload picks up right where it left off.</p>\\n<!-- /wp:paragraph -->\\n\\n<!-- wp:paragraph -->\\n<p>Try it out \\u2014 click the video block below and upload a large file:</p>\\n<!-- /wp:paragraph -->\\n\\n<!-- wp:video -->\\n<figure class=\\\"wp-block-video\\\"></figure>\\n<!-- /wp:video -->\" ) );"
+		}
+	]
+}
