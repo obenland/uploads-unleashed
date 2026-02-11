@@ -1249,4 +1249,84 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$this->assertSame( 409, $response->get_status() );
 		$this->assertSame( 'rest_offset_mismatch', $response->get_data()['code'] );
 	}
+
+	/**
+	 * Test create upload rejects zero Upload-Length.
+	 */
+	public function test_create_upload_rejects_zero_length() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '0' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_upload_length_invalid', $data['code'] );
+	}
+
+	/**
+	 * Test create upload rejects negative Upload-Length.
+	 */
+	public function test_create_upload_rejects_negative_length() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '-1' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_upload_length_invalid', $data['code'] );
+	}
+
+	/**
+	 * Test PATCH truncates chunk data exceeding declared Upload-Length.
+	 */
+	public function test_patch_truncates_oversized_chunk() {
+		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+
+		// Send 20 bytes when only 10 are expected.
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( str_repeat( 'a', 20 ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		// Upload should complete at exactly 10 bytes.
+		$this->assertSame( 200, $response->get_status() );
+		$headers = $response->get_headers();
+		$this->assertSame( '10', (string) $headers['Upload-Offset'] );
+
+		// Cleanup.
+		$data = $response->get_data();
+		wp_delete_attachment( $data['id'], true );
+	}
+
+	/**
+	 * Test PATCH rejects chunks exceeding server chunk size limit.
+	 */
+	public function test_patch_rejects_chunk_exceeding_size_limit() {
+		$upload_id = $this->create_upload_session( array( 'length' => 1024 * 1024 ) );
+
+		// Set a small chunk size limit for testing.
+		$filter_callback = function () {
+			return 100;
+		};
+		add_filter( 'uploads_unleashed_max_chunk_size', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( str_repeat( 'a', 200 ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'uploads_unleashed_max_chunk_size', $filter_callback );
+
+		$this->assertSame( 413, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_chunk_too_large', $data['code'] );
+	}
 }
