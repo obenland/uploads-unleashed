@@ -247,4 +247,39 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			}
 		}
 	}
+
+	/**
+	 * Deletes all chunk storage data for the current site.
+	 *
+	 * Computes the storage path independently of the constructor
+	 * to avoid recreating the directory during uninstall.
+	 *
+	 * @since 0.2.0
+	 */
+	public static function delete_all(): void {
+		$upload_dir = wp_upload_dir();
+		$chunks_dir = trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
+
+		if ( ! is_dir( $chunks_dir ) ) {
+			return;
+		}
+
+		// Delete all files, including hidden files like .htaccess.
+		foreach ( array( $chunks_dir . '*', $chunks_dir . '.*' ) as $pattern ) {
+			$files = glob( $pattern, GLOB_NOSORT );
+			if ( $files ) {
+				foreach ( $files as $file ) {
+					if ( is_file( $file ) ) {
+						wp_delete_file( $file );
+					}
+				}
+			}
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPress.PHP.NoSilencedErrors.Discouraged -- WP_Filesystem requires credentials, impractical for uninstall. rmdir may fail if the directory is not empty.
+		@rmdir( $chunks_dir );
+
+		// Reset so the constructor recomputes on next instantiation.
+		self::$base_dir = null;
+	}
 }

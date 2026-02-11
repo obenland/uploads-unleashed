@@ -16,6 +16,7 @@
 		<include>
 			<directory suffix=".php">./includes</directory>
 			<file>./uploads-unleashed.php</file>
+			<file>./uninstall.php</file>
 		</include>
 	</coverage>
 </phpunit>
