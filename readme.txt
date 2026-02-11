@@ -1,6 +1,6 @@
 === Uploads Unleashed ===
 Contributors: obenland
-Tags: upload limit, upload failed, large files, video upload, media upload
+Tags: uploads, photos, import, video, media
 Requires at least: 6.4
 Tested up to: 6.9
 Requires PHP: 7.4
