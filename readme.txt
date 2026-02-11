@@ -16,7 +16,7 @@ Ever tried uploading a video or large image to WordPress and hit the dreaded "ex
 
 Uploads Unleashed fixes both problems. Instead of sending your files all at once, it splits them into small pieces behind the scenes. This means:
 
-* **No more size limits.** Upload files larger than what your server normally allows — no need to contact your host or edit config files.
+* **Get past upload size limits.** Upload files larger than what your server normally allows — no need to contact your host or edit config files.
 * **No more starting over.** If your connection drops, or you close your browser, come back and pick up right where you left off.
 * **Real-time progress.** Watch your upload progress as it happens.
 
@@ -48,11 +48,11 @@ No. Just install and activate the plugin. It works out of the box on any standar
 
 = Is there a file size limit? =
 
-Only your available disk space. The plugin doesn't impose any artificial cap.
+On a regular WordPress site, the only limit is your available disk space. On multisite, your network's upload quota still applies. The plugin itself doesn't impose any additional cap.
 
 = Does this work on multisite? =
 
-Yes. Upload quotas are still respected.
+Yes. Network upload quotas are still respected.
 
 = Does this plugin collect any data? =
 
@@ -60,7 +60,7 @@ No. Upload session data is stored temporarily on your server and automatically d
 
 = What happens if I deactivate the plugin? =
 
-Any incomplete uploads are cleaned up and WordPress goes back to handling uploads the way it normally does. Files you already uploaded stay in your Media Library.
+WordPress goes back to handling uploads the way it normally does. Files you already uploaded stay in your Media Library. Any temporary upload data will be automatically cleaned up.
 
 == Changelog ==
 
