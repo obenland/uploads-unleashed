@@ -114,6 +114,38 @@ async function resumeUpload( pendingUpload ) {
 }
 
 /**
+ * Creates a pending upload list item using DOM APIs.
+ *
+ * @param {Object} item Pending upload item.
+ * @return {HTMLLIElement} The list item element.
+ */
+function createPendingUploadItem( item ) {
+	const li = document.createElement( 'li' );
+
+	const filenameSpan = document.createElement( 'span' );
+	filenameSpan.className = 'filename';
+	filenameSpan.textContent = item.filename;
+
+	const sizeSpan = document.createElement( 'span' );
+	sizeSpan.className = 'filesize';
+	sizeSpan.textContent = `(${ formatFileSize( item.size ) })`;
+
+	const resumeBtn = document.createElement( 'button' );
+	resumeBtn.type = 'button';
+	resumeBtn.className = 'button resume-upload';
+	resumeBtn.textContent = __( 'Resume', 'uploads-unleashed' );
+
+	const discardBtn = document.createElement( 'button' );
+	discardBtn.type = 'button';
+	discardBtn.className = 'button discard-upload';
+	discardBtn.textContent = __( 'Discard', 'uploads-unleashed' );
+
+	li.append( filenameSpan, sizeSpan, resumeBtn, discardBtn );
+
+	return li;
+}
+
+/**
  * Renders the pending uploads list.
  */
 function renderPendingUploads() {
@@ -129,74 +161,37 @@ function renderPendingUploads() {
 		return;
 	}
 
-	list.innerHTML = pending
-		.map(
-			( item ) => `
-		<li data-key="${ item.key }" data-url="${ item.uploadUrl }"
-			data-filename="${ item.filename }" data-size="${ item.size }">
-			<span class="filename">${ item.filename }</span>
-			<span class="filesize">(${ formatFileSize( item.size ) })</span>
-			<button type="button" class="button resume-upload">${ __(
-				'Resume',
-				'uploads-unleashed'
-			) }</button>
-			<button type="button" class="button discard-upload">${ __(
-				'Discard',
-				'uploads-unleashed'
-			) }</button>
-		</li>
-	`
-		)
-		.join( '' );
+	list.replaceChildren(
+		...pending.map( ( item ) => {
+			const li = createPendingUploadItem( item );
 
-	// Bind resume buttons
-	list.querySelectorAll( '.resume-upload' ).forEach( ( btn ) => {
-		btn.addEventListener( 'click', async ( e ) => {
-			const li = e.target.closest( 'li' );
-			if ( ! li ) {
-				return;
-			}
-
-			const item = {
-				key: li.getAttribute( 'data-key' ) || '',
-				uploadUrl: li.getAttribute( 'data-url' ) || '',
-				filename: li.getAttribute( 'data-filename' ) || '',
-				size: parseInt( li.getAttribute( 'data-size' ) || '0', 10 ),
-			};
-			const resumed = await resumeUpload( item );
-			if ( resumed ) {
-				li.remove();
-				if ( list.children.length === 0 ) {
-					container.style.display = 'none';
+			li.querySelector( '.resume-upload' ).addEventListener(
+				'click',
+				async () => {
+					const resumed = await resumeUpload( item );
+					if ( resumed ) {
+						li.remove();
+						if ( list.children.length === 0 ) {
+							container.style.display = 'none';
+						}
+					}
 				}
-			}
-		} );
-	} );
+			);
 
-	// Bind discard buttons
-	list.querySelectorAll( '.discard-upload' ).forEach( ( btn ) => {
-		btn.addEventListener( 'click', async ( e ) => {
-			const li = e.target.closest( 'li' );
-			if ( ! li ) {
-				return;
-			}
-
-			const key = li.getAttribute( 'data-key' );
-			const url = li.getAttribute( 'data-url' );
-			if ( key && url ) {
-				await discardPendingUpload( {
-					key,
-					uploadUrl: url,
-					filename: li.getAttribute( 'data-filename' ) || '',
-					size: parseInt( li.getAttribute( 'data-size' ) || '0', 10 ),
-				} );
-				li.remove();
-				if ( list.children.length === 0 ) {
-					container.style.display = 'none';
+			li.querySelector( '.discard-upload' ).addEventListener(
+				'click',
+				async () => {
+					await discardPendingUpload( item );
+					li.remove();
+					if ( list.children.length === 0 ) {
+						container.style.display = 'none';
+					}
 				}
-			}
-		} );
-	} );
+			);
+
+			return li;
+		} )
+	);
 
 	container.style.display = 'block';
 }
@@ -215,9 +210,14 @@ function removePendingEntry( filename, size ) {
 	}
 
 	list.querySelectorAll( 'li' ).forEach( ( li ) => {
-		const entryFilename = li.getAttribute( 'data-filename' );
-		const entrySize = parseInt( li.getAttribute( 'data-size' ) || '0', 10 );
-		if ( entryFilename === filename && entrySize === size ) {
+		const entryFilename =
+			li.querySelector( '.filename' )?.textContent || '';
+		const entrySize =
+			li.querySelector( '.filesize' )?.textContent || '';
+		if (
+			entryFilename === filename &&
+			entrySize === `(${ formatFileSize( size ) })`
+		) {
 			li.remove();
 		}
 	} );
