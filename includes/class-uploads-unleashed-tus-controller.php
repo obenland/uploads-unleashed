@@ -475,6 +475,9 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
 		$chunk_path = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( $upload_id );
 
+		// Clear stat cache so filesize() returns accurate values after the final chunk write.
+		clearstatcache( true, $chunk_path );
+
 		/**
 		 * Filters whether to proceed with finalization.
 		 *
