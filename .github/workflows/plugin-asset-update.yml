@@ -1,30 +1,31 @@
 name: Update WordPress.org Assets
 
 on:
-  push:
-    branches:
-      - trunk
-    paths:
-      - '.wordpress-org/**'
-      - 'readme.txt'
+    push:
+        branches:
+            - trunk
+        paths:
+            - '.wordpress-org/**'
+            - 'readme.txt'
 
 jobs:
-  update-assets:
-    name: Update WordPress.org assets and readme
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
+    update-assets:
+        name: Update WordPress.org assets and readme
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'npm'
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '22'
+                  cache: 'npm'
 
-      - run: npm ci
+            - run: npm ci
 
-      - run: npm run build
+            - run: npm run build
 
-      - uses: 10up/action-wordpress-plugin-asset-update@stable
-        env:
-          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
-          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+            - uses: 10up/action-wordpress-plugin-asset-update@stable
+              env:
+                  SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+                  SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+                  IGNORE_OTHER_FILES: true

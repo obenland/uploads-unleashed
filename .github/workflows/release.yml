@@ -1,51 +1,51 @@
 name: Release and Deploy
 
 on:
-  push:
-    tags:
-      - '[0-9]*.[0-9]*.[0-9]*'
+    push:
+        tags:
+            - '[0-9]*.[0-9]*.[0-9]*'
 
 permissions:
-  contents: write
-  pull-requests: read
+    contents: write
+    pull-requests: read
 
 jobs:
-  deploy:
-    name: Release and deploy to WordPress.org
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+    deploy:
+        name: Release and deploy to WordPress.org
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-          cache: 'npm'
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '22'
+                  cache: 'npm'
 
-      - run: npm ci
+            - run: npm ci
 
-      - run: npm run build
+            - run: npm run build
 
-      - name: Deploy to WordPress.org
-        id: deploy
-        uses: 10up/action-wordpress-plugin-deploy@stable
-        with:
-          generate-zip: true
-        env:
-          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
-          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+            - name: Deploy to WordPress.org
+              id: deploy
+              uses: 10up/action-wordpress-plugin-deploy@stable
+              with:
+                  generate-zip: true
+              env:
+                  SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+                  SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
 
-      - name: Build changelog
-        id: changelog
-        uses: mikepenz/release-changelog-builder-action@v6
-        with:
-          configuration: '.github/changelog_configuration.json'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Build changelog
+              id: changelog
+              uses: mikepenz/release-changelog-builder-action@v6
+              with:
+                  configuration: '.github/changelog_configuration.json'
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          body: ${{ steps.changelog.outputs.changelog }}
-          files: ${{ steps.deploy.outputs.zip-path }}
+            - name: Create GitHub release
+              uses: softprops/action-gh-release@v2
+              with:
+                  body: ${{ steps.changelog.outputs.changelog }}
+                  files: ${{ steps.deploy.outputs.zip-path }}

@@ -7,9 +7,14 @@
 	},
 	"steps": [
 		{
-			"step": "writeFile",
-			"path": "/wordpress/wp-content/mu-plugins/low-upload-limit.php",
-			"data": "<?php\n@ini_set( 'upload_max_filesize', '1M' );\n@ini_set( 'post_max_size', '1M' );"
+			"step": "setPhpIniEntry",
+			"key": "upload_max_filesize",
+			"value": "1M"
+		},
+		{
+			"step": "setPhpIniEntry",
+			"key": "post_max_size",
+			"value": "1M"
 		},
 		{
 			"step": "login",
