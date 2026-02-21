@@ -475,9 +475,6 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
 		$chunk_path = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( $upload_id );
 
-		// Clear stat cache so filesize() returns accurate values after the final chunk write.
-		clearstatcache( true, $chunk_path );
-
 		/**
 		 * Filters whether to proceed with finalization.
 		 *
@@ -651,9 +648,14 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return true;
 		}
 
+		$file_size = filesize( $file_path );
+		if ( false === $file_size ) {
+			return new WP_Error( 'rest_file_unreadable', __( 'Could not determine file size for quota check.', 'uploads-unleashed' ), array( 'status' => 500 ) );
+		}
+
 		$space_used    = get_space_used();
 		$space_allowed = get_space_allowed();
-		$file_size_mb  = filesize( $file_path ) / MB_IN_BYTES;
+		$file_size_mb  = $file_size / MB_IN_BYTES;
 
 		if ( $space_used + $file_size_mb > $space_allowed ) {
 			return new WP_Error( 'rest_quota_exceeded', __( 'You have used your space quota.', 'uploads-unleashed' ), array( 'status' => 400 ) );

@@ -125,6 +125,9 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
 		fclose( $handle );
 
+		// Clear stat cache so filesize() returns accurate values after writing.
+		clearstatcache( true, $path );
+
 		if ( false === $written ) {
 			return new WP_Error( 'tus_chunk_write_failed', __( 'Could not write to chunk file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
@@ -165,6 +168,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			return 0;
 		}
 
+		clearstatcache( true, $path );
 		$size = filesize( $path );
 
 		return false === $size ? 0 : $size;
