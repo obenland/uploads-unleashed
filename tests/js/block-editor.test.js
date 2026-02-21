@@ -357,20 +357,22 @@ describe( 'tusMiddleware', () => {
 			const originalHooks = window.wp.hooks;
 			window.wp.hooks = undefined;
 
-			upload.mockResolvedValue( { id: 123 } );
+			try {
+				upload.mockResolvedValue( { id: 123 } );
 
-			const options = {
-				path: '/wp/v2/media',
-				method: 'POST',
-				body: formData,
-			};
+				const options = {
+					path: '/wp/v2/media',
+					method: 'POST',
+					body: formData,
+				};
 
-			await tusMiddleware( options, next );
+				await tusMiddleware( options, next );
 
-			expect( upload ).toHaveBeenCalled();
-			expect( next ).not.toHaveBeenCalled();
-
-			window.wp.hooks = originalHooks;
+				expect( upload ).toHaveBeenCalled();
+				expect( next ).not.toHaveBeenCalled();
+			} finally {
+				window.wp.hooks = originalHooks;
+			}
 		} );
 	} );
 } );
