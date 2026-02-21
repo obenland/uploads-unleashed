@@ -116,11 +116,17 @@ async function resumeUpload( pendingUpload ) {
 /**
  * Creates a pending upload list item using DOM APIs.
  *
- * @param {Object} item Pending upload item.
+ * @param {Object} item           Pending upload item from getPendingUploads().
+ * @param {string} item.key       LocalStorage key.
+ * @param {string} item.uploadUrl TUS upload URL.
+ * @param {string} item.filename  Original filename.
+ * @param {number} item.size      File size in bytes.
  * @return {HTMLLIElement} The list item element.
  */
 function createPendingUploadItem( item ) {
 	const li = document.createElement( 'li' );
+	li.dataset.filename = item.filename;
+	li.dataset.size = item.size;
 
 	const filenameSpan = document.createElement( 'span' );
 	filenameSpan.className = 'filename';
@@ -146,7 +152,7 @@ function createPendingUploadItem( item ) {
 }
 
 /**
- * Renders the pending uploads list.
+ * Renders the pending uploads list and binds resume/discard handlers.
  */
 function renderPendingUploads() {
 	const container = document.getElementById( 'uploads-unleashed-pending' );
@@ -210,13 +216,9 @@ function removePendingEntry( filename, size ) {
 	}
 
 	list.querySelectorAll( 'li' ).forEach( ( li ) => {
-		const entryFilename =
-			li.querySelector( '.filename' )?.textContent || '';
-		const entrySize =
-			li.querySelector( '.filesize' )?.textContent || '';
 		if (
-			entryFilename === filename &&
-			entrySize === `(${ formatFileSize( size ) })`
+			li.dataset.filename === filename &&
+			parseInt( li.dataset.size, 10 ) === size
 		) {
 			li.remove();
 		}
