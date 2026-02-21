@@ -3,8 +3,10 @@
  * Uninstall handler for Uploads Unleashed.
  *
  * Removes all plugin data on deletion:
- * - Chunk files and storage directory from each site's uploads.
- * - Upload session transients from each site's options table.
+ * - Chunk files and storage directory from uploads.
+ * - Upload session transients from the options table.
+ *
+ * On multisite, iterates all sites in the network.
  *
  * @package uploads-unleashed
  */
@@ -29,9 +31,12 @@ if ( is_multisite() ) {
 
 	foreach ( $sites as $site_id ) {
 		switch_to_blog( $site_id );
-		Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
-		Uploads_Unleashed_TUS_Upload_Session::delete_all();
-		restore_current_blog();
+		try {
+			Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
+			Uploads_Unleashed_TUS_Upload_Session::delete_all();
+		} finally {
+			restore_current_blog();
+		}
 	}
 } else {
 	Uploads_Unleashed_TUS_Chunk_Storage::delete_all();

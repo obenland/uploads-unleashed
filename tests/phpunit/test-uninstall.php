@@ -126,10 +126,7 @@ class Test_Uninstall extends WP_UnitTestCase {
 		$this->assertNotNull( $session->get( $id1 ) );
 		$this->assertNotNull( $session->get( $id2 ) );
 
-		$deleted = Uploads_Unleashed_TUS_Upload_Session::delete_all();
-
-		// 2 transient values + 2 transient timeouts = 4 rows.
-		$this->assertSame( 4, $deleted );
+		Uploads_Unleashed_TUS_Upload_Session::delete_all();
 
 		// Verify rows are gone from the database.
 		global $wpdb;
@@ -144,12 +141,20 @@ class Test_Uninstall extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Tests that delete_all returns zero when no transients exist.
+	 * Tests that delete_all succeeds when no transients exist.
 	 */
-	public function test_upload_session_delete_all_returns_zero_when_empty() {
-		$deleted = Uploads_Unleashed_TUS_Upload_Session::delete_all();
+	public function test_upload_session_delete_all_succeeds_when_empty() {
+		Uploads_Unleashed_TUS_Upload_Session::delete_all();
 
-		$this->assertSame( 0, $deleted );
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$remaining = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$wpdb->esc_like( '_transient_tus_upload_' ) . '%'
+			)
+		);
+		$this->assertSame( '0', $remaining );
 	}
 
 	/**
