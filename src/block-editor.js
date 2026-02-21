@@ -48,7 +48,7 @@ function extractFile( formData ) {
  *
  * Core-ready features:
  * - Graceful fallback to standard upload on TUS failure
- * - Uses wp.hooks for extensibility (if available)
+ * - Uses `wp.hooks` for extensibility
  * - No global state pollution
  *
  * @param {Object}   options apiFetch options.
@@ -66,6 +66,18 @@ const tusMiddleware = async ( options, next ) => {
 		return next( options );
 	}
 
+	// Allow plugins to opt out of TUS for specific files.
+	const shouldUseTus =
+		window.wp?.hooks?.applyFilters?.(
+			'uploadsUnleashed.shouldUseTus',
+			true,
+			file
+		) ?? true;
+
+	if ( ! shouldUseTus ) {
+		return next( options );
+	}
+
 	try {
 		// Try TUS upload
 		return await upload( file, {
@@ -79,7 +91,7 @@ const tusMiddleware = async ( options, next ) => {
 			error
 		);
 
-		// Allow WordPress hooks to decide whether to fallback
+		// Allow WordPress hooks to decide whether to fall back
 		// This enables plugins/themes to customize fallback behavior
 		const allowFallback = window.wp?.hooks?.applyFilters?.(
 			'uploadsUnleashed.allowFallback',

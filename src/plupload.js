@@ -121,6 +121,18 @@ function handleBeforeUpload( uploader, file ) {
 		return; // Let plupload's default behavior run
 	}
 
+	// Allow plugins to opt out of TUS for specific files.
+	const shouldUseTus =
+		window.wp?.hooks?.applyFilters?.(
+			'uploadsUnleashed.shouldUseTus',
+			true,
+			nativeFile
+		) ?? true;
+
+	if ( ! shouldUseTus ) {
+		return; // Let plupload's default behavior run
+	}
+
 	// Use TUS for this file
 	upload( nativeFile, {
 		onProgress: ( percent, bytesUploaded ) => {

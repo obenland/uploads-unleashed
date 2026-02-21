@@ -434,3 +434,50 @@ export async function discardPendingUpload( pendingUpload ) {
 	// Remove from localStorage
 	localStorage.removeItem( pendingUpload.key );
 }
+
+// ============================================================================
+// Third-Party Compatibility
+// ============================================================================
+
+/**
+ * Checks whether VideoPress is actively handling video uploads on this page.
+ *
+ * Covers three integration paths:
+ * - Legacy Jetpack module plupload override (wp.VideoPress global)
+ * - VideoPress package block editor integration (videoPressEditorState)
+ * - Legacy Jetpack module block editor middleware (script tag detection)
+ *
+ * @return {boolean} True if VideoPress is intercepting video uploads.
+ */
+function isVideoPressActive() {
+	// Legacy Jetpack module — plupload path.
+	if ( window.wp?.VideoPress ) {
+		return true;
+	}
+
+	// VideoPress package — block editor path.
+	const state = window.videoPressEditorState;
+	if (
+		state?.isVideoPressModuleActive === '1' ||
+		state?.isStandaloneActive === '1'
+	) {
+		return true;
+	}
+
+	// Legacy Jetpack module — block editor middleware.
+	return !! document.getElementById(
+		'jetpack-videopress-gutenberg-override-video-upload-js'
+	);
+}
+
+window.wp?.hooks?.addFilter?.(
+	'uploadsUnleashed.shouldUseTus',
+	'uploads-unleashed/videopress-compat',
+	( shouldUseTus, file ) => {
+		if ( file?.type?.startsWith( 'video/' ) && isVideoPressActive() ) {
+			return false;
+		}
+
+		return shouldUseTus;
+	}
+);
