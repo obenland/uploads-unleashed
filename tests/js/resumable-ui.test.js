@@ -84,7 +84,7 @@ describe( 'renderPendingUploads', () => {
 		expect( document.querySelector( 'li' ) ).toBeNull();
 	} );
 
-	it( 'hides container when no pending uploads', () => {
+	it( 'does not modify container when no pending uploads', () => {
 		const { container } = setupDOM();
 		container.style.display = 'block';
 
@@ -171,6 +171,29 @@ describe( 'data attributes', () => {
 		expect( li.querySelector( '.filename' ).textContent ).toBe(
 			'my file (1).jpg'
 		);
+	} );
+
+	it( 'renders HTML in filename as inert text, not markup', () => {
+		setupDOM();
+
+		const xssFilename = '<img src=x onerror=alert(1)>';
+		importModule( [ createPendingUploadEntry( xssFilename, 1024 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filename' ).textContent ).toBe(
+			xssFilename
+		);
+		expect( li.querySelector( 'img' ) ).toBeNull();
+	} );
+
+	it( 'does not expose key or uploadUrl as data attributes', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.dataset.key ).toBeUndefined();
+		expect( li.dataset.url ).toBeUndefined();
 	} );
 } );
 
@@ -304,5 +327,33 @@ describe( 'discard button', () => {
 			'uploads-unleashed-pending'
 		);
 		expect( container.style.display ).toBe( 'none' );
+	} );
+
+	it( 'discards correct item from multi-item list', async () => {
+		setupDOM();
+
+		const itemA = createPendingUploadEntry( 'a.txt', 100 );
+		const itemB = createPendingUploadEntry( 'b.txt', 200 );
+		importModule( [ itemA, itemB ] );
+
+		const { discardPendingUpload } = require( '../../src/tus-client' );
+		discardPendingUpload.mockResolvedValue();
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		const discardButtons = list.querySelectorAll( '.discard-upload' );
+
+		// Discard the first item
+		discardButtons[ 0 ].click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( discardPendingUpload ).toHaveBeenCalledWith( itemA );
+		expect( list.children.length ).toBe( 1 );
+		expect( list.children[ 0 ].dataset.filename ).toBe( 'b.txt' );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+		expect( container.style.display ).toBe( 'block' );
 	} );
 } );
