@@ -434,3 +434,25 @@ export async function discardPendingUpload( pendingUpload ) {
 	// Remove from localStorage
 	localStorage.removeItem( pendingUpload.key );
 }
+
+// ============================================================================
+// Third-Party Compatibility
+// ============================================================================
+
+// Defer to VideoPress for video files when the VideoPress plugin is active.
+// Detected via wp.VideoPress (plupload path) or videoPressResumableEnabled (block editor path).
+// Registered here because both block-editor.js and plupload.js import from tus-client.
+window.wp?.hooks?.addFilter?.(
+	'uploadsUnleashed.shouldUseTus',
+	'uploads-unleashed/videopress-compat',
+	( shouldUseTus, file ) => {
+		if (
+			file?.type?.startsWith( 'video/' ) &&
+			( window.wp?.VideoPress || window.videoPressResumableEnabled )
+		) {
+			return false;
+		}
+
+		return shouldUseTus;
+	}
+);

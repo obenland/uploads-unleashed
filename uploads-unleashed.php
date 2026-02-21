@@ -57,7 +57,7 @@ function uploads_unleashed_register_scripts() {
 	wp_register_script(
 		'uploads-unleashed',
 		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/tus-client.js',
-		$tus_client_asset['dependencies'],
+		array_merge( $tus_client_asset['dependencies'], array( 'wp-hooks' ) ),
 		$tus_client_asset['version'],
 		true
 	);
@@ -95,7 +95,7 @@ function uploads_unleashed_register_scripts() {
 	wp_register_script(
 		'uploads-unleashed-plupload',
 		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/plupload.js',
-		array_merge( $plupload_asset['dependencies'], array( 'uploads-unleashed', 'wp-plupload', 'plupload-handlers' ) ),
+		array_merge( $plupload_asset['dependencies'], array( 'uploads-unleashed', 'wp-hooks', 'wp-plupload', 'plupload-handlers' ) ),
 		$plupload_asset['version'],
 		true
 	);
@@ -106,7 +106,7 @@ function uploads_unleashed_register_scripts() {
 	wp_register_script(
 		'uploads-unleashed-block-editor',
 		UPLOADS_UNLEASHED_PLUGIN_URL . 'build/block-editor.js',
-		array_merge( $block_editor_asset['dependencies'], array( 'uploads-unleashed', 'wp-api-fetch' ) ),
+		array_merge( $block_editor_asset['dependencies'], array( 'uploads-unleashed', 'wp-hooks', 'wp-api-fetch' ) ),
 		$block_editor_asset['version'],
 		true
 	);

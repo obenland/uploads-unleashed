@@ -242,7 +242,14 @@ describe( 'tusMiddleware', () => {
 
 			const tusError = new Error( 'TUS failed' );
 			upload.mockRejectedValue( tusError );
-			window.wp.hooks.applyFilters.mockReturnValue( false );
+			window.wp.hooks.applyFilters.mockImplementation(
+				( hookName, defaultValue ) => {
+					if ( hookName === 'uploadsUnleashed.allowFallback' ) {
+						return false;
+					}
+					return defaultValue;
+				}
+			);
 
 			const options = {
 				path: '/wp/v2/media',
@@ -263,6 +270,107 @@ describe( 'tusMiddleware', () => {
 			expect( next ).not.toHaveBeenCalled();
 			// Warning is logged before checking allowFallback filter
 			expect( console ).toHaveWarned();
+		} );
+	} );
+
+	describe( 'shouldUseTus filter', () => {
+		it( 'skips TUS when filter returns false', async () => {
+			const file = new File( [ 'video' ], 'movie.mp4', {
+				type: 'video/mp4',
+			} );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			window.wp.hooks.applyFilters.mockImplementation(
+				( hookName, defaultValue ) => {
+					if ( hookName === 'uploadsUnleashed.shouldUseTus' ) {
+						return false;
+					}
+					return defaultValue;
+				}
+			);
+
+			const options = {
+				path: '/wp/v2/media',
+				method: 'POST',
+				body: formData,
+			};
+
+			await tusMiddleware( options, next );
+
+			expect( next ).toHaveBeenCalledWith( options );
+			expect( upload ).not.toHaveBeenCalled();
+		} );
+
+		it( 'uses TUS when filter returns true', async () => {
+			const file = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			const options = {
+				path: '/wp/v2/media',
+				method: 'POST',
+				body: formData,
+			};
+
+			await tusMiddleware( options, next );
+
+			expect( upload ).toHaveBeenCalled();
+			expect( next ).not.toHaveBeenCalled();
+		} );
+
+		it( 'passes file to the filter', async () => {
+			const file = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			const options = {
+				path: '/wp/v2/media',
+				method: 'POST',
+				body: formData,
+			};
+
+			await tusMiddleware( options, next );
+
+			expect( window.wp.hooks.applyFilters ).toHaveBeenCalledWith(
+				'uploadsUnleashed.shouldUseTus',
+				true,
+				file
+			);
+		} );
+
+		it( 'defaults to TUS when wp.hooks is unavailable', async () => {
+			const file = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			const originalHooks = window.wp.hooks;
+			window.wp.hooks = undefined;
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			const options = {
+				path: '/wp/v2/media',
+				method: 'POST',
+				body: formData,
+			};
+
+			await tusMiddleware( options, next );
+
+			expect( upload ).toHaveBeenCalled();
+			expect( next ).not.toHaveBeenCalled();
+
+			window.wp.hooks = originalHooks;
 		} );
 	} );
 } );
