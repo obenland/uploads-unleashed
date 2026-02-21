@@ -439,17 +439,42 @@ export async function discardPendingUpload( pendingUpload ) {
 // Third-Party Compatibility
 // ============================================================================
 
-// Defer to VideoPress for video files when the VideoPress plugin is active.
-// Detected via wp.VideoPress (plupload path) or videoPressResumableEnabled (block editor path).
-// Registered here because both block-editor.js and plupload.js import from tus-client.
+/**
+ * Checks whether VideoPress is actively handling video uploads on this page.
+ *
+ * Covers three integration paths:
+ * - Legacy Jetpack module plupload override (wp.VideoPress global)
+ * - VideoPress package block editor integration (videoPressEditorState)
+ * - Legacy Jetpack module block editor middleware (script tag detection)
+ *
+ * @return {boolean} True if VideoPress is intercepting video uploads.
+ */
+function isVideoPressActive() {
+	// Legacy Jetpack module — plupload path.
+	if ( window.wp?.VideoPress ) {
+		return true;
+	}
+
+	// VideoPress package — block editor path.
+	const state = window.videoPressEditorState;
+	if (
+		state?.isVideoPressModuleActive === '1' ||
+		state?.isStandaloneActive === '1'
+	) {
+		return true;
+	}
+
+	// Legacy Jetpack module — block editor middleware.
+	return !! document.getElementById(
+		'jetpack-videopress-gutenberg-override-video-upload-js'
+	);
+}
+
 window.wp?.hooks?.addFilter?.(
 	'uploadsUnleashed.shouldUseTus',
 	'uploads-unleashed/videopress-compat',
 	( shouldUseTus, file ) => {
-		if (
-			file?.type?.startsWith( 'video/' ) &&
-			( window.wp?.VideoPress || window.videoPressResumableEnabled )
-		) {
+		if ( file?.type?.startsWith( 'video/' ) && isVideoPressActive() ) {
 			return false;
 		}
 
