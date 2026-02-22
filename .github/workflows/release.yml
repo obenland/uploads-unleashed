@@ -61,7 +61,7 @@ jobs:
                   if grep -q "^= ${{ github.ref_name }} =$" readme.txt; then
                       echo "Changelog entry for ${{ github.ref_name }} already exists, skipping insertion."
                   else
-                      sed -i "/^== Changelog ==$/r /tmp/changelog_entry.txt" readme.txt
+                      sed -i "/^== Changelog ==[[:space:]]*$/r /tmp/changelog_entry.txt" readme.txt
                   fi
 
                   if ! grep -q "^= ${{ github.ref_name }} =$" readme.txt; then
