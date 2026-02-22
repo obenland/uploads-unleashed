@@ -24,8 +24,8 @@ jest.mock( '../../src/tus-client', () => ( {
 jest.mock( '../../src/resume-ui.css', () => ( {} ) );
 
 // JSDOM does not provide DataTransfer; polyfill for resume-upload tests.
-if ( typeof globalThis.DataTransfer === 'undefined' ) {
-	globalThis.DataTransfer = class DataTransfer {
+if ( typeof global.DataTransfer === 'undefined' ) {
+	global.DataTransfer = class DataTransfer {
 		constructor() {
 			this._files = [];
 			this.items = {
