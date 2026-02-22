@@ -14,11 +14,8 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	 * Clean up after all tests in the class.
 	 */
 	public static function tear_down_after_class() {
-		// Clean up any scheduled events.
-		$timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
-		if ( $timestamp ) {
-			wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
-		}
+		// Clean up any scheduled events for this hook.
+		wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
 
 		parent::tear_down_after_class();
 	}

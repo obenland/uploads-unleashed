@@ -321,8 +321,8 @@ class Test_Uploads_Unleashed_TUS_Chunk_Storage extends WP_UnitTestCase {
 		// This should return without error and without iterating any files.
 		Uploads_Unleashed_TUS_Chunk_Storage::cleanup_expired();
 
-		// If we get here without error, the early return worked.
-		$this->assertTrue( true );
+		// After cleanup, there still should be no .part files present.
+		$this->assertEmpty( glob( trailingslashit( $chunks_dir ) . '*.part' ) );
 	}
 
 	/**
