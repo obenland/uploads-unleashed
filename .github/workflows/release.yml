@@ -17,7 +17,13 @@ jobs:
             - uses: actions/checkout@v6
               with:
                   fetch-depth: 0
-                  token: ${{ secrets.RELEASE_TOKEN }}
+
+            - name: Generate GitHub App token
+              id: app-token
+              uses: actions/create-github-app-token@v2
+              with:
+                  app-id: ${{ secrets.APP_ID }}
+                  private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
             - name: Update version strings
               run: |
@@ -32,6 +38,7 @@ jobs:
                   git config user.email "obenland@gmx.de"
                   git add uploads-unleashed.php readme.txt package.json
                   git commit -m "Bump version to ${{ github.ref_name }} [skip ci]"
+                  git remote set-url origin "https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/${{ github.repository }}.git"
                   git push origin HEAD:trunk
 
             - uses: actions/setup-node@v6
