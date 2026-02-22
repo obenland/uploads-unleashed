@@ -21,9 +21,16 @@ jobs:
             - uses: actions/setup-node@v6
               with:
                   node-version: '22'
-                  cache: 'npm'
 
-            - run: npm ci
+            - name: Cache node_modules
+              uses: actions/cache@v4
+              id: node-modules-cache
+              with:
+                  path: node_modules
+                  key: node-modules-${{ hashFiles('package-lock.json') }}
+
+            - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+              run: npm ci
 
             - run: npm run build
 
