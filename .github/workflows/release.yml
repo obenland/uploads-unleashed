@@ -18,6 +18,65 @@ jobs:
               with:
                   fetch-depth: 0
 
+            - name: Generate GitHub App token
+              id: app-token
+              uses: actions/create-github-app-token@v2
+              with:
+                  app-id: ${{ secrets.APP_ID }}
+                  private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+            - name: Update version strings
+              run: |
+                  git checkout trunk
+                  sed -i "s/\* Version: .*/* Version: ${{ github.ref_name }}/" uploads-unleashed.php
+                  sed -i "s/UPLOADS_UNLEASHED_VERSION', '[^']*'/UPLOADS_UNLEASHED_VERSION', '${{ github.ref_name }}'/" uploads-unleashed.php
+                  sed -i "s/Stable tag: .*/Stable tag: ${{ github.ref_name }}/" readme.txt
+                  sed -i 's/"version": "[^"]*"/"version": "${{ github.ref_name }}"/' package.json
+                  sed -i '/"name": "uploads-unleashed"/{n;s/"version": "[^"]*"/"version": "${{ github.ref_name }}"/}' package-lock.json
+
+            - name: Push version bump to trunk
+              env:
+                  GH_TOKEN: ${{ steps.app-token.outputs.token }}
+              run: |
+                  TRUNK_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/trunk --jq '.object.sha')
+
+                  create_blob() {
+                      base64 -w0 "$1" | jq -Rs '{"encoding": "base64", "content": .}' > /tmp/blob.json
+                      gh api repos/${{ github.repository }}/git/blobs \
+                          --input /tmp/blob.json \
+                          --jq '.sha'
+                  }
+
+                  TREE_ITEMS="[]"
+                  for FILE in uploads-unleashed.php readme.txt package.json package-lock.json; do
+                      BLOB_SHA=$(create_blob "$FILE")
+                      TREE_ITEMS=$(echo "$TREE_ITEMS" | jq --arg path "$FILE" --arg sha "$BLOB_SHA" \
+                          '. + [{"path": $path, "mode": "100644", "type": "blob", "sha": $sha}]')
+                  done
+
+                  echo "$TREE_ITEMS" | jq --arg base "$TRUNK_SHA" \
+                      '{"base_tree": $base, "tree": .}' > /tmp/tree.json
+                  TREE_SHA=$(gh api repos/${{ github.repository }}/git/trees \
+                      --input /tmp/tree.json \
+                      --jq '.sha')
+
+                  jq -n --arg message "Bump version to ${{ github.ref_name }} [skip ci]" \
+                      --arg tree "$TREE_SHA" \
+                      --arg parent "$TRUNK_SHA" \
+                      '{"message": $message, "tree": $tree, "parents": [$parent]}' > /tmp/commit.json
+                  COMMIT_SHA=$(gh api repos/${{ github.repository }}/git/commits \
+                      --input /tmp/commit.json \
+                      --jq '.sha')
+
+                  gh api repos/${{ github.repository }}/git/refs/heads/trunk \
+                      --method PATCH \
+                      --field sha="$COMMIT_SHA"
+
+                  gh api repos/${{ github.repository }}/git/refs/tags/${{ github.ref_name }} \
+                      --method PATCH \
+                      --field sha="$COMMIT_SHA" \
+                      --field force=true
+
             - uses: actions/setup-node@v6
               with:
                   node-version: '22'
