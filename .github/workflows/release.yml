@@ -63,7 +63,7 @@ jobs:
                   jq -n --arg message "Bump version to ${{ github.ref_name }} [skip ci]" \
                       --arg tree "$TREE_SHA" \
                       --arg parent "$TRUNK_SHA" \
-                      '{"message": $message, "tree": $tree, "parents": [$parent], "author": {"name": "Konstantin Obenland", "email": "obenland@gmx.de"}}' > /tmp/commit.json
+                      '{"message": $message, "tree": $tree, "parents": [$parent]}' > /tmp/commit.json
                   COMMIT_SHA=$(gh api repos/${{ github.repository }}/git/commits \
                       --input /tmp/commit.json \
                       --jq '.sha')
@@ -88,8 +88,7 @@ jobs:
 
             - run: npm run build
 
-            - if: false # TEST: skip deploy
-              name: Deploy to WordPress.org
+            - name: Deploy to WordPress.org
               id: deploy
               uses: 10up/action-wordpress-plugin-deploy@stable
               with:
@@ -98,8 +97,7 @@ jobs:
                   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
                   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
 
-            - if: false # TEST: skip changelog
-              name: Build changelog
+            - name: Build changelog
               id: changelog
               uses: mikepenz/release-changelog-builder-action@v6
               with:
@@ -107,8 +105,7 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - if: false # TEST: skip release
-              name: Create GitHub release
+            - name: Create GitHub release
               uses: softprops/action-gh-release@v2
               with:
                   body: ${{ steps.changelog.outputs.changelog }}
