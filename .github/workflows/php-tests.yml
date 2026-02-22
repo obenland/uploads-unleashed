@@ -68,6 +68,8 @@ jobs:
 
             - name: Start WordPress environment
               run: npm run start
+              env:
+                  WP_ENV_PHP_VERSION: ${{ matrix.php }}
 
             - name: Save Docker images
               if: steps.docker-cache.outputs.cache-hit != 'true'
