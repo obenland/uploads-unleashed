@@ -19,9 +19,11 @@ jobs:
               uses: actions/checkout@v6
 
             - name: Cache Docker images
-              uses: ScribeMD/docker-cache@0.5.0
+              uses: actions/cache@v4
+              id: docker-cache
               with:
-                  key: docker-${{ runner.os }}-${{ matrix.php }}
+                  path: /tmp/docker-images.tar
+                  key: docker-${{ matrix.php }}-${{ hashFiles('.wp-env.json') }}
 
             - name: Setup PHP
               uses: shivammathur/setup-php@v2
@@ -60,8 +62,18 @@ jobs:
             - name: Build assets
               run: npm run build
 
+            - name: Load Docker images
+              if: steps.docker-cache.outputs.cache-hit == 'true'
+              run: docker load -i /tmp/docker-images.tar
+
             - name: Start WordPress environment
               run: npm run start
+              env:
+                  WP_ENV_PHP_VERSION: ${{ matrix.php }}
+
+            - name: Save Docker images
+              if: steps.docker-cache.outputs.cache-hit != 'true'
+              run: docker save -o /tmp/docker-images.tar $(docker image list --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>')
 
             - name: Run PHPUnit tests
               run: npm test
