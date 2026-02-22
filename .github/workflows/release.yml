@@ -35,7 +35,7 @@ jobs:
                   sed -i "s/UPLOADS_UNLEASHED_VERSION', '[^']*'/UPLOADS_UNLEASHED_VERSION', '${{ github.ref_name }}'/" uploads-unleashed.php
                   sed -i "s/Stable tag: .*/Stable tag: ${{ github.ref_name }}/" readme.txt
                   sed -i 's/"version": "[^"]*"/"version": "${{ github.ref_name }}"/' package.json
-                  npm install --package-lock-only
+                  sed -i '/"name": "uploads-unleashed"/{n;s/"version": "[^"]*"/"version": "${{ github.ref_name }}"/}' package-lock.json
                   git add uploads-unleashed.php readme.txt package.json package-lock.json
 
                   git commit -m "Bump version to ${{ github.ref_name }} [skip ci]"
