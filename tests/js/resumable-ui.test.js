@@ -23,6 +23,21 @@ jest.mock( '../../src/tus-client', () => ( {
 
 jest.mock( '../../src/resume-ui.css', () => ( {} ) );
 
+// JSDOM does not provide DataTransfer; polyfill for resume-upload tests.
+if ( typeof globalThis.DataTransfer === 'undefined' ) {
+	globalThis.DataTransfer = class DataTransfer {
+		constructor() {
+			this._files = [];
+			this.items = {
+				add: ( file ) => this._files.push( file ),
+			};
+		}
+		get files() {
+			return this._files;
+		}
+	};
+}
+
 const ENDPOINT = '/wp-json/wp/v2/media';
 
 function createPendingUploadEntry( filename, size ) {
@@ -54,12 +69,13 @@ function setupDOM() {
 }
 
 function importModule( pendingUploads = [] ) {
-	const { getPendingUploads } = require( '../../src/tus-client' );
-	getPendingUploads.mockReturnValue( pendingUploads );
-
+	let mocks;
 	jest.isolateModules( () => {
+		mocks = require( '../../src/tus-client' );
+		mocks.getPendingUploads.mockReturnValue( pendingUploads );
 		require( '../../src/resume-ui' );
 	} );
+	return mocks;
 }
 
 beforeEach( () => {
@@ -295,9 +311,7 @@ describe( 'discard button', () => {
 		setupDOM();
 
 		const pending = createPendingUploadEntry( 'test.txt', 1024 );
-		importModule( [ pending ] );
-
-		const { discardPendingUpload } = require( '../../src/tus-client' );
+		const { discardPendingUpload } = importModule( [ pending ] );
 		discardPendingUpload.mockResolvedValue();
 
 		const discard = document.querySelector( '.discard-upload' );
@@ -314,9 +328,9 @@ describe( 'discard button', () => {
 	it( 'hides container when last item is discarded', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
-
-		const { discardPendingUpload } = require( '../../src/tus-client' );
+		const { discardPendingUpload } = importModule( [
+			createPendingUploadEntry( 'test.txt', 1024 ),
+		] );
 		discardPendingUpload.mockResolvedValue();
 
 		document.querySelector( '.discard-upload' ).click();
@@ -334,9 +348,7 @@ describe( 'discard button', () => {
 
 		const itemA = createPendingUploadEntry( 'a.txt', 100 );
 		const itemB = createPendingUploadEntry( 'b.txt', 200 );
-		importModule( [ itemA, itemB ] );
-
-		const { discardPendingUpload } = require( '../../src/tus-client' );
+		const { discardPendingUpload } = importModule( [ itemA, itemB ] );
 		discardPendingUpload.mockResolvedValue();
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
@@ -350,6 +362,89 @@ describe( 'discard button', () => {
 		expect( discardPendingUpload ).toHaveBeenCalledWith( itemA );
 		expect( list.children.length ).toBe( 1 );
 		expect( list.children[ 0 ].dataset.filename ).toBe( 'b.txt' );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+		expect( container.style.display ).toBe( 'block' );
+	} );
+} );
+
+describe( 'resume button', () => {
+	function setupMoxieShim() {
+		const shim = document.createElement( 'div' );
+		shim.className = 'moxie-shim';
+		const input = document.createElement( 'input' );
+		input.type = 'file';
+
+		// JSDOM rejects non-FileList values on input.files; allow plain arrays.
+		let storedFiles = null;
+		Object.defineProperty( input, 'files', {
+			get: () => storedFiles,
+			set: ( val ) => {
+				storedFiles = val;
+			},
+		} );
+
+		shim.appendChild( input );
+		document.body.appendChild( shim );
+		return input;
+	}
+
+	function mockShowOpenFilePicker( file ) {
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
+		);
+	}
+
+	afterEach( () => {
+		delete window.showOpenFilePicker;
+	} );
+
+	it( 'removes item on successful resume', async () => {
+		setupDOM();
+		setupMoxieShim();
+
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'photo.jpg', size );
+		importModule( [ pending ] );
+
+		const file = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
+			type: 'image/jpeg',
+		} );
+		mockShowOpenFilePicker( file );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 0 );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+		expect( container.style.display ).toBe( 'none' );
+	} );
+
+	it( 'keeps item when user cancels file picker', async () => {
+		setupDOM();
+
+		const pending = createPendingUploadEntry( 'photo.jpg', 5242880 );
+		importModule( [ pending ] );
+
+		// showOpenFilePicker throws AbortError on cancel
+		const abortError = new DOMException( 'The user aborted', 'AbortError' );
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.reject( abortError )
+		);
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 1 );
 
 		const container = document.getElementById(
 			'uploads-unleashed-pending'
