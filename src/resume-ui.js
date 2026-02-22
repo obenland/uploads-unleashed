@@ -58,12 +58,16 @@ async function resumeUpload( pendingUpload ) {
 					: undefined,
 			} );
 			file = await handle.getFile();
-		} catch {
-			// User canceled or API error - fall through to fallback
+		} catch ( err ) {
+			// User canceled — don't fall through to a second dialog
+			if ( err instanceof DOMException && err.name === 'AbortError' ) {
+				return false;
+			}
+			// Other API error — fall through to fallback
 		}
 	}
 
-	// Fallback: Create hidden file input
+	// Fallback: Create hidden file input (browsers without showOpenFilePicker)
 	if ( ! file ) {
 		file = await new Promise( ( resolve ) => {
 			const input = document.createElement( 'input' );
