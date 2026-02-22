@@ -282,6 +282,10 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_upload_length_required', __( 'Upload-Length header is required.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
+		if ( ! ctype_digit( $upload_length ) ) {
+			return new WP_Error( 'rest_upload_length_invalid', __( 'Upload-Length must be a positive integer.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
 		$upload_length = (int) $upload_length;
 
 		if ( $upload_length <= 0 ) {
@@ -414,7 +418,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 		// Get chunk data.
 		$chunk_data = $request->get_body();
-		if ( empty( $chunk_data ) ) {
+		if ( '' === $chunk_data ) {
 			return new WP_Error( 'rest_empty_chunk', __( 'No data received.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
@@ -431,6 +435,9 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 		// Truncate chunk so total upload cannot exceed declared Upload-Length.
 		$remaining = (int) $this->current_upload['length'] - $server_offset;
+		if ( $remaining <= 0 ) {
+			return new WP_Error( 'rest_upload_already_complete', __( 'Upload has already received all expected bytes.', 'uploads-unleashed' ), array( 'status' => 409 ) );
+		}
 		if ( strlen( $chunk_data ) > $remaining ) {
 			$chunk_data = substr( $chunk_data, 0, $remaining );
 		}

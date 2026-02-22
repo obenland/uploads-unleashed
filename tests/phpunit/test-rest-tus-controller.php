@@ -1281,6 +1281,21 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Test create upload rejects non-numeric Upload-Length.
+	 */
+	public function test_create_upload_rejects_non_numeric_length() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '10foo' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_upload_length_invalid', $data['code'] );
+	}
+
+	/**
 	 * Test PATCH truncates chunk data exceeding declared Upload-Length.
 	 */
 	public function test_patch_truncates_oversized_chunk() {
