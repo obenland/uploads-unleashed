@@ -24,63 +24,6 @@ const PLUPLOAD_STATUS = {
 const hookedUploaders = new WeakSet();
 
 /**
- * Transforms REST API attachment format to wp_prepare_attachment_for_js() format.
- *
- * WordPress core's Media Library expects the legacy format with camelCase keys.
- * The TUS endpoint returns REST API format, so we transform it here.
- *
- * @param {Object} attachment REST API attachment data.
- * @return {Object} Legacy attachment format for WordPress core.
- */
-function toAttachmentForJs( attachment ) {
-	const sizes = attachment.media_details?.sizes;
-
-	return {
-		id: attachment.id,
-		title: attachment.title?.raw || '',
-		filename: attachment.media_details?.file || '',
-		url: attachment.source_url,
-		link: attachment.link,
-		alt: attachment.alt_text || '',
-		author: String( attachment.author ),
-		description: attachment.description?.raw || '',
-		caption: attachment.caption?.raw || '',
-		name: attachment.slug,
-		status: attachment.status,
-		uploadedTo: attachment.post || 0,
-		date: new Date( attachment.date ).getTime(),
-		modified: new Date( attachment.modified ).getTime(),
-		menuOrder: 0,
-		mime: attachment.mime_type,
-		type: attachment.media_type,
-		subtype: attachment.mime_type?.split( '/' )[ 1 ] || '',
-		icon: '',
-		dateFormatted: attachment.date,
-		nonces: {},
-		editLink: attachment._links?.self?.[ 0 ]?.href || '',
-		meta: false,
-		authorName: '',
-		authorLink: '',
-		filesizeInBytes: attachment.media_details?.filesize || 0,
-		filesizeHumanReadable: '',
-		width: attachment.media_details?.width,
-		height: attachment.media_details?.height,
-		sizes: sizes
-			? Object.fromEntries(
-					Object.entries( sizes ).map( ( [ key, size ] ) => [
-						key,
-						{
-							url: size.source_url,
-							width: size.width,
-							height: size.height,
-						},
-					] )
-			  )
-			: {},
-	};
-}
-
-/**
  * Handles plupload errors by updating file status and triggering error UI.
  *
  * @param {Object} up      Plupload instance.
@@ -154,24 +97,26 @@ function handleBeforeUpload( uploader, file ) {
 			file.percent = 100;
 			file.status = PLUPLOAD_STATUS.DONE;
 
-			// Transform REST API format to legacy format for WordPress core
-			const legacyAttachment = toAttachmentForJs( attachment );
-
 			// For media-new.php (check for #media-items which only exists there)
 			if (
 				typeof window.uploadSuccess === 'function' &&
 				document.getElementById( 'media-items' )
 			) {
 				window.uploadSuccess( file, String( attachment.id ) );
-			} else {
-				// For upload.php and other contexts, trigger FileUploaded
+				return;
+			}
+
+			// Fetch attachment in wp_prepare_attachment_for_js() format.
+			const model = window.wp.media.attachment( attachment.id );
+
+			return model.fetch().then( () => {
 				uploader.trigger( 'FileUploaded', file, {
 					response: JSON.stringify( {
 						success: true,
-						data: legacyAttachment,
+						data: model.toJSON(),
 					} ),
 				} );
-			}
+			} );
 		} )
 		.catch( ( error ) => {
 			handlePluploadError(
