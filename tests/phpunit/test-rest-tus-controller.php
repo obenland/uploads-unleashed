@@ -1308,18 +1308,44 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test PATCH rejects chunks exceeding server chunk size limit.
 	 */
 	public function test_patch_rejects_chunk_exceeding_size_limit() {
-		$upload_id = $this->create_upload_session( array( 'length' => 1024 * 1024 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 5 * MB_IN_BYTES ) );
 
-		// Set a small chunk size limit for testing.
+		// The filter floor is 1 MB, so use that as the limit.
 		$filter_callback = function () {
-			return 100;
+			return MB_IN_BYTES;
 		};
 		add_filter( 'uploads_unleashed_max_chunk_size', $filter_callback );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
-		$request->set_body( str_repeat( 'a', 200 ) );
+		$request->set_body( str_repeat( 'a', MB_IN_BYTES + 1 ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'uploads_unleashed_max_chunk_size', $filter_callback );
+
+		$this->assertSame( 413, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_chunk_too_large', $data['code'] );
+	}
+
+	/**
+	 * Test PATCH rejects chunk via Content-Length header before reading body.
+	 */
+	public function test_patch_rejects_chunk_via_content_length_header() {
+		$upload_id = $this->create_upload_session( array( 'length' => 5 * MB_IN_BYTES ) );
+
+		$filter_callback = function () {
+			return MB_IN_BYTES;
+		};
+		add_filter( 'uploads_unleashed_max_chunk_size', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_header( 'Content-Length', (string) ( MB_IN_BYTES + 1 ) );
+		$request->set_body( str_repeat( 'a', 50 ) );
 
 		$response = rest_get_server()->dispatch( $request );
 
