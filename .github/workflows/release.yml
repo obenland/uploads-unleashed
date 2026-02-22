@@ -54,17 +54,18 @@ jobs:
                           '. + [{"path": $path, "mode": "100644", "type": "blob", "sha": $sha}]')
                   done
 
+                  echo "$TREE_ITEMS" | jq --arg base "$TRUNK_SHA" \
+                      '{"base_tree": $base, "tree": .}' > /tmp/tree.json
                   TREE_SHA=$(gh api repos/${{ github.repository }}/git/trees \
-                      --field base_tree="$TRUNK_SHA" \
-                      --raw-field tree="$TREE_ITEMS" \
+                      --input /tmp/tree.json \
                       --jq '.sha')
 
+                  jq -n --arg message "Bump version to ${{ github.ref_name }} [skip ci]" \
+                      --arg tree "$TREE_SHA" \
+                      --arg parent "$TRUNK_SHA" \
+                      '{"message": $message, "tree": $tree, "parents": [$parent], "author": {"name": "Konstantin Obenland", "email": "obenland@gmx.de"}}' > /tmp/commit.json
                   COMMIT_SHA=$(gh api repos/${{ github.repository }}/git/commits \
-                      --field message="Bump version to ${{ github.ref_name }} [skip ci]" \
-                      --field tree="$TREE_SHA" \
-                      --raw-field "parents=[\"$TRUNK_SHA\"]" \
-                      --field "author[name]=Konstantin Obenland" \
-                      --field "author[email]=obenland@gmx.de" \
+                      --input /tmp/commit.json \
                       --jq '.sha')
 
                   gh api repos/${{ github.repository }}/git/refs/heads/trunk \
