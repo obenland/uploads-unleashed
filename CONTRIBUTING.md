@@ -110,35 +110,20 @@ npm run test:js:coverage
 
 ## Code Standards
 
-### PHP
-
-We follow WordPress Coding Standards. Check your code with:
+We follow WordPress Coding Standards for PHP and use the WordPress ESLint configuration for JavaScript/TypeScript. Check everything with:
 
 ```bash
-composer lint
+npm run lint
 ```
 
-Auto-fix issues where possible:
-```bash
-composer lint:fix
-```
-
-### JavaScript/TypeScript
-
-We use WordPress ESLint configuration. Check your code with:
+You can also run linters individually:
 
 ```bash
-npm run lint:js
-```
-
-Auto-fix issues:
-```bash
-npm run lint:js:fix
-```
-
-Format code with Prettier:
-```bash
-npm run format
+composer lint          # PHP only
+composer lint:fix      # PHP auto-fix
+npm run lint:js        # JS/TS only
+npm run lint:js:fix    # JS/TS auto-fix
+npm run format         # Prettier
 ```
 
 ## Project Structure
@@ -177,8 +162,7 @@ uploads-unleashed/
    ```bash
    npm test
    npm run test:js
-   composer lint
-   npm run lint:js
+   npm run lint
    ```
 
 5. Commit your changes with a descriptive message
@@ -206,11 +190,6 @@ See [docs/hooks.md](docs/hooks.md) for the available filters and actions.
 To stop the WordPress environment:
 ```bash
 npm run stop
-```
-
-To completely remove it:
-```bash
-npm run destroy
 ```
 
 ## Questions?

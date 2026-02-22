@@ -204,7 +204,7 @@ add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_options_headers', 10, 3
  *
  * These are request headers that the server accepts from cross-origin clients.
  *
- * @since 0.2.0
+ * @since 1.0.0
  *
  * @param string[] $headers The list of allowed headers.
  * @return string[] Modified list with TUS headers.
@@ -230,7 +230,7 @@ add_filter( 'rest_allowed_cors_headers', 'uploads_unleashed_cors_allowed_headers
  * These are response headers that the browser allows JavaScript to read
  * in cross-origin contexts.
  *
- * @since 0.2.0
+ * @since 1.0.0
  *
  * @param string[] $headers The list of exposed headers.
  * @return string[] Modified list with TUS headers.
@@ -258,7 +258,7 @@ add_filter( 'rest_exposed_cors_headers', 'uploads_unleashed_cors_exposed_headers
  * Detects POST requests to /wp/v2/media with an Upload-Length header
  * and routes them to the TUS controller for session creation.
  *
- * @since 0.2.0
+ * @since 1.0.0
  *
  * @param mixed           $result  Response to replace the requested version with. Can be anything
  *                                 a normal endpoint can return, or null to not hijack the request.

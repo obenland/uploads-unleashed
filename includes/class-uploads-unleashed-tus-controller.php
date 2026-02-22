@@ -36,7 +36,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Default maximum chunk size in bytes (10 MB).
 	 *
-	 * @since 0.2.0
+	 * @since 1.0.0
 	 * @var int
 	 */
 	const DEFAULT_MAX_CHUNK_SIZE = 10 * MB_IN_BYTES;
@@ -404,7 +404,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
 		 * is clamped to a minimum of 1 MB.
 		 *
-		 * @since 0.2.0
+		 * @since 1.0.0
 		 *
 		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
 		 * @param WP_REST_Request $request        The request object.
@@ -994,7 +994,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Returns a WP_Error for oversized chunks.
 	 *
-	 * @since 0.2.0
+	 * @since 1.0.0
 	 *
 	 * @param int $max_chunk_size Maximum chunk size in bytes.
 	 * @return WP_Error

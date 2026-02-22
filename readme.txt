@@ -48,7 +48,7 @@ No. Just install and activate the plugin. It works out of the box on any standar
 
 = Is there a file size limit? =
 
-On a regular WordPress site, the only limit is your available disk space. On multisite, your network's upload quota still applies. The plugin itself doesn't impose any additional cap.
+The only limit is your available disk space. On multisite, your network's upload quota still applies. The plugin itself doesn't impose any additional cap.
 
 = Does this work on multisite? =
 
@@ -62,7 +62,23 @@ No. Upload session data is stored temporarily on your server and automatically d
 
 WordPress goes back to handling uploads the way it normally does. Files you already uploaded stay in your Media Library. Any temporary upload data will be automatically cleaned up.
 
+== Screenshots ==
+
+1. Resumable uploads — pick up where you left off after a connection drop.
+
 == Changelog ==
+
+= 1.0.0 =
+* Add uploadsUnleashed.shouldUseTus filter for VideoPress compatibility.
+* Add plupload and VideoPress compat tests, improve detection.
+* Add uninstall handler to clean up chunk data.
+* Validate Upload-Length minimum and enforce chunk size limits.
+* Clear stat cache before finalization.
+* Use wp.media.attachment for legacy format after TUS upload.
+* Use DOM APIs instead of innerHTML in pending uploads UI.
+* Show upload progress percentage for pending uploads.
+* Improve test coverage to 100% JS lines and 93% PHP lines.
+* Automate version bumps in release workflow.
 
 = 0.1.0 =
 * Initial release.
