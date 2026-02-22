@@ -132,4 +132,22 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	public function delete( string $upload_id ): bool {
 		return delete_transient( self::TRANSIENT_PREFIX . $upload_id );
 	}
+
+	/**
+	 * Deletes all upload session transients.
+	 *
+	 * @since 0.2.0
+	 */
+	public static function delete_all(): void {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+				$wpdb->esc_like( '_transient_' . self::TRANSIENT_PREFIX ) . '%',
+				$wpdb->esc_like( '_transient_timeout_' . self::TRANSIENT_PREFIX ) . '%'
+			)
+		);
+	}
 }

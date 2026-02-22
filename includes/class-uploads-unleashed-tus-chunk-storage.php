@@ -27,11 +27,23 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 */
 	public function __construct() {
 		if ( null === self::$base_dir ) {
-			$upload_dir     = wp_upload_dir();
-			self::$base_dir = trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
+			self::$base_dir = self::get_base_dir_path();
 
 			$this->maybe_create_directory();
 		}
+	}
+
+	/**
+	 * Returns the base directory path for chunk storage.
+	 *
+	 * @since 0.2.0
+	 *
+	 * @return string The base directory path.
+	 */
+	private static function get_base_dir_path(): string {
+		$upload_dir = wp_upload_dir();
+
+		return trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
 	}
 
 	/**
@@ -246,5 +258,42 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 				$session->delete( $upload_id );
 			}
 		}
+	}
+
+	/**
+	 * Deletes all chunk files, protection files, and the storage directory for the current site.
+	 *
+	 * Computes the storage path via get_base_dir_path() to avoid
+	 * recreating the directory during uninstall.
+	 *
+	 * @since 0.2.0
+	 */
+	public static function delete_all(): void {
+		$chunks_dir = self::get_base_dir_path();
+
+		if ( ! is_dir( $chunks_dir ) ) {
+			return;
+		}
+
+		// Delete all files, including hidden files like .htaccess.
+		$patterns = array( $chunks_dir . '*', $chunks_dir . '.*' );
+		foreach ( $patterns as $pattern ) {
+			$files = glob( $pattern, GLOB_NOSORT );
+			if ( ! is_array( $files ) ) {
+				continue;
+			}
+
+			foreach ( $files as $file ) {
+				if ( is_file( $file ) ) {
+					wp_delete_file( $file );
+				}
+			}
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPress.PHP.NoSilencedErrors.Discouraged -- WP_Filesystem requires credentials, impractical for uninstall. Silenced because rmdir fails on non-empty directories (e.g., unexpected subdirectories).
+		@rmdir( $chunks_dir );
+
+		// Reset cached path so the class does not reference a removed directory.
+		self::$base_dir = null;
 	}
 }
