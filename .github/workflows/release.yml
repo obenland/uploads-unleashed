@@ -72,6 +72,11 @@ jobs:
                       --method PATCH \
                       --field sha="$COMMIT_SHA"
 
+                  gh api repos/${{ github.repository }}/git/refs/tags/${{ github.ref_name }} \
+                      --method PATCH \
+                      --field sha="$COMMIT_SHA" \
+                      --field force=true
+
             - uses: actions/setup-node@v6
               with:
                   node-version: '22'
