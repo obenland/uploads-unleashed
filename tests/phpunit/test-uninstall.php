@@ -158,6 +158,52 @@ class Test_Uninstall extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that uninstall.php runs cleanup on single site.
+	 *
+	 * Covers the single-site branch in uninstall.php (lines 44-47).
+	 */
+	public function test_uninstall_script_runs_single_site_cleanup() {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'Single-site only test.' );
+		}
+
+		wp_set_current_user( self::$admin_id );
+
+		// Create data that uninstall should clean up.
+		$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
+		$storage->append( wp_generate_uuid4(), 'data', 0 );
+
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$session->create(
+			array(
+				'filename' => 'test.txt',
+				'length'   => 100,
+			),
+			$request
+		);
+
+		wp_schedule_event( time(), 'twicedaily', 'uploads_unleashed_cleanup' );
+		$this->assertNotFalse( wp_next_scheduled( 'uploads_unleashed_cleanup' ) );
+
+		// Define WP_UNINSTALL_PLUGIN if not already defined.
+		if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
+			define( 'WP_UNINSTALL_PLUGIN', 'uploads-unleashed/uploads-unleashed.php' );
+		}
+
+		// Run uninstall script.
+		include dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		// Verify cleanup happened.
+		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks/';
+		$this->assertDirectoryDoesNotExist( $chunks_dir );
+		$this->assertFalse( wp_next_scheduled( 'uploads_unleashed_cleanup' ) );
+
+		// Re-create the directory for subsequent tests.
+		new Uploads_Unleashed_TUS_Chunk_Storage();
+	}
+
+	/**
 	 * Tests that delete_all does not affect other transients.
 	 */
 	public function test_upload_session_delete_all_preserves_other_transients() {

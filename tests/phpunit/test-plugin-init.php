@@ -11,6 +11,16 @@
 class Test_Plugin_Init extends WP_UnitTestCase {
 
 	/**
+	 * Clean up after all tests in the class.
+	 */
+	public static function tear_down_after_class() {
+		// Clean up any scheduled events for this hook.
+		wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
+
+		parent::tear_down_after_class();
+	}
+
+	/**
 	 * Test that required constants are defined.
 	 */
 	public function test_constants_are_defined() {
@@ -334,15 +344,197 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Clean up after all tests in the class.
+	 * Test that scripts are registered after register_scripts runs.
 	 */
-	public static function tear_down_after_class() {
-		// Clean up any scheduled events.
-		$timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
-		if ( $timestamp ) {
-			wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
+	public function test_register_scripts_registers_all_scripts() {
+		// Scripts are registered during init, so they should already exist.
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-tus', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-ui', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-plupload', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-block-editor', 'registered' ) );
+	}
+
+	/**
+	 * Test that style is registered after register_scripts runs.
+	 */
+	public function test_register_scripts_registers_style() {
+		$this->assertTrue( wp_style_is( 'uploads-unleashed-ui', 'registered' ) );
+	}
+
+	/**
+	 * Test that enqueue_scripts enqueues plupload script.
+	 */
+	public function test_enqueue_scripts_enqueues_plupload() {
+		uploads_unleashed_enqueue_scripts();
+
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-plupload', 'enqueued' ) );
+	}
+
+	/**
+	 * Test that enqueue_ui enqueues script and style.
+	 */
+	public function test_enqueue_ui_enqueues_script_and_style() {
+		uploads_unleashed_enqueue_ui();
+
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-ui', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'uploads-unleashed-ui', 'enqueued' ) );
+	}
+
+	/**
+	 * Test that enqueue_block_editor enqueues block editor script.
+	 */
+	public function test_enqueue_block_editor_enqueues_script() {
+		uploads_unleashed_enqueue_block_editor();
+
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-block-editor', 'enqueued' ) );
+	}
+
+	/**
+	 * Test that intercept_tus_creation ignores non-POST methods.
+	 */
+	public function test_intercept_tus_creation_ignores_non_post() {
+		$request = new WP_REST_Request( 'GET', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', KB_IN_BYTES );
+
+		$result = uploads_unleashed_intercept_tus_creation( null, rest_get_server(), $request );
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * Test that intercept_tus_creation ignores non-media routes.
+	 */
+	public function test_intercept_tus_creation_ignores_non_media_route() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/posts' );
+		$request->set_header( 'Upload-Length', KB_IN_BYTES );
+
+		$result = uploads_unleashed_intercept_tus_creation( null, rest_get_server(), $request );
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * Test that intercept_tus_creation ignores requests without Upload-Length.
+	 */
+	public function test_intercept_tus_creation_ignores_missing_upload_length() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+
+		$result = uploads_unleashed_intercept_tus_creation( null, rest_get_server(), $request );
+
+		$this->assertNull( $result );
+	}
+
+	/**
+	 * Test that intercept_tus_creation returns error for unauthenticated user.
+	 */
+	public function test_intercept_tus_creation_requires_auth() {
+		wp_set_current_user( 0 );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', KB_IN_BYTES );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64 encoding.
+
+		$result = uploads_unleashed_intercept_tus_creation( null, rest_get_server(), $request );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'rest_cannot_create_upload', $result->get_error_code() );
+	}
+
+	/**
+	 * Test that intercept_tus_creation creates upload for authenticated user.
+	 */
+	public function test_intercept_tus_creation_creates_upload() {
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', KB_IN_BYTES );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'test.txt' ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64 encoding.
+
+		$result = uploads_unleashed_intercept_tus_creation( null, rest_get_server(), $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $result );
+		$this->assertSame( 201, $result->get_status() );
+	}
+
+	/**
+	 * Test that upload_size_limit filter returns adjusted size.
+	 */
+	public function test_upload_size_limit_filter_returns_adjusted_size() {
+		$adjusted = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
+
+		// Should return something based on disk space, which is always less than PHP_INT_MAX.
+		$this->assertIsInt( $adjusted );
+		$this->assertGreaterThanOrEqual( 0, $adjusted );
+	}
+
+	/**
+	 * Test that intercept filter is registered.
+	 */
+	public function test_intercept_filter_registered() {
+		$this->assertSame( 10, has_filter( 'rest_pre_dispatch', 'uploads_unleashed_intercept_tus_creation' ) );
+	}
+
+	/**
+	 * Test that register_scripts function body is executed and scripts are registered.
+	 *
+	 * The function runs during `init` before PHPUnit coverage starts,
+	 * so we deregister everything and call it again under coverage.
+	 */
+	public function test_register_scripts_function_body_is_covered() {
+		// Deregister all scripts and styles registered by the plugin.
+		wp_deregister_script( 'uploads-unleashed-tus' );
+		wp_deregister_script( 'uploads-unleashed' );
+		wp_deregister_script( 'uploads-unleashed-ui' );
+		wp_deregister_script( 'uploads-unleashed-plupload' );
+		wp_deregister_script( 'uploads-unleashed-block-editor' );
+		wp_deregister_style( 'uploads-unleashed-ui' );
+
+		// Verify they are deregistered.
+		$this->assertFalse( wp_script_is( 'uploads-unleashed-tus', 'registered' ) );
+		$this->assertFalse( wp_script_is( 'uploads-unleashed', 'registered' ) );
+		$this->assertFalse( wp_script_is( 'uploads-unleashed-ui', 'registered' ) );
+		$this->assertFalse( wp_script_is( 'uploads-unleashed-plupload', 'registered' ) );
+		$this->assertFalse( wp_script_is( 'uploads-unleashed-block-editor', 'registered' ) );
+		$this->assertFalse( wp_style_is( 'uploads-unleashed-ui', 'registered' ) );
+
+		// Call the function directly to get coverage of lines 52-112.
+		uploads_unleashed_register_scripts();
+
+		// Verify all scripts are re-registered.
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-tus', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-ui', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-plupload', 'registered' ) );
+		$this->assertTrue( wp_script_is( 'uploads-unleashed-block-editor', 'registered' ) );
+		$this->assertTrue( wp_style_is( 'uploads-unleashed-ui', 'registered' ) );
+	}
+
+	/**
+	 * Test upload_size_limit filter returns original size when disk_free_space fails.
+	 *
+	 * When disk_free_space() returns false (disabled function or inaccessible path),
+	 * the filter should return the original $size value unchanged.
+	 */
+	public function test_upload_size_limit_returns_original_when_disk_free_space_fails() {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'Single-site only test.' );
 		}
 
-		parent::tear_down_after_class();
+		// Point the upload directory to a non-existent path where disk_free_space returns false.
+		$filter_callback = function ( $uploads ) {
+			$uploads['basedir'] = '/non/existent/path/that/does/not/exist';
+			return $uploads;
+		};
+		add_filter( 'upload_dir', $filter_callback );
+
+		$original_size = 12345678;
+		$result        = uploads_unleashed_filter_upload_size_limit( $original_size );
+
+		remove_filter( 'upload_dir', $filter_callback );
+
+		// When disk_free_space returns false, the function should return the original $size.
+		$this->assertSame( $original_size, $result );
 	}
 }

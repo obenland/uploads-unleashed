@@ -278,6 +278,35 @@ class Test_Uploads_Unleashed_TUS_Upload_Session extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that update_offset uses EXPIRATION when session has expired.
+	 */
+	public function test_update_offset_with_expired_session_uses_expiration() {
+		$upload_id    = wp_generate_uuid4();
+		$session_data = array(
+			'upload_id'  => $upload_id,
+			'user_id'    => self::$admin_id,
+			'filename'   => 'expired.txt',
+			'filetype'   => 'text/plain',
+			'length'     => 1024,
+			'offset'     => 0,
+			'created_at' => time() - DAY_IN_SECONDS * 2,
+			'expires_at' => time() - HOUR_IN_SECONDS, // Expired.
+		);
+
+		// Set with long TTL so the transient doesn't auto-expire during the test.
+		set_transient( 'tus_upload_' . $upload_id, $session_data, DAY_IN_SECONDS );
+
+		// update_offset should still succeed (session data exists in transient).
+		$result = $this->session->update_offset( $upload_id, 512 );
+
+		$this->assertTrue( $result );
+
+		// Verify offset was updated.
+		$data = $this->session->get( $upload_id );
+		$this->assertSame( 512, $data['offset'] );
+	}
+
+	/**
 	 * Tests that create handles missing filetype gracefully.
 	 */
 	public function test_create_handles_missing_filetype() {
