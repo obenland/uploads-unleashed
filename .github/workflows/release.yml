@@ -41,8 +41,7 @@ jobs:
                   TRUNK_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/trunk --jq '.object.sha')
 
                   create_blob() {
-                      jq -n --arg content "$(base64 -w0 "$1")" \
-                          '{"encoding": "base64", "content": $content}' > /tmp/blob.json
+                      base64 -w0 "$1" | jq -Rs '{"encoding": "base64", "content": .}' > /tmp/blob.json
                       gh api repos/${{ github.repository }}/git/blobs \
                           --input /tmp/blob.json \
                           --jq '.sha'
