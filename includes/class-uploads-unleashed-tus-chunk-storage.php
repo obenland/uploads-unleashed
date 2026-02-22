@@ -36,7 +36,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	/**
 	 * Returns the base directory path for chunk storage.
 	 *
-	 * @since 0.2.0
+	 * @since 1.0.0
 	 *
 	 * @return string The base directory path.
 	 */
@@ -266,7 +266,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 * Computes the storage path via get_base_dir_path() to avoid
 	 * recreating the directory during uninstall.
 	 *
-	 * @since 0.2.0
+	 * @since 1.0.0
 	 */
 	public static function delete_all(): void {
 		$chunks_dir = self::get_base_dir_path();

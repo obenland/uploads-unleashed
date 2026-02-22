@@ -8,10 +8,12 @@ This plugin adds support for the [TUS resumable upload protocol](https://tus.io/
 
 ### Features
 
-- **Resumable uploads** - Uploads automatically resume from where they left off after connection failures
+- **Resumable uploads** - Uploads automatically resume from where they left off after connection failures, with a resume UI that lets you pick up incomplete uploads
 - **Large file support** - Bypasses PHP upload limits by chunking files
-- **Progress tracking** - Real-time upload progress in the media uploader
-- **Transparent integration** - Works with the existing WordPress media library interface
+- **Progress tracking** - Real-time upload progress percentage in the media uploader
+- **Block editor support** - Works natively in the block editor, classic editor, and Media Library
+- **Checksum verification** - Validates upload integrity with checksum headers
+- **Multisite quota support** - Respects network upload quotas on multisite installations
 - **Extensible** - Filter and action hooks for custom workflows
 
 ## Requirements
@@ -27,21 +29,20 @@ Download the latest release zip and install through WordPress, or clone the repo
 cd wp-content/plugins
 git clone https://github.com/obenland/uploads-unleashed.git
 cd uploads-unleashed
-composer install --no-dev
 npm install
 npm run build
 ```
 
 ## How It Works
 
-The plugin implements TUS 1.0.0 protocol via a REST API endpoint at `/wp/v2/media/tus`:
+The plugin implements TUS 1.0.0 protocol by intercepting the existing media REST API:
 
-1. **POST** `/wp/v2/media/tus` - Create upload session
-2. **HEAD** `/wp/v2/media/tus/{id}` - Get upload offset
-3. **PATCH** `/wp/v2/media/tus/{id}` - Upload chunk
-4. **DELETE** `/wp/v2/media/tus/{id}` - Cancel upload
+1. **POST** `/wp/v2/media` - Create upload session (intercepted via `rest_pre_dispatch` when `Upload-Length` header is present)
+2. **HEAD** `/wp/v2/media/{id}` - Get upload offset
+3. **PATCH** `/wp/v2/media/{id}` - Upload chunk
+4. **DELETE** `/wp/v2/media/{id}` - Cancel upload
 
-Upload sessions expire after 24 hours. Incomplete uploads are cleaned up hourly.
+Upload sessions expire after 24 hours. Incomplete uploads are cleaned up daily.
 
 ## Extending
 
@@ -65,15 +66,13 @@ npm run build
 ### Testing
 
 ```bash
-npm test
+npm test          # PHPUnit via wp-env (requires Docker)
+npm run test:js   # Jest
 ```
-
-This runs PHPUnit tests via wp-env. Requires Docker.
 
 ### Linting
 
 ```bash
-composer run lint
 npm run lint
 ```
 

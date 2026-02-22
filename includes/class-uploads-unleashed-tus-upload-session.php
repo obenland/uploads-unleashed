@@ -136,7 +136,7 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	/**
 	 * Deletes all upload session transients.
 	 *
-	 * @since 0.2.0
+	 * @since 1.0.0
 	 */
 	public static function delete_all(): void {
 		global $wpdb;
