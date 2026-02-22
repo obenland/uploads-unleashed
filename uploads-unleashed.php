@@ -3,7 +3,7 @@
  * Plugin Name: Uploads Unleashed
  * Plugin URI: https://en.wp.obenland.it/uploads-unleashed/
  * Description: Upload large files to WordPress without hitting size limits or losing progress when your connection drops.
- * Version: 0.0.1-test.1
+ * Version: 1.0.0
  * Requires at least: 6.4
  * Requires PHP: 7.4
  * Author: Konstantin Obenland
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'UPLOADS_UNLEASHED_VERSION', '0.0.1-test.1' );
+define( 'UPLOADS_UNLEASHED_VERSION', '1.0.0' );
 define( 'UPLOADS_UNLEASHED_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'UPLOADS_UNLEASHED_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 

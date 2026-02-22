@@ -1,6 +1,6 @@
 {
 	"name": "uploads-unleashed",
-	"version": "0.0.1-test.1",
+	"version": "1.0.0",
 	"description": "Upload large files to WordPress without hitting size limits or losing progress when your connection drops.",
 	"author": "Konstantin Obenland",
 	"license": "GPL-2.0-or-later",
