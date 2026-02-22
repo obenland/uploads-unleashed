@@ -57,7 +57,8 @@ jobs:
 
             - run: npm run build
 
-            - name: Deploy to WordPress.org
+            - if: false # TEST: skip deploy
+              name: Deploy to WordPress.org
               id: deploy
               uses: 10up/action-wordpress-plugin-deploy@stable
               with:
@@ -66,7 +67,8 @@ jobs:
                   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
                   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
 
-            - name: Build changelog
+            - if: false # TEST: skip changelog
+              name: Build changelog
               id: changelog
               uses: mikepenz/release-changelog-builder-action@v6
               with:
@@ -74,7 +76,8 @@ jobs:
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Create GitHub release
+            - if: false # TEST: skip release
+              name: Create GitHub release
               uses: softprops/action-gh-release@v2
               with:
                   body: ${{ steps.changelog.outputs.changelog }}
