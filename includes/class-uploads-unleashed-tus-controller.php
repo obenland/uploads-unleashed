@@ -87,7 +87,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 					),
 				),
 				array(
-					'methods'             => 'HEAD',
+					'methods'             => WP_REST_Server::READABLE, // GET, so WP's HEAD→GET fallback works on nginx.
 					'callback'            => array( $this, 'get_item_offset' ),
 					'permission_callback' => array( $this, 'get_item_permissions_check' ),
 				),
