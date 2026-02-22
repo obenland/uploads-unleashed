@@ -34,12 +34,27 @@ jobs:
               uses: actions/setup-node@v6
               with:
                   node-version: '22'
-                  cache: 'npm'
+
+            - name: Cache Composer dependencies
+              uses: actions/cache@v4
+              id: composer-cache
+              with:
+                  path: vendor
+                  key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
 
             - name: Install PHP dependencies
+              if: steps.composer-cache.outputs.cache-hit != 'true'
               run: composer install --prefer-dist --no-progress
 
+            - name: Cache node_modules
+              uses: actions/cache@v4
+              id: node-modules-cache
+              with:
+                  path: node_modules
+                  key: node-modules-${{ hashFiles('package-lock.json') }}
+
             - name: Install Node dependencies
+              if: steps.node-modules-cache.outputs.cache-hit != 'true'
               run: npm ci
 
             - name: Build assets
