@@ -226,6 +226,7 @@ Manages physical chunk files on disk:
 | Filter | Purpose |
 |--------|---------|
 | `uploads_unleashed_max_upload_size` | Modify max file size |
+| `uploads_unleashed_max_chunk_size` | Modify max chunk size per PATCH |
 | `uploads_unleashed_session_data` | Add custom session data |
 | `uploads_unleashed_pre_finalize` | Validate before finalizing |
 | `uploads_unleashed_finalize_upload` | Custom finalization |

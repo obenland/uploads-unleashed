@@ -27,6 +27,28 @@ add_filter( 'uploads_unleashed_max_upload_size', function( $max_size, $request )
 
 ---
 
+### `uploads_unleashed_max_chunk_size`
+
+Override the maximum allowed chunk size per PATCH request.
+
+Controls how large each individual PATCH request body can be. The default is 10 MB. The return value is clamped to a minimum of 1 MB.
+
+**Parameters:**
+- `$max_chunk_size` (int) - The maximum chunk size in bytes. Default `10 * MB_IN_BYTES`.
+- `$request` (WP_REST_Request) - The REST request object.
+
+**Return:** int - The maximum chunk size in bytes.
+
+**Example:**
+```php
+add_filter( 'uploads_unleashed_max_chunk_size', function( $max_chunk_size, $request ) {
+    // Allow larger chunks for users on fast connections.
+    return 50 * MB_IN_BYTES;
+}, 10, 2 );
+```
+
+---
+
 ### `uploads_unleashed_session_data`
 
 Filter session data before it's stored. Add custom fields to persist throughout the upload.

@@ -34,6 +34,14 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	const TUS_EXTENSIONS = 'creation,expiration,termination,checksum';
 
 	/**
+	 * Default maximum chunk size in bytes (10 MB).
+	 *
+	 * @since 0.2.0
+	 * @var int
+	 */
+	const DEFAULT_MAX_CHUNK_SIZE = 10 * MB_IN_BYTES;
+
+	/**
 	 * The namespace for the REST route.
 	 *
 	 * @since 0.1.0
@@ -274,7 +282,15 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_upload_length_required', __( 'Upload-Length header is required.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
+		if ( ! ctype_digit( $upload_length ) ) {
+			return new WP_Error( 'rest_upload_length_invalid', __( 'Upload-Length must be a positive integer.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
 		$upload_length = (int) $upload_length;
+
+		if ( $upload_length <= 0 ) {
+			return new WP_Error( 'rest_upload_length_invalid', __( 'Upload-Length must be a positive integer.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
 
 		/** This filter is documented in includes/class-uploads-unleashed-tus-controller.php */
 		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
@@ -378,16 +394,52 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_offset_mismatch', __( 'Upload offset mismatch.', 'uploads-unleashed' ), array( 'status' => 409 ) );
 		}
 
+		// Validate chunk size against server limit.
+		$content_length = $request->get_header( 'Content-Length' );
+
+		/**
+		 * Filters the maximum allowed chunk size.
+		 *
+		 * Controls how large each individual PATCH request body can be.
+		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
+		 * is clamped to a minimum of 1 MB.
+		 *
+		 * @since 0.2.0
+		 *
+		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
+		 * @param WP_REST_Request $request        The request object.
+		 */
+		$max_chunk_size = (int) apply_filters( 'uploads_unleashed_max_chunk_size', self::DEFAULT_MAX_CHUNK_SIZE, $request );
+		$max_chunk_size = max( $max_chunk_size, MB_IN_BYTES );
+
+		if ( null !== $content_length && (int) $content_length > $max_chunk_size ) {
+			return $this->chunk_too_large_error( $max_chunk_size );
+		}
+
 		// Get chunk data.
 		$chunk_data = $request->get_body();
-		if ( empty( $chunk_data ) ) {
+		if ( '' === $chunk_data ) {
 			return new WP_Error( 'rest_empty_chunk', __( 'No data received.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
-		// Verify checksum if provided.
+		// Enforce chunk size limit on actual body (defense-in-depth for missing Content-Length).
+		if ( strlen( $chunk_data ) > $max_chunk_size ) {
+			return $this->chunk_too_large_error( $max_chunk_size );
+		}
+
+		// Verify checksum if provided (before truncation, so checksum covers the original payload).
 		$checksum_error = $this->verify_chunk_checksum( $request, $chunk_data );
 		if ( is_wp_error( $checksum_error ) ) {
 			return $checksum_error;
+		}
+
+		// Truncate chunk so total upload cannot exceed declared Upload-Length.
+		$remaining = (int) $this->current_upload['length'] - $server_offset;
+		if ( $remaining <= 0 ) {
+			return new WP_Error( 'rest_upload_already_complete', __( 'Upload has already received all expected bytes.', 'uploads-unleashed' ), array( 'status' => 409 ) );
+		}
+		if ( strlen( $chunk_data ) > $remaining ) {
+			$chunk_data = substr( $chunk_data, 0, $remaining );
 		}
 
 		// Write chunk.
@@ -412,7 +464,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		do_action( 'uploads_unleashed_chunk_received', $upload_id, $new_offset, $this->current_upload, $request );
 
 		// Check if upload is complete.
-		if ( $new_offset >= $this->current_upload['length'] ) {
+		if ( $new_offset === (int) $this->current_upload['length'] ) {
 			$attachment = $this->finalize_upload( $upload_id, $this->current_upload );
 
 			if ( is_wp_error( $attachment ) ) {
@@ -932,6 +984,26 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$this->current_upload = $upload;
 
 		return true;
+	}
+
+	/**
+	 * Returns a WP_Error for oversized chunks.
+	 *
+	 * @since 0.2.0
+	 *
+	 * @param int $max_chunk_size Maximum chunk size in bytes.
+	 * @return WP_Error
+	 */
+	private function chunk_too_large_error( int $max_chunk_size ): WP_Error {
+		return new WP_Error(
+			'rest_chunk_too_large',
+			sprintf(
+				/* translators: %s: Maximum chunk size. */
+				__( 'Chunk size exceeds maximum allowed size of %s.', 'uploads-unleashed' ),
+				size_format( $max_chunk_size )
+			),
+			array( 'status' => 413 )
+		);
 	}
 
 	/**
