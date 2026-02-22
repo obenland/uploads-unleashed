@@ -37,6 +37,16 @@ function createMockFile( nativeFile ) {
 	};
 }
 
+// Mock wp.media.attachment model
+let mockAttachmentModel;
+function createMockAttachmentModel( legacyData ) {
+	mockAttachmentModel = {
+		fetch: jest.fn().mockResolvedValue(),
+		toJSON: jest.fn( () => legacyData ),
+	};
+	return mockAttachmentModel;
+}
+
 // Setup wp and jQuery mocks
 beforeAll( () => {
 	window.wp = {
@@ -45,6 +55,23 @@ beforeAll( () => {
 		} ),
 		hooks: {
 			applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
+		},
+		media: {
+			attachment: jest.fn( () =>
+				createMockAttachmentModel( {
+					id: 123,
+					title: 'Test',
+					url: 'http://example.com/test.txt',
+					icon: 'http://example.com/icon.png',
+					sizes: {
+						full: {
+							url: 'http://example.com/test.txt',
+							width: 100,
+							height: 100,
+						},
+					},
+				} )
+			),
 		},
 	};
 
@@ -177,32 +204,46 @@ describe( 'handleBeforeUpload', () => {
 	} );
 
 	describe( 'upload success', () => {
-		it( 'triggers FileUploaded on upload.php', async () => {
+		it( 'fetches legacy attachment data via wp.media.attachment', async () => {
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
 			const file = createMockFile( nativeFile );
 
-			const attachmentData = {
+			upload.mockResolvedValue( { id: 456 } );
+
+			beforeUploadHandler( uploader, file );
+
+			// Wait for the promise chain
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			expect( window.wp.media.attachment ).toHaveBeenCalledWith( 456 );
+			expect( mockAttachmentModel.fetch ).toHaveBeenCalled();
+		} );
+
+		it( 'triggers FileUploaded with legacy format data', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+
+			const legacyData = {
 				id: 123,
-				title: { raw: 'Test' },
-				source_url: 'http://example.com/test.txt',
-				link: 'http://example.com/?p=123',
-				alt_text: '',
-				author: 1,
-				description: { raw: '' },
-				caption: { raw: '' },
-				slug: 'test',
-				status: 'inherit',
-				post: 0,
-				date: '2024-01-01T00:00:00',
-				modified: '2024-01-01T00:00:00',
-				mime_type: 'text/plain',
-				media_type: 'file',
-				media_details: {},
-				_links: {},
+				title: 'Test Image',
+				sizes: {
+					full: {
+						url: 'http://example.com/test.jpg',
+						width: 800,
+						height: 600,
+					},
+				},
 			};
-			upload.mockResolvedValue( attachmentData );
+
+			window.wp.media.attachment.mockReturnValue(
+				createMockAttachmentModel( legacyData )
+			);
+
+			upload.mockResolvedValue( { id: 123 } );
 
 			beforeUploadHandler( uploader, file );
 
@@ -214,10 +255,38 @@ describe( 'handleBeforeUpload', () => {
 			expect( uploader.trigger ).toHaveBeenCalledWith(
 				'FileUploaded',
 				file,
-				expect.objectContaining( {
-					response: expect.any( String ),
-				} )
+				{
+					response: JSON.stringify( {
+						success: true,
+						data: legacyData,
+					} ),
+				}
 			);
+		} );
+
+		it( 'calls uploadSuccess on media-new.php', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+
+			window.uploadSuccess = jest.fn();
+			const mediaItems = document.createElement( 'div' );
+			mediaItems.id = 'media-items';
+			document.body.appendChild( mediaItems );
+
+			upload.mockResolvedValue( { id: 789 } );
+
+			beforeUploadHandler( uploader, file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			expect( window.uploadSuccess ).toHaveBeenCalledWith( file, '789' );
+			// Should NOT fetch legacy data for media-new.php path
+			expect( window.wp.media.attachment ).not.toHaveBeenCalled();
+
+			delete window.uploadSuccess;
+			document.body.removeChild( mediaItems );
 		} );
 	} );
 
