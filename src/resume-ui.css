@@ -4,8 +4,9 @@
  * @package uploads-unleashed
  */
 
-.uploads-unleashed-pending {
-	margin: 10px 0;
+.media-upload-form .uploads-unleashed-pending {
+	margin: 20px 0 10px;
+	background: #f0f6fc;
 }
 
 .uploads-unleashed-notice {
@@ -70,6 +71,8 @@
 
 .uploads-unleashed-list .discard-upload:hover,
 .uploads-unleashed-list .discard-upload:focus {
-	background: #b32d2e;
+	background: #d63638;
+	border-color: #b32d2e;
+	box-shadow: 0 0 0 1px #b32d2e;
 	color: #fff;
 }

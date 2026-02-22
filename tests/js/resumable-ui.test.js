@@ -2,7 +2,6 @@
  * Tests for the resumable UI module.
  */
 
-// Mock @wordpress/i18n before imports
 jest.mock( '@wordpress/i18n', () => ( {
 	__: ( text ) => text,
 	sprintf: ( format, ...args ) => {
@@ -17,280 +16,439 @@ jest.mock( '@wordpress/i18n', () => ( {
 	},
 } ) );
 
-// Setup window globals before tests
-beforeEach( () => {
-	// Reset localStorage
-	localStorage.clear();
+jest.mock( '../../src/tus-client', () => ( {
+	getPendingUploads: jest.fn( () => [] ),
+	discardPendingUpload: jest.fn(),
+} ) );
 
-	// Setup uploadsUnleashed config
+jest.mock( '../../src/resume-ui.css', () => ( {} ) );
+
+// JSDOM does not provide DataTransfer; polyfill for resume-upload tests.
+if ( typeof global.DataTransfer === 'undefined' ) {
+	global.DataTransfer = class DataTransfer {
+		constructor() {
+			this._files = [];
+			this.items = {
+				add: ( file ) => this._files.push( file ),
+			};
+		}
+		get files() {
+			return this._files;
+		}
+	};
+}
+
+const ENDPOINT = '/wp-json/wp/v2/media';
+
+function createPendingUploadEntry( filename, size ) {
+	const encodedName = encodeURIComponent( filename );
+	const fingerprint = `tus-br|${ encodedName }|${ size }|1234567890|${ ENDPOINT }`;
+	const expiresAt = Date.now() + 86400000;
+	const key = `tus::${ fingerprint }::${ expiresAt }::upload-${ Math.random() }`;
+
+	return {
+		key,
+		uploadUrl: `${ ENDPOINT }/upload-id`,
+		filename,
+		size,
+	};
+}
+
+function setupDOM() {
+	const container = document.createElement( 'div' );
+	container.id = 'uploads-unleashed-pending';
+	container.style.display = 'none';
+
+	const list = document.createElement( 'ul' );
+	list.className = 'uploads-unleashed-list';
+	container.appendChild( list );
+
+	document.body.appendChild( container );
+
+	return { container, list };
+}
+
+function importModule( pendingUploads = [] ) {
+	let mocks;
+	jest.isolateModules( () => {
+		mocks = require( '../../src/tus-client' );
+		mocks.getPendingUploads.mockReturnValue( pendingUploads );
+		require( '../../src/resume-ui' );
+	} );
+	return mocks;
+}
+
+beforeEach( () => {
+	localStorage.clear();
+	document.body.innerHTML = '';
+	jest.clearAllMocks();
+
 	window.uploadsUnleashed = {
-		endpoint: '/wp-json/wp/v2/media',
+		endpoint: ENDPOINT,
 		nonce: 'test-nonce',
 	};
 
-	// Reset DOM
-	document.body.innerHTML = '';
+	// No jQuery or uploader by default
+	delete window.jQuery;
+	delete window.uploader;
 } );
 
-describe( 'formatFileSize', () => {
-	// Import the function dynamically to get the module-level function
-	// Since it's not exported, we test it indirectly through the UI
+describe( 'renderPendingUploads', () => {
+	it( 'does not render when container is missing', () => {
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
-	it( 'should format bytes correctly', () => {
-		// Test bytes display in the UI
-		const testCases = [
-			{ bytes: 500, expected: '500 B' },
-			{ bytes: 1024, expected: '1.0 KB' },
-			{ bytes: 1536, expected: '1.5 KB' },
-			{ bytes: 1048576, expected: '1.0 MB' },
-			{ bytes: 5242880, expected: '5.0 MB' },
-		];
-
-		// Verify the formatting logic
-		testCases.forEach( ( { bytes, expected } ) => {
-			let result;
-			if ( bytes < 1024 ) {
-				result = bytes + ' B';
-			} else if ( bytes < 1024 * 1024 ) {
-				result = ( bytes / 1024 ).toFixed( 1 ) + ' KB';
-			} else {
-				result = ( bytes / ( 1024 * 1024 ) ).toFixed( 1 ) + ' MB';
-			}
-			expect( result ).toBe( expected );
-		} );
-	} );
-} );
-
-describe( 'parsePendingUploads', () => {
-	it( 'should return empty array when no pending uploads', () => {
-		// Verify localStorage is empty
-		expect( localStorage.length ).toBe( 0 );
+		expect( document.querySelector( 'li' ) ).toBeNull();
 	} );
 
-	it( 'should parse TUS fingerprints with expiration from localStorage', () => {
-		// Add a mock TUS fingerprint entry with expiration (4-part key format)
-		const endpoint = '/wp-json/wp/v2/media';
-		const filename = encodeURIComponent( 'test.txt' );
-		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
-		const expiresAt = Date.now() + 86400000; // 24 hours from now
-		const key = `tus::${ fingerprint }::${ expiresAt }::upload-id-123`;
-
-		localStorage.setItem(
-			key,
-			JSON.stringify( {
-				uploadUrl: `${ endpoint }/upload-id-123`,
-			} )
-		);
-
-		// Verify it was stored with correct format
-		expect( localStorage.getItem( key ) ).not.toBeNull();
-		expect( key.split( '::' ).length ).toBe( 4 );
-	} );
-
-	it( 'should ignore malformed localStorage entries', () => {
-		// Add a malformed entry
-		localStorage.setItem( 'tus::tus-br-invalid', 'not-json' );
-
-		// Verify it doesn't crash (malformed entries are silently ignored)
-		expect( localStorage.length ).toBe( 1 );
-	} );
-
-	it( 'should filter by endpoint', () => {
-		// Add entry for different endpoint
-		localStorage.setItem(
-			'tus::tus-br-other-endpoint::id',
-			JSON.stringify( { uploadUrl: '/other/endpoint/id' } )
-		);
-
-		// Entry doesn't match our endpoint, so would be filtered
-		const key = localStorage.key( 0 );
-		expect( key ).not.toContain( '/wp-json/wp/v2/media' );
-	} );
-} );
-
-describe( 'parsePendingUploads expiration handling', () => {
-	it( 'should parse key with 4 parts correctly', () => {
-		const endpoint = '/wp-json/wp/v2/media';
-		const filename = encodeURIComponent( 'test.txt' );
-		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
-		const expiresAt = Date.now() + 86400000;
-		const key = `tus::${ fingerprint }::${ expiresAt }::upload-id-123`;
-
-		const parts = key.split( '::' );
-
-		expect( parts.length ).toBe( 4 );
-		expect( parts[ 0 ] ).toBe( 'tus' );
-		expect( parts[ 1 ] ).toBe( fingerprint );
-		expect( parseInt( parts[ 2 ], 10 ) ).toBe( expiresAt );
-		expect( parts[ 3 ] ).toBe( 'upload-id-123' );
-	} );
-
-	it( 'should parse fingerprint parts correctly', () => {
-		const endpoint = '/wp-json/wp/v2/media';
-		const filename = encodeURIComponent( 'test file.txt' );
-		const fingerprint = `tus-br|${ filename }|2048|9876543210|${ endpoint }`;
-
-		const fingerprintParts = fingerprint.split( '|' );
-
-		expect( fingerprintParts.length ).toBe( 5 );
-		expect( fingerprintParts[ 0 ] ).toBe( 'tus-br' );
-		expect( decodeURIComponent( fingerprintParts[ 1 ] ) ).toBe(
-			'test file.txt'
-		);
-		expect( parseInt( fingerprintParts[ 2 ], 10 ) ).toBe( 2048 );
-		expect( parseInt( fingerprintParts[ 3 ], 10 ) ).toBe( 9876543210 );
-		expect( fingerprintParts[ 4 ] ).toBe( endpoint );
-	} );
-
-	it( 'should identify expired entries by comparing timestamps', () => {
-		const pastExpiry = Date.now() - 1000;
-		const futureExpiry = Date.now() + 86400000;
-
-		expect( Date.now() > pastExpiry ).toBe( true );
-		expect( Date.now() > futureExpiry ).toBe( false );
-	} );
-
-	it( 'should handle invalid expiration values with isNaN check', () => {
-		const invalidExpiry = parseInt( 'not-a-number', 10 );
-
-		expect( isNaN( invalidExpiry ) ).toBe( true );
-		expect( isNaN( invalidExpiry ) || Date.now() > invalidExpiry ).toBe(
-			true
-		);
-	} );
-
-	it( 'should remove expired entries from localStorage', () => {
-		const endpoint = '/wp-json/wp/v2/media';
-		const filename = encodeURIComponent( 'test.txt' );
-		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
-		const pastExpiry = Date.now() - 1000;
-		const key = `tus::${ fingerprint }::${ pastExpiry }::upload-id-123`;
-
-		localStorage.setItem(
-			key,
-			JSON.stringify( { uploadUrl: `${ endpoint }/upload-id-123` } )
-		);
-
-		// Simulate the expiration check logic
-		const keyParts = key.split( '::' );
-		const expiresAt = parseInt( keyParts[ 2 ], 10 );
-
-		if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
-			localStorage.removeItem( key );
-		}
-
-		expect( localStorage.getItem( key ) ).toBeNull();
-	} );
-
-	it( 'should keep non-expired entries in localStorage', () => {
-		const endpoint = '/wp-json/wp/v2/media';
-		const filename = encodeURIComponent( 'test.txt' );
-		const fingerprint = `tus-br|${ filename }|1024|1234567890|${ endpoint }`;
-		const futureExpiry = Date.now() + 86400000;
-		const key = `tus::${ fingerprint }::${ futureExpiry }::upload-id-123`;
-
-		localStorage.setItem(
-			key,
-			JSON.stringify( { uploadUrl: `${ endpoint }/upload-id-123` } )
-		);
-
-		// Simulate the expiration check logic
-		const keyParts = key.split( '::' );
-		const expiresAt = parseInt( keyParts[ 2 ], 10 );
-
-		if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
-			localStorage.removeItem( key );
-		}
-
-		expect( localStorage.getItem( key ) ).not.toBeNull();
-	} );
-
-	it( 'should remove entries with malformed key format (less than 4 parts)', () => {
-		const key = 'tus::tus-br|test.txt|1024|123|/endpoint::upload-id';
-
-		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
-
-		const keyParts = key.split( '::' );
-
-		if ( keyParts.length < 4 ) {
-			localStorage.removeItem( key );
-		}
-
-		expect( localStorage.getItem( key ) ).toBeNull();
-	} );
-} );
-
-describe( 'pending uploads UI', () => {
-	it( 'should have Resume and Discard buttons', () => {
-		// Verify the expected button labels
-		const resumeLabel = 'Resume';
-		const discardLabel = 'Discard';
-
-		expect( resumeLabel ).toBe( 'Resume' );
-		expect( discardLabel ).toBe( 'Discard' );
-	} );
-
-	it( 'should hide container when no pending uploads', () => {
-		// Create the container
-		const container = document.createElement( 'div' );
-		container.id = 'uploads-unleashed-pending';
+	it( 'does not modify container when no pending uploads', () => {
+		const { container } = setupDOM();
 		container.style.display = 'block';
-		document.body.appendChild( container );
 
-		// With no pending uploads, container should be hidden
-		// (In actual code, renderPendingUploads sets display: none)
+		importModule( [] );
+
+		expect( container.style.display ).toBe( 'block' );
+	} );
+
+	it( 'renders list items for pending uploads', () => {
+		const { list } = setupDOM();
+
+		importModule( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+			createPendingUploadEntry( 'doc.pdf', 1024 ),
+		] );
+
+		expect( list.children.length ).toBe( 2 );
+	} );
+
+	it( 'shows container when pending uploads exist', () => {
+		const { container } = setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		expect( container.style.display ).toBe( 'block' );
+	} );
+
+	it( 'renders filename and size text', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filename' ).textContent ).toBe(
+			'photo.jpg'
+		);
+		expect( li.querySelector( '.filesize' ).textContent ).toBe(
+			'(5.0 MB)'
+		);
+	} );
+
+	it( 'renders Resume and Discard buttons', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		const li = document.querySelector( 'li' );
+		const resume = li.querySelector( '.resume-upload' );
+		const discard = li.querySelector( '.discard-upload' );
+
+		expect( resume.textContent ).toBe( 'Resume' );
+		expect( resume.type ).toBe( 'button' );
+		expect( discard.textContent ).toBe( 'Discard' );
+		expect( discard.type ).toBe( 'button' );
+	} );
+} );
+
+describe( 'data attributes', () => {
+	it( 'stores filename as data attribute', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.dataset.filename ).toBe( 'photo.jpg' );
+	} );
+
+	it( 'stores size as data attribute', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.dataset.size ).toBe( '5242880' );
+	} );
+
+	it( 'handles special characters in filename', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'my file (1).jpg', 1024 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.dataset.filename ).toBe( 'my file (1).jpg' );
+		expect( li.querySelector( '.filename' ).textContent ).toBe(
+			'my file (1).jpg'
+		);
+	} );
+
+	it( 'renders HTML in filename as inert text, not markup', () => {
+		setupDOM();
+
+		const xssFilename = '<img src=x onerror=alert(1)>';
+		importModule( [ createPendingUploadEntry( xssFilename, 1024 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filename' ).textContent ).toBe(
+			xssFilename
+		);
+		expect( li.querySelector( 'img' ) ).toBeNull();
+	} );
+
+	it( 'does not expose key or uploadUrl as data attributes', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.dataset.key ).toBeUndefined();
+		expect( li.dataset.url ).toBeUndefined();
+	} );
+} );
+
+describe( 'removePendingEntry via plupload FilesAdded', () => {
+	let filesAddedHandler;
+
+	function setupWithPlupload( pendingUploads ) {
+		setupDOM();
+
+		const mockUploader = {
+			bind: jest.fn( ( event, handler ) => {
+				if ( event === 'FilesAdded' ) {
+					filesAddedHandler = handler;
+				}
+			} ),
+		};
+
+		window.uploader = mockUploader;
+		window.jQuery = jest.fn( ( fn ) => fn() );
+
+		importModule( pendingUploads );
+	}
+
+	it( 'removes matching entry by filename and size', () => {
+		const pending = [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+			createPendingUploadEntry( 'doc.pdf', 1024 ),
+		];
+		setupWithPlupload( pending );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 2 );
+
+		filesAddedHandler( {}, [ { name: 'photo.jpg', size: 5242880 } ] );
+
+		expect( list.children.length ).toBe( 1 );
+		expect( list.children[ 0 ].dataset.filename ).toBe( 'doc.pdf' );
+	} );
+
+	it( 'does not remove entry with matching name but different size', () => {
+		setupWithPlupload( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+
+		filesAddedHandler( {}, [ { name: 'photo.jpg', size: 999 } ] );
+
+		expect( list.children.length ).toBe( 1 );
+	} );
+
+	it( 'does not remove entry with matching size but different name', () => {
+		setupWithPlupload( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+
+		filesAddedHandler( {}, [ { name: 'other.jpg', size: 5242880 } ] );
+
+		expect( list.children.length ).toBe( 1 );
+	} );
+
+	it( 'hides container when last entry is removed', () => {
+		setupWithPlupload( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+
+		filesAddedHandler( {}, [ { name: 'photo.jpg', size: 5242880 } ] );
+
+		expect( container.style.display ).toBe( 'none' );
+	} );
+
+	it( 'removes multiple matching entries in one event', () => {
+		setupWithPlupload( [
+			createPendingUploadEntry( 'a.jpg', 100 ),
+			createPendingUploadEntry( 'b.jpg', 200 ),
+			createPendingUploadEntry( 'c.jpg', 300 ),
+		] );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+
+		filesAddedHandler( {}, [
+			{ name: 'a.jpg', size: 100 },
+			{ name: 'c.jpg', size: 300 },
+		] );
+
+		expect( list.children.length ).toBe( 1 );
+		expect( list.children[ 0 ].dataset.filename ).toBe( 'b.jpg' );
+	} );
+} );
+
+describe( 'discard button', () => {
+	it( 'calls discardPendingUpload and removes item', async () => {
+		setupDOM();
+
+		const pending = createPendingUploadEntry( 'test.txt', 1024 );
+		const { discardPendingUpload } = importModule( [ pending ] );
+		discardPendingUpload.mockResolvedValue();
+
+		const discard = document.querySelector( '.discard-upload' );
+		discard.click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( discardPendingUpload ).toHaveBeenCalledWith( pending );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 0 );
+	} );
+
+	it( 'hides container when last item is discarded', async () => {
+		setupDOM();
+
+		const { discardPendingUpload } = importModule( [
+			createPendingUploadEntry( 'test.txt', 1024 ),
+		] );
+		discardPendingUpload.mockResolvedValue();
+
+		document.querySelector( '.discard-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+		expect( container.style.display ).toBe( 'none' );
+	} );
+
+	it( 'discards correct item from multi-item list', async () => {
+		setupDOM();
+
+		const itemA = createPendingUploadEntry( 'a.txt', 100 );
+		const itemB = createPendingUploadEntry( 'b.txt', 200 );
+		const { discardPendingUpload } = importModule( [ itemA, itemB ] );
+		discardPendingUpload.mockResolvedValue();
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		const discardButtons = list.querySelectorAll( '.discard-upload' );
+
+		// Discard the first item
+		discardButtons[ 0 ].click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( discardPendingUpload ).toHaveBeenCalledWith( itemA );
+		expect( list.children.length ).toBe( 1 );
+		expect( list.children[ 0 ].dataset.filename ).toBe( 'b.txt' );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
 		expect( container.style.display ).toBe( 'block' );
 	} );
 } );
 
-describe( 'cancelServerUpload', () => {
-	it( 'should make DELETE request to upload URL', async () => {
-		const mockFetch = jest.fn().mockResolvedValue( {} );
-		global.fetch = mockFetch;
+describe( 'resume button', () => {
+	function setupMoxieShim() {
+		const shim = document.createElement( 'div' );
+		shim.className = 'moxie-shim';
+		const input = document.createElement( 'input' );
+		input.type = 'file';
 
-		const uploadUrl = '/wp-json/wp/v2/media/test-id';
-
-		// Simulate the cancelServerUpload behavior
-		await fetch( uploadUrl, {
-			method: 'DELETE',
-			headers: { 'X-WP-Nonce': 'test-nonce' },
+		// JSDOM rejects non-FileList values on input.files; allow plain arrays.
+		let storedFiles = null;
+		Object.defineProperty( input, 'files', {
+			get: () => storedFiles,
+			set: ( val ) => {
+				storedFiles = val;
+			},
 		} );
 
-		expect( mockFetch ).toHaveBeenCalledWith( uploadUrl, {
-			method: 'DELETE',
-			headers: { 'X-WP-Nonce': 'test-nonce' },
+		shim.appendChild( input );
+		document.body.appendChild( shim );
+		return input;
+	}
+
+	function mockShowOpenFilePicker( file ) {
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
+		);
+	}
+
+	afterEach( () => {
+		delete window.showOpenFilePicker;
+	} );
+
+	it( 'removes item on successful resume', async () => {
+		setupDOM();
+		setupMoxieShim();
+
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'photo.jpg', size );
+		importModule( [ pending ] );
+
+		const file = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
+			type: 'image/jpeg',
 		} );
+		mockShowOpenFilePicker( file );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 0 );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+		expect( container.style.display ).toBe( 'none' );
 	} );
 
-	it( 'should handle fetch errors gracefully', async () => {
-		const mockFetch = jest
-			.fn()
-			.mockRejectedValue( new Error( 'Network error' ) );
-		global.fetch = mockFetch;
+	it( 'keeps item when user cancels file picker', async () => {
+		setupDOM();
 
-		// Should not throw
-		try {
-			await fetch( '/wp-json/wp/v2/media/test-id', {
-				method: 'DELETE',
-				headers: { 'X-WP-Nonce': 'test-nonce' },
-			} );
-		} catch {
-			// Error is expected and should be handled gracefully
-		}
+		const pending = createPendingUploadEntry( 'photo.jpg', 5242880 );
+		importModule( [ pending ] );
 
-		expect( mockFetch ).toHaveBeenCalled();
-	} );
-} );
+		// showOpenFilePicker throws AbortError on cancel
+		const abortError = new DOMException( 'The user aborted', 'AbortError' );
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.reject( abortError )
+		);
 
-describe( 'discardUpload', () => {
-	it( 'should remove entry from localStorage', () => {
-		const key = 'tus::test-key';
-		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+		document.querySelector( '.resume-upload' ).click();
 
-		expect( localStorage.getItem( key ) ).not.toBeNull();
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-		localStorage.removeItem( key );
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 1 );
 
-		expect( localStorage.getItem( key ) ).toBeNull();
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+		expect( container.style.display ).toBe( 'block' );
 	} );
 } );
