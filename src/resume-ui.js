@@ -17,14 +17,22 @@ import './resume-ui.css';
  * @param {number} bytes File size in bytes.
  * @return {string} Formatted file size string.
  */
+const SIZE_FORMATTER = new Intl.NumberFormat( undefined, {
+	minimumFractionDigits: 1,
+	maximumFractionDigits: 1,
+} );
+
 function formatFileSize( bytes ) {
 	if ( bytes < 1024 ) {
 		return bytes + ' B';
 	}
 	if ( bytes < 1024 * 1024 ) {
-		return ( bytes / 1024 ).toFixed( 1 ) + ' KB';
+		return SIZE_FORMATTER.format( bytes / 1024 ) + ' KB';
 	}
-	return ( bytes / ( 1024 * 1024 ) ).toFixed( 1 ) + ' MB';
+	if ( bytes < 1024 * 1024 * 1024 ) {
+		return SIZE_FORMATTER.format( bytes / ( 1024 * 1024 ) ) + ' MB';
+	}
+	return SIZE_FORMATTER.format( bytes / ( 1024 * 1024 * 1024 ) ) + ' GB';
 }
 
 /**
@@ -120,11 +128,12 @@ async function resumeUpload( pendingUpload ) {
 /**
  * Creates a pending upload list item using DOM APIs.
  *
- * @param {Object} item           Pending upload item from getPendingUploads().
- * @param {string} item.key       LocalStorage key.
- * @param {string} item.uploadUrl TUS upload URL.
- * @param {string} item.filename  Original filename.
- * @param {number} item.size      File size in bytes.
+ * @param {Object} item               Pending upload item from getPendingUploads().
+ * @param {string} item.key           LocalStorage key.
+ * @param {string} item.uploadUrl     TUS upload URL.
+ * @param {string} item.filename      Original filename.
+ * @param {number} item.size          File size in bytes.
+ * @param {number} item.bytesUploaded Bytes already uploaded (0 if none).
  * @return {HTMLLIElement} The list item element.
  */
 function createPendingUploadItem( item ) {
@@ -138,7 +147,20 @@ function createPendingUploadItem( item ) {
 
 	const sizeSpan = document.createElement( 'span' );
 	sizeSpan.className = 'filesize';
-	sizeSpan.textContent = `(${ formatFileSize( item.size ) })`;
+	if ( item.bytesUploaded > 0 ) {
+		const percent = Math.min(
+			100,
+			Math.round( ( item.bytesUploaded / item.size ) * 100 )
+		);
+		sizeSpan.textContent = sprintf(
+			/* translators: 1: upload percentage, 2: total file size */
+			__( '(%1$s%% of %2$s)', 'uploads-unleashed' ),
+			percent,
+			formatFileSize( item.size )
+		);
+	} else {
+		sizeSpan.textContent = `(${ formatFileSize( item.size ) })`;
+	}
 
 	const resumeBtn = document.createElement( 'button' );
 	resumeBtn.type = 'button';

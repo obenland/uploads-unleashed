@@ -11,6 +11,7 @@ let capturedCallbacks = {};
 // Mock tus-js-client
 jest.mock( 'tus-js-client', () => {
 	const mockUpload = {
+		url: null,
 		start: jest.fn(),
 		abort: jest.fn().mockResolvedValue( undefined ),
 		findPreviousUploads: jest.fn().mockResolvedValue( [] ),
@@ -223,6 +224,38 @@ describe( 'upload', () => {
 		expect( result ).toEqual( attachmentData );
 	} );
 
+	it( 'removes progress on successful upload', async () => {
+		const file = new File( [ 'test' ], 'test.txt' );
+		const attachmentData = { id: 123 };
+
+		const promise = upload( file );
+
+		const mockUpload = tus.Upload.mock.results[ 0 ]?.value;
+		mockUpload.url = '/wp-json/wp/v2/media/upload-123';
+
+		// Simulate progress being saved
+		localStorage.setItem(
+			'tus-progress::/wp-json/wp/v2/media/upload-123',
+			'500'
+		);
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		capturedCallbacks.onSuccess( {
+			lastResponse: {
+				getStatus: () => 200,
+				getBody: () => JSON.stringify( attachmentData ),
+			},
+		} );
+
+		await promise;
+		expect(
+			localStorage.getItem(
+				'tus-progress::/wp-json/wp/v2/media/upload-123'
+			)
+		).toBeNull();
+	} );
+
 	it( 'rejects when no attachment data in response', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
@@ -319,6 +352,42 @@ describe( 'upload', () => {
 			expect( () => {
 				capturedCallbacks.onProgress( 500, 1000 );
 			} ).not.toThrow();
+		} );
+
+		it( 'saves progress to localStorage during onProgress', () => {
+			localStorage.clear();
+			const file = new File( [ 'test' ], 'test.txt' );
+			const progressKey = 'tus-progress::/wp-json/wp/v2/media/upload-123';
+
+			upload( file );
+
+			const mockUpload = tus.Upload.mock.results[ 0 ]?.value;
+			mockUpload.url = '/wp-json/wp/v2/media/upload-123';
+
+			capturedCallbacks.onProgress( 500, 1000 );
+
+			expect( parseInt( localStorage.getItem( progressKey ), 10 ) ).toBe(
+				500
+			);
+		} );
+
+		it( 'does not save progress when upload URL is not yet available', () => {
+			localStorage.clear();
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			upload( file );
+
+			const mockUpload = tus.Upload.mock.results[ 0 ]?.value;
+			mockUpload.url = null;
+
+			capturedCallbacks.onProgress( 500, 1000 );
+
+			// No tus-progress:: keys should exist
+			for ( let i = 0; i < localStorage.length; i++ ) {
+				expect( localStorage.key( i ) ).not.toMatch(
+					/^tus-progress::/
+				);
+			}
 		} );
 	} );
 
@@ -605,6 +674,39 @@ describe( 'getPendingUploads', () => {
 		expect( localStorage.getItem( key ) ).toBeNull();
 	} );
 
+	it( 'returns bytesUploaded from progress storage', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const key = `tus::${ fp }::${ futureExpiry }::abc`;
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+
+		localStorage.setItem( key, JSON.stringify( { uploadUrl } ) );
+		localStorage.setItem( `tus-progress::${ uploadUrl }`, '512' );
+
+		const result = getPendingUploads();
+		expect( result ).toHaveLength( 1 );
+		expect( result[ 0 ].bytesUploaded ).toBe( 512 );
+	} );
+
+	it( 'returns 0 when no progress entry exists', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const key = `tus::${ fp }::${ futureExpiry }::abc`;
+
+		localStorage.setItem(
+			key,
+			JSON.stringify( { uploadUrl: '/wp-json/wp/v2/media/abc' } )
+		);
+
+		const result = getPendingUploads();
+		expect( result ).toHaveLength( 1 );
+		expect( result[ 0 ].bytesUploaded ).toBe( 0 );
+	} );
+
 	it( 'URL-decodes filenames', () => {
 		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
@@ -670,6 +772,23 @@ describe( 'discardPendingUpload', () => {
 		} );
 
 		expect( localStorage.getItem( 'test-key' ) ).toBeNull();
+	} );
+
+	it( 'removes progress entry', async () => {
+		const { discardPendingUpload } = require( '../../src/tus-client' );
+
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		localStorage.setItem( 'test-key', 'value' );
+		localStorage.setItem( `tus-progress::${ uploadUrl }`, '512' );
+
+		await discardPendingUpload( {
+			key: 'test-key',
+			uploadUrl,
+		} );
+
+		expect(
+			localStorage.getItem( `tus-progress::${ uploadUrl }` )
+		).toBeNull();
 	} );
 
 	it( 'handles fetch failure gracefully', async () => {
