@@ -203,6 +203,59 @@ describe( 'handleBeforeUpload', () => {
 		);
 	} );
 
+	describe( 'onProgress callback', () => {
+		it( 'updates file.attachment model when present', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+
+			const mockModel = { set: jest.fn() };
+			file.attachment = mockModel;
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			beforeUploadHandler( uploader, file );
+
+			// Get the onProgress from the upload call.
+			const onProgress = upload.mock.calls[ 0 ][ 1 ].onProgress;
+			onProgress( 50, 5000 );
+
+			expect( file.loaded ).toBe( 5000 );
+			expect( file.percent ).toBe( 50 );
+			expect( mockModel.set ).toHaveBeenCalledWith( {
+				loaded: 5000,
+				percent: 50,
+			} );
+			expect( uploader.trigger ).toHaveBeenCalledWith(
+				'UploadProgress',
+				file
+			);
+		} );
+
+		it( 'updates file without attachment model', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+			// No file.attachment set.
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			beforeUploadHandler( uploader, file );
+
+			const onProgress = upload.mock.calls[ 0 ][ 1 ].onProgress;
+			onProgress( 75, 7500 );
+
+			expect( file.loaded ).toBe( 7500 );
+			expect( file.percent ).toBe( 75 );
+			expect( uploader.trigger ).toHaveBeenCalledWith(
+				'UploadProgress',
+				file
+			);
+		} );
+	} );
+
 	describe( 'upload success', () => {
 		it( 'fetches legacy attachment data via wp.media.attachment', async () => {
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
@@ -331,6 +384,49 @@ describe( 'handleBeforeUpload', () => {
 			);
 
 			delete window.wpFileError;
+		} );
+	} );
+
+	describe( 'extendWpUploader guard', () => {
+		it( 'does not throw when wp.Uploader is missing', () => {
+			jest.isolateModules( () => {
+				const originalUploader = window.wp.Uploader;
+				delete window.wp.Uploader;
+				window.jQuery = jest.fn( () => ( {
+					ready: jest.fn(),
+				} ) );
+
+				expect( () => {
+					require( '../../src/plupload' );
+				} ).not.toThrow();
+
+				window.wp.Uploader = originalUploader;
+			} );
+		} );
+	} );
+
+	describe( 'extendGlobalUploader via jQuery ready', () => {
+		it( 'hooks global uploader when present', () => {
+			// Re-import to trigger init with a fresh jQuery mock.
+			jest.isolateModules( () => {
+				window.wp.Uploader = jest.fn( function () {
+					this.uploader = createMockUploader();
+				} );
+				window.jQuery = jest.fn( () => ( {
+					ready: jest.fn( ( fn ) => {
+						// Simulate ready callback.
+						const globalUp = createMockUploader();
+						window.uploader = globalUp;
+						fn();
+
+						// Global uploader should be hooked.
+						expect( globalUp._tusHooked ).toBe( true );
+
+						delete window.uploader;
+					} ),
+				} ) );
+				require( '../../src/plupload' );
+			} );
 		} );
 	} );
 

@@ -100,13 +100,36 @@ describe( 'renderPendingUploads', () => {
 		expect( document.querySelector( 'li' ) ).toBeNull();
 	} );
 
-	it( 'does not modify container when no pending uploads', () => {
+	it( 'does not modify container when no pending uploads (init skips)', () => {
 		const { container } = setupDOM();
 		container.style.display = 'block';
 
 		importModule( [] );
 
+		// init() exits early when pending.length === 0, so renderPendingUploads is never called.
 		expect( container.style.display ).toBe( 'block' );
+	} );
+
+	it( 'hides container when renderPendingUploads finds no uploads', () => {
+		const { container } = setupDOM();
+		container.style.display = 'block';
+
+		// First render with uploads to trigger renderPendingUploads.
+		let mocks;
+		jest.isolateModules( () => {
+			mocks = require( '../../src/tus-client' );
+			// First call (init): has pending uploads.
+			// Second call (renderPendingUploads): no pending uploads.
+			mocks.getPendingUploads
+				.mockReturnValueOnce( [
+					createPendingUploadEntry( 'test.txt', 1024 ),
+				] )
+				.mockReturnValueOnce( [] );
+			require( '../../src/resume-ui' );
+		} );
+
+		// renderPendingUploads was called with no uploads, so container is hidden.
+		expect( container.style.display ).toBe( 'none' );
 	} );
 
 	it( 'renders list items for pending uploads', () => {
@@ -450,5 +473,231 @@ describe( 'resume button', () => {
 			'uploads-unleashed-pending'
 		);
 		expect( container.style.display ).toBe( 'block' );
+	} );
+
+	it( 'falls back to file input when showOpenFilePicker unavailable', async () => {
+		setupDOM();
+		setupMoxieShim();
+
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'doc.txt', size );
+		importModule( [ pending ] );
+
+		// No showOpenFilePicker — fallback to file input.
+		delete window.showOpenFilePicker;
+
+		// Mock createElement to capture the file input.
+		const originalCreateElement = document.createElement.bind( document );
+		let capturedInput = null;
+		jest.spyOn( document, 'createElement' ).mockImplementation( ( tag ) => {
+			const el = originalCreateElement( tag );
+			if ( tag === 'input' ) {
+				capturedInput = el;
+				// Override click to trigger onchange with matching file.
+				el.click = () => {
+					const file = new File( [ 'x'.repeat( size ) ], 'doc.txt', {
+						type: 'text/plain',
+					} );
+					Object.defineProperty( el, 'files', {
+						value: [ file ],
+					} );
+					el.onchange?.();
+				};
+			}
+			return el;
+		} );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
+
+		expect( capturedInput ).not.toBeNull();
+		expect( capturedInput.type ).toBe( 'file' );
+
+		document.createElement.mockRestore();
+	} );
+
+	it( 'shows alert for wrong file and keeps item', async () => {
+		setupDOM();
+		setupMoxieShim();
+
+		const size = 5242880;
+		const pending = createPendingUploadEntry( 'photo.jpg', size );
+		importModule( [ pending ] );
+
+		// Wrong file (different name).
+		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
+			type: 'text/plain',
+		} );
+		mockShowOpenFilePicker( wrongFile );
+
+		const alertSpy = jest.spyOn( window, 'alert' ).mockImplementation();
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( alertSpy ).toHaveBeenCalled();
+		const alertMsg = alertSpy.mock.calls[ 0 ][ 0 ];
+		expect( alertMsg ).toContain( 'photo.jpg' );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 1 );
+
+		alertSpy.mockRestore();
+	} );
+
+	it( 'keeps item when no moxie-shim input exists', async () => {
+		setupDOM();
+		// No setupMoxieShim — no .moxie-shim input.
+
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'test.txt', size );
+		importModule( [ pending ] );
+
+		const file = new File( [ 'x'.repeat( size ) ], 'test.txt', {
+			type: 'text/plain',
+		} );
+		mockShowOpenFilePicker( file );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// Item stays because there's no uploader to dispatch to.
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 1 );
+	} );
+
+	it( 'handles non-AbortError from showOpenFilePicker and falls back', async () => {
+		setupDOM();
+		setupMoxieShim();
+
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'doc.txt', size );
+		importModule( [ pending ] );
+
+		// Throw a non-AbortError so fallback kicks in.
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.reject( new Error( 'Not supported' ) )
+		);
+
+		// Mock createElement for fallback input that returns null (user cancels).
+		const originalCreateElement = document.createElement.bind( document );
+		jest.spyOn( document, 'createElement' ).mockImplementation( ( tag ) => {
+			const el = originalCreateElement( tag );
+			if ( tag === 'input' ) {
+				el.click = () => {
+					// User cancels — no file selected.
+					Object.defineProperty( el, 'files', {
+						value: [],
+					} );
+					el.onchange?.();
+				};
+			}
+			return el;
+		} );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
+
+		// Item stays because user canceled fallback.
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 1 );
+
+		document.createElement.mockRestore();
+	} );
+} );
+
+describe( 'removePendingEntry without container', () => {
+	it( 'does nothing when container is missing', () => {
+		// No setupDOM — no container.
+		const mockUploader = {
+			bind: jest.fn( ( event, handler ) => {
+				if ( event === 'FilesAdded' ) {
+					// Call handler immediately.
+					handler( {}, [ { name: 'test.txt', size: 100 } ] );
+				}
+			} ),
+		};
+		window.uploader = mockUploader;
+		window.jQuery = jest.fn( ( fn ) => fn() );
+
+		// Should not throw.
+		importModule( [ createPendingUploadEntry( 'test.txt', 100 ) ] );
+	} );
+} );
+
+describe( 'hookPlupload', () => {
+	it( 'does nothing when window.uploader is not set', () => {
+		setupDOM();
+		delete window.uploader;
+		window.jQuery = jest.fn( ( fn ) => fn() );
+
+		// Should not throw.
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+	} );
+} );
+
+describe( 'DOMContentLoaded', () => {
+	it( 'defers init when document is loading', () => {
+		setupDOM();
+
+		// Mock readyState as 'loading'.
+		const desc = Object.getOwnPropertyDescriptor(
+			Document.prototype,
+			'readyState'
+		);
+		Object.defineProperty( document, 'readyState', {
+			value: 'loading',
+			writable: true,
+			configurable: true,
+		} );
+
+		const addEventSpy = jest.spyOn( document, 'addEventListener' );
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		expect( addEventSpy ).toHaveBeenCalledWith(
+			'DOMContentLoaded',
+			expect.any( Function )
+		);
+
+		// Restore.
+		Object.defineProperty( document, 'readyState', desc );
+		addEventSpy.mockRestore();
+	} );
+} );
+
+describe( 'formatFileSize', () => {
+	it( 'formats bytes', () => {
+		setupDOM();
+		importModule( [ createPendingUploadEntry( 'tiny.txt', 500 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filesize' ).textContent ).toBe( '(500 B)' );
+	} );
+
+	it( 'formats kilobytes', () => {
+		setupDOM();
+		importModule( [ createPendingUploadEntry( 'small.txt', 2048 ) ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filesize' ).textContent ).toBe(
+			'(2.0 KB)'
+		);
+	} );
+
+	it( 'formats megabytes', () => {
+		setupDOM();
+		importModule( [
+			createPendingUploadEntry( 'big.mp4', 10 * 1024 * 1024 ),
+		] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filesize' ).textContent ).toBe(
+			'(10.0 MB)'
+		);
 	} );
 } );

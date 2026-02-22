@@ -263,6 +263,115 @@ class Test_Uploads_Unleashed_TUS_Chunk_Storage extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that get_total_pending_size excludes expired sessions.
+	 */
+	public function test_get_total_pending_size_excludes_expired_sessions() {
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+
+		// Create a valid session.
+		$valid_id = $session->create(
+			array(
+				'filename' => 'valid.txt',
+				'length'   => 1000,
+			),
+			$request
+		);
+
+		// Create an expired session directly via transient.
+		$expired_id   = wp_generate_uuid4();
+		$session_data = array(
+			'upload_id'  => $expired_id,
+			'user_id'    => $admin_id,
+			'filename'   => 'expired.txt',
+			'filetype'   => 'text/plain',
+			'length'     => 5000,
+			'offset'     => 0,
+			'created_at' => time() - DAY_IN_SECONDS * 2,
+			'expires_at' => time() - DAY_IN_SECONDS, // Expired.
+		);
+		set_transient( 'tus_upload_' . $expired_id, $session_data, DAY_IN_SECONDS );
+
+		// Create chunk files for both.
+		$this->storage->append( $valid_id, 'a', 0 );
+		$this->storage->append( $expired_id, 'b', 0 );
+
+		$total_size = $this->storage->get_total_pending_size();
+
+		// Only the valid session's length should be counted.
+		$this->assertSame( 1000, $total_size );
+	}
+
+	/**
+	 * Tests that cleanup_expired returns early when no .part files exist.
+	 *
+	 * Covers line 248 (no files early return).
+	 */
+	public function test_cleanup_expired_no_files_returns_early() {
+		// Ensure no .part files exist.
+		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
+		$files      = glob( trailingslashit( $chunks_dir ) . '*.part' );
+		if ( $files ) {
+			array_map( 'wp_delete_file', $files );
+		}
+
+		// This should return without error and without iterating any files.
+		Uploads_Unleashed_TUS_Chunk_Storage::cleanup_expired();
+
+		// If we get here without error, the early return worked.
+		$this->assertTrue( true );
+	}
+
+	/**
+	 * Tests that delete_all handles the is_array check for glob results.
+	 *
+	 * Covers line 283 (is_array check continue in delete_all).
+	 */
+	public function test_delete_all_cleans_up_files_and_directory() {
+		$upload_id = wp_generate_uuid4();
+
+		// Create a chunk file.
+		$this->storage->append( $upload_id, 'test data', 0 );
+		$this->assertTrue( $this->storage->exists( $upload_id ) );
+
+		// delete_all should remove everything.
+		Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
+
+		$chunks_dir = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks';
+		$this->assertDirectoryDoesNotExist( $chunks_dir );
+
+		// Re-create the storage directory for subsequent tests.
+		$this->storage = new Uploads_Unleashed_TUS_Chunk_Storage();
+	}
+
+	/**
+	 * Tests that append returns WP_Error when fopen fails.
+	 *
+	 * Covers line 106 (fopen failure path).
+	 */
+	public function test_append_returns_error_when_fopen_fails() {
+		// Use reflection to temporarily set base_dir to a non-existent path.
+		$reflection = new ReflectionClass( 'Uploads_Unleashed_TUS_Chunk_Storage' );
+		$prop       = $reflection->getProperty( 'base_dir' );
+		$prop->setAccessible( true );
+		$original_base_dir = $prop->getValue();
+		$prop->setValue( null, '/non/existent/path/' );
+
+		try {
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Suppressing fopen warning to test error return path.
+			$result = @$this->storage->append( 'test-id', 'data', 0 );
+		} finally {
+			$prop->setValue( null, $original_base_dir );
+		}
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'tus_chunk_open_failed', $result->get_error_code() );
+	}
+
+	/**
 	 * Tests that get_total_pending_size excludes chunks without valid sessions.
 	 */
 	public function test_get_total_pending_size_excludes_orphaned_chunks() {

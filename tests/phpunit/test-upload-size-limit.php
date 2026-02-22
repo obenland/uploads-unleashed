@@ -268,24 +268,20 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	 * Test REST API rejects uploads exceeding available space.
 	 */
 	public function test_rest_api_rejects_oversized_upload() {
-		if ( is_multisite() ) {
-			$this->markTestSkipped( 'This test is for single-site only.' );
-		}
+		// Force a small max upload size via filter.
+		$filter_callback = function () {
+			return 500;
+		};
+		add_filter( 'uploads_unleashed_max_upload_size', $filter_callback );
 
-		$upload_dir     = wp_upload_dir();
-		$expected_space = disk_free_space( $upload_dir['basedir'] );
-
-		if ( false === $expected_space ) {
-			$this->markTestSkipped( 'disk_free_space() not available on this system.' );
-		}
-
-		// Try to create an upload larger than available space.
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
-		$request->set_header( 'Upload-Length', (string) ( $expected_space + 1024 ) );
+		$request->set_header( 'Upload-Length', '1024' );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
 		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'huge.txt' ) );
 
 		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'uploads_unleashed_max_upload_size', $filter_callback );
 
 		$this->assertSame( 413, $response->get_status() );
 		$data = $response->get_data();

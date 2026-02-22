@@ -100,6 +100,25 @@ describe( 'upload', () => {
 		);
 	} );
 
+	it( 'generates fingerprint from file metadata and endpoint', async () => {
+		const file = new File( [ 'test' ], 'my file.txt', {
+			type: 'text/plain',
+		} );
+		Object.defineProperty( file, 'size', { value: 2048 } );
+		Object.defineProperty( file, 'lastModified', { value: 99999 } );
+
+		upload( file );
+
+		const fingerprintFn = tus.Upload.mock.calls[ 0 ][ 1 ].fingerprint;
+		const result = await fingerprintFn( file, {
+			endpoint: '/wp-json/wp/v2/media',
+		} );
+
+		expect( result ).toBe(
+			'tus-br|my%20file.txt|2048|99999|/wp-json/wp/v2/media'
+		);
+	} );
+
 	it( 'uses application/octet-stream for files without type', () => {
 		const file = new File( [ 'binary' ], 'unknown.bin' );
 		// Force no type
@@ -442,6 +461,233 @@ describe( 'abort', () => {
 	} );
 } );
 
+describe( 'settled guard', () => {
+	it( 'ignores onSuccess after onError', async () => {
+		const file = new File( [ 'test' ], 'test.txt' );
+
+		const promise = upload( file );
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// Trigger error first.
+		capturedCallbacks.onError( new Error( 'fail' ) );
+
+		// Second onSuccess should be ignored (line 300).
+		capturedCallbacks.onSuccess( {
+			lastResponse: {
+				getStatus: () => 200,
+				getBody: () => JSON.stringify( { id: 1 } ),
+			},
+		} );
+
+		await expect( promise ).rejects.toThrow( 'fail' );
+	} );
+
+	it( 'ignores onError after onSuccess', async () => {
+		const file = new File( [ 'test' ], 'test.txt' );
+
+		const promise = upload( file );
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// Trigger success first.
+		capturedCallbacks.onSuccess( {
+			lastResponse: {
+				getStatus: () => 200,
+				getBody: () => JSON.stringify( { id: 1 } ),
+			},
+		} );
+
+		// Second onError should be ignored (line 315).
+		capturedCallbacks.onError( new Error( 'late error' ) );
+
+		const result = await promise;
+		expect( result ).toEqual( { id: 1 } );
+	} );
+} );
+
+describe( 'getPendingUploads', () => {
+	beforeEach( () => {
+		localStorage.clear();
+	} );
+
+	it( 'returns empty array when no pending uploads', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		expect( getPendingUploads() ).toEqual( [] );
+	} );
+
+	it( 'returns entries matching current endpoint', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const key = `tus::${ fp }::${ futureExpiry }::abc`;
+
+		localStorage.setItem(
+			key,
+			JSON.stringify( { uploadUrl: '/wp-json/wp/v2/media/abc' } )
+		);
+
+		const result = getPendingUploads();
+		expect( result ).toHaveLength( 1 );
+		expect( result[ 0 ].key ).toBe( key );
+		expect( result[ 0 ].uploadUrl ).toBe( '/wp-json/wp/v2/media/abc' );
+		expect( result[ 0 ].filename ).toBe( 'test.txt' );
+		expect( result[ 0 ].size ).toBe( 1024 );
+	} );
+
+	it( 'filters out entries for different endpoints', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const futureExpiry = Date.now() + 86400000;
+		const fp = `tus-br|test.txt|1024|12345|/other-endpoint`;
+		const key = `tus::${ fp }::${ futureExpiry }::abc`;
+
+		localStorage.setItem(
+			key,
+			JSON.stringify( { uploadUrl: '/other-endpoint/abc' } )
+		);
+
+		expect( getPendingUploads() ).toEqual( [] );
+	} );
+
+	it( 'cleans up expired entries', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const pastExpiry = Date.now() - 1000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const key = `tus::${ fp }::${ pastExpiry }::abc`;
+
+		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+
+		const result = getPendingUploads();
+		expect( result ).toEqual( [] );
+		expect( localStorage.getItem( key ) ).toBeNull();
+	} );
+
+	it( 'cleans up malformed entries with wrong key format', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const endpoint = '/wp-json/wp/v2/media';
+		// Only 3 parts instead of 4.
+		const key = `tus::tus-br|test.txt|1024|12345|${ endpoint }::abc`;
+
+		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+
+		getPendingUploads();
+		expect( localStorage.getItem( key ) ).toBeNull();
+	} );
+
+	it( 'cleans up entries with invalid JSON', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const key = `tus::${ fp }::${ futureExpiry }::abc`;
+
+		localStorage.setItem( key, 'not valid json{' );
+
+		const result = getPendingUploads();
+		expect( result ).toEqual( [] );
+		expect( localStorage.getItem( key ) ).toBeNull();
+	} );
+
+	it( 'cleans up entries with wrong fingerprint part count', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		// Fingerprint with only 3 parts instead of 5.
+		const fp = `tus-br|test.txt|${ endpoint }`;
+		const key = `tus::${ fp }::${ futureExpiry }::abc`;
+
+		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+
+		const result = getPendingUploads();
+		expect( result ).toEqual( [] );
+		expect( localStorage.getItem( key ) ).toBeNull();
+	} );
+
+	it( 'URL-decodes filenames', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const fp = `tus-br|my%20file%20(1).txt|1024|12345|${ endpoint }`;
+		const key = `tus::${ fp }::${ futureExpiry }::abc`;
+
+		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+
+		const result = getPendingUploads();
+		expect( result[ 0 ].filename ).toBe( 'my file (1).txt' );
+	} );
+
+	it( 'skips non-tus localStorage entries', () => {
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		localStorage.setItem( 'other-key', 'value' );
+		localStorage.setItem(
+			'not-tus-prefix',
+			JSON.stringify( { uploadUrl: '/test' } )
+		);
+
+		expect( getPendingUploads() ).toEqual( [] );
+		// Entries should not be removed.
+		expect( localStorage.getItem( 'other-key' ) ).toBe( 'value' );
+	} );
+} );
+
+describe( 'discardPendingUpload', () => {
+	beforeEach( () => {
+		localStorage.clear();
+		global.fetch = jest.fn().mockResolvedValue( { ok: true } );
+	} );
+
+	afterEach( () => {
+		delete global.fetch;
+	} );
+
+	it( 'sends DELETE to uploadUrl with nonce header', async () => {
+		const { discardPendingUpload } = require( '../../src/tus-client' );
+
+		await discardPendingUpload( {
+			key: 'test-key',
+			uploadUrl: '/wp-json/wp/v2/media/abc',
+		} );
+
+		expect( global.fetch ).toHaveBeenCalledWith(
+			'/wp-json/wp/v2/media/abc',
+			{
+				method: 'DELETE',
+				headers: { 'X-WP-Nonce': 'test-nonce' },
+			}
+		);
+	} );
+
+	it( 'removes key from localStorage', async () => {
+		const { discardPendingUpload } = require( '../../src/tus-client' );
+
+		localStorage.setItem( 'test-key', 'value' );
+
+		await discardPendingUpload( {
+			key: 'test-key',
+			uploadUrl: '/test',
+		} );
+
+		expect( localStorage.getItem( 'test-key' ) ).toBeNull();
+	} );
+
+	it( 'handles fetch failure gracefully', async () => {
+		const { discardPendingUpload } = require( '../../src/tus-client' );
+
+		global.fetch = jest.fn().mockRejectedValue( new Error( 'Network' ) );
+		localStorage.setItem( 'test-key', 'value' );
+
+		await discardPendingUpload( {
+			key: 'test-key',
+			uploadUrl: '/test',
+		} );
+
+		// Key should still be removed even on fetch failure.
+		expect( localStorage.getItem( 'test-key' ) ).toBeNull();
+	} );
+} );
+
 describe( 'ExpiringUrlStorage', () => {
 	beforeEach( () => {
 		localStorage.clear();
@@ -612,6 +858,43 @@ describe( 'ExpiringUrlStorage', () => {
 
 			await urlStorage.findAllUploads();
 
+			expect( localStorage.getItem( key ) ).toBeNull();
+		} );
+	} );
+
+	describe( '_findEntries (via findUploadsByFingerprint)', () => {
+		it( 'ignores non-matching key prefixes', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			upload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const futureExpiry = Date.now() + 86400000;
+			const fp = 'tus-br|test.txt|100|12345|/endpoint';
+
+			// Add an entry with a different prefix that won't match.
+			localStorage.setItem(
+				`other::${ fp }::${ futureExpiry }::123`,
+				JSON.stringify( { uploadUrl: '/test' } )
+			);
+
+			const results = await urlStorage.findUploadsByFingerprint( fp );
+			expect( results.length ).toBe( 0 );
+		} );
+
+		it( 'cleans up entries with malformed JSON', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			upload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const futureExpiry = Date.now() + 86400000;
+			const fp = 'tus-br|test.txt|100|12345|/endpoint';
+
+			// Add entry with invalid JSON value.
+			const key = `tus::${ fp }::${ futureExpiry }::123`;
+			localStorage.setItem( key, 'not valid json{' );
+
+			const results = await urlStorage.findUploadsByFingerprint( fp );
+			expect( results.length ).toBe( 0 );
 			expect( localStorage.getItem( key ) ).toBeNull();
 		} );
 	} );

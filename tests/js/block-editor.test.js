@@ -122,6 +122,22 @@ describe( 'tusMiddleware', () => {
 			expect( upload ).not.toHaveBeenCalled();
 		} );
 
+		it( 'passes through FormData with non-File value for file field', async () => {
+			const formData = new FormData();
+			formData.append( 'file', 'not-a-file-object' );
+
+			const options = {
+				path: '/wp/v2/media',
+				method: 'POST',
+				body: formData,
+			};
+
+			await tusMiddleware( options, next );
+
+			expect( next ).toHaveBeenCalledWith( options );
+			expect( upload ).not.toHaveBeenCalled();
+		} );
+
 		it( 'intercepts media uploads with File in FormData', async () => {
 			const file = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
