@@ -140,6 +140,48 @@ class ExpiringUrlStorage {
 }
 
 // ============================================================================
+// Progress Storage
+// ============================================================================
+
+/**
+ * Saves upload progress to localStorage.
+ *
+ * @param {string} uploadUrl     The TUS upload URL.
+ * @param {number} bytesUploaded Bytes uploaded so far.
+ */
+function saveUploadProgress( uploadUrl, bytesUploaded ) {
+	try {
+		localStorage.setItem( `tus-progress::${ uploadUrl }`, bytesUploaded );
+	} catch {
+		// Storage full or unavailable — progress display is non-critical.
+	}
+}
+
+/**
+ * Reads upload progress from localStorage.
+ *
+ * @param {string} uploadUrl The TUS upload URL.
+ * @return {number} Bytes uploaded, or 0 if absent.
+ */
+function getUploadProgress( uploadUrl ) {
+	return (
+		parseInt(
+			localStorage.getItem( `tus-progress::${ uploadUrl }` ),
+			10
+		) || 0
+	);
+}
+
+/**
+ * Removes upload progress from localStorage.
+ *
+ * @param {string} uploadUrl The TUS upload URL.
+ */
+function removeUploadProgress( uploadUrl ) {
+	localStorage.removeItem( `tus-progress::${ uploadUrl }` );
+}
+
+// ============================================================================
 // Internal Functions
 // ============================================================================
 
@@ -185,7 +227,7 @@ const DEFAULT_TUS_OPTIONS = {
  * @return {tus.Upload} TUS upload instance.
  */
 function createTusUpload( file, callbacks ) {
-	return new tus.Upload( file, {
+	const tusUpload = new tus.Upload( file, {
 		...DEFAULT_TUS_OPTIONS,
 		endpoint: getEndpoint(),
 		headers: {
@@ -196,10 +238,16 @@ function createTusUpload( file, callbacks ) {
 			filetype: file.type || 'application/octet-stream',
 		},
 		onProgress: ( bytesUploaded, bytesTotal ) => {
+			if ( tusUpload.url ) {
+				saveUploadProgress( tusUpload.url, bytesUploaded );
+			}
 			const percent = ( bytesUploaded / bytesTotal ) * 100;
 			callbacks.onProgress?.( percent, bytesUploaded, bytesTotal );
 		},
 		onSuccess: ( payload ) => {
+			if ( tusUpload.url ) {
+				removeUploadProgress( tusUpload.url );
+			}
 			const status = payload.lastResponse.getStatus();
 			const body = payload.lastResponse.getBody();
 
@@ -252,6 +300,8 @@ function createTusUpload( file, callbacks ) {
 			callbacks.onError( new Error( cleanMessage ) );
 		},
 	} );
+
+	return tusUpload;
 }
 
 // ============================================================================
@@ -356,7 +406,7 @@ export function abort( tusUpload ) {
  * Returns uploads that match the current TUS endpoint and haven't expired.
  * Use this to display a "Resume upload" UI to users.
  *
- * @return {Array<Object>} Array of pending upload objects with key, uploadUrl, filename, size.
+ * @return {Array<Object>} Array of pending upload objects with key, uploadUrl, filename, size, bytesUploaded.
  */
 export function getPendingUploads() {
 	const endpoint = getEndpoint();
@@ -401,6 +451,7 @@ export function getPendingUploads() {
 				uploadUrl: data.uploadUrl,
 				filename: decodeURIComponent( fingerprintParts[ 1 ] ),
 				size: parseInt( fingerprintParts[ 2 ], 10 ),
+				bytesUploaded: getUploadProgress( data.uploadUrl ),
 			} );
 		} catch {
 			// Clean up malformed entries
@@ -433,6 +484,7 @@ export async function discardPendingUpload( pendingUpload ) {
 
 	// Remove from localStorage
 	localStorage.removeItem( pendingUpload.key );
+	removeUploadProgress( pendingUpload.uploadUrl );
 }
 
 // ============================================================================

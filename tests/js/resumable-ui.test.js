@@ -12,7 +12,7 @@ jest.mock( '@wordpress/i18n', () => ( {
 				String( arg )
 			);
 		} );
-		return result;
+		return result.replace( /%%/g, '%' );
 	},
 } ) );
 
@@ -51,6 +51,7 @@ function createPendingUploadEntry( filename, size ) {
 		uploadUrl: `${ ENDPOINT }/upload-id`,
 		filename,
 		size,
+		bytesUploaded: 0,
 	};
 }
 
@@ -698,6 +699,48 @@ describe( 'formatFileSize', () => {
 		const li = document.querySelector( 'li' );
 		expect( li.querySelector( '.filesize' ).textContent ).toBe(
 			'(10.0 MB)'
+		);
+	} );
+
+	it( 'formats gigabytes', () => {
+		setupDOM();
+		importModule( [
+			createPendingUploadEntry( 'huge.iso', 1.5 * 1024 * 1024 * 1024 ),
+		] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filesize' ).textContent ).toBe(
+			'(1.5 GB)'
+		);
+	} );
+} );
+
+describe( 'upload progress percentage', () => {
+	it( 'renders percentage when bytesUploaded > 0', () => {
+		setupDOM();
+
+		const entry = createPendingUploadEntry( 'photo.jpg', 52428800 );
+		entry.bytesUploaded = 22020096;
+
+		importModule( [ entry ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filesize' ).textContent ).toBe(
+			'(42% of 50.0 MB)'
+		);
+	} );
+
+	it( 'renders plain file size when bytesUploaded is 0', () => {
+		setupDOM();
+
+		const entry = createPendingUploadEntry( 'photo.jpg', 52428800 );
+		entry.bytesUploaded = 0;
+
+		importModule( [ entry ] );
+
+		const li = document.querySelector( 'li' );
+		expect( li.querySelector( '.filesize' ).textContent ).toBe(
+			'(50.0 MB)'
 		);
 	} );
 } );
