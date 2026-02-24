@@ -307,6 +307,15 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// Pre-flight multisite quota check before accepting the upload.
+		if ( is_multisite() && $upload_length > get_upload_space_available() ) {
+			return new WP_Error(
+				'rest_quota_exceeded',
+				__( 'This file would exceed your space quota.', 'uploads-unleashed' ),
+				array( 'status' => 400 )
+			);
+		}
+
 		// Parse metadata and create upload session.
 		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
 		$session   = new Uploads_Unleashed_TUS_Upload_Session();
