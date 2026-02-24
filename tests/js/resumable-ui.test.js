@@ -16,6 +16,10 @@ jest.mock( '@wordpress/i18n', () => ( {
 	},
 } ) );
 
+jest.mock( '@wordpress/a11y', () => ( {
+	speak: jest.fn(),
+} ) );
+
 jest.mock( '../../src/tus-client', () => ( {
 	getPendingUploads: jest.fn( () => [] ),
 	discardPendingUpload: jest.fn(),
@@ -60,13 +64,17 @@ function setupDOM() {
 	container.id = 'uploads-unleashed-pending';
 	container.style.display = 'none';
 
+	const notice = document.createElement( 'p' );
+	notice.className = 'uploads-unleashed-notice';
+	container.appendChild( notice );
+
 	const list = document.createElement( 'ul' );
 	list.className = 'uploads-unleashed-list';
 	container.appendChild( list );
 
 	document.body.appendChild( container );
 
-	return { container, list };
+	return { container, list, notice };
 }
 
 function importModule( pendingUploads = [] ) {
@@ -742,5 +750,182 @@ describe( 'upload progress percentage', () => {
 		expect( li.querySelector( '.filesize' ).textContent ).toBe(
 			'(50.0 MB)'
 		);
+	} );
+} );
+
+describe( 'accessibility', () => {
+	it( 'sets aria-label on Resume button containing filename', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+
+		const resumeBtn = document.querySelector( '.resume-upload' );
+		expect( resumeBtn.getAttribute( 'aria-label' ) ).toBe(
+			'Resume upload of photo.jpg'
+		);
+	} );
+
+	it( 'sets aria-label on Discard button containing filename', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+
+		const discardBtn = document.querySelector( '.discard-upload' );
+		expect( discardBtn.getAttribute( 'aria-label' ) ).toBe(
+			'Discard upload of photo.jpg'
+		);
+	} );
+
+	it( 'sets role and aria-label on container', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		const container = document.getElementById(
+			'uploads-unleashed-pending'
+		);
+		expect( container.getAttribute( 'role' ) ).toBe( 'region' );
+		expect( container.getAttribute( 'aria-label' ) ).toBe(
+			'Pending uploads'
+		);
+	} );
+
+	it( 'calls speak on discard with filename', async () => {
+		setupDOM();
+
+		const { speak } = require( '@wordpress/a11y' );
+		const pending = createPendingUploadEntry( 'report.pdf', 2048 );
+		const { discardPendingUpload } = importModule( [ pending ] );
+		discardPendingUpload.mockResolvedValue();
+
+		document.querySelector( '.discard-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( speak ).toHaveBeenCalledWith(
+			'Upload of report.pdf discarded',
+			'polite'
+		);
+	} );
+
+	it( 'calls speak on successful resume', async () => {
+		setupDOM();
+
+		// Add moxie-shim input so resumeUpload can dispatch the file.
+		const shim = document.createElement( 'div' );
+		shim.className = 'moxie-shim';
+		const fileInput = document.createElement( 'input' );
+		fileInput.type = 'file';
+		let storedFiles = null;
+		Object.defineProperty( fileInput, 'files', {
+			get: () => storedFiles,
+			set: ( val ) => {
+				storedFiles = val;
+			},
+		} );
+		shim.appendChild( fileInput );
+		document.body.appendChild( shim );
+
+		const { speak } = require( '@wordpress/a11y' );
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'video.mp4', size );
+		importModule( [ pending ] );
+
+		const file = new File( [ 'x'.repeat( size ) ], 'video.mp4', {
+			type: 'video/mp4',
+		} );
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
+		);
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( speak ).toHaveBeenCalledWith(
+			'Resuming upload of video.mp4',
+			'polite'
+		);
+	} );
+
+	it( 'does not call speak when resume is canceled', async () => {
+		setupDOM();
+
+		const { speak } = require( '@wordpress/a11y' );
+		const pending = createPendingUploadEntry( 'video.mp4', 1024 );
+		importModule( [ pending ] );
+
+		const abortError = new DOMException( 'The user aborted', 'AbortError' );
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.reject( abortError )
+		);
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( speak ).not.toHaveBeenCalled();
+	} );
+
+	it( 'moves focus to next item after discard', async () => {
+		setupDOM();
+
+		const itemA = createPendingUploadEntry( 'a.txt', 100 );
+		const itemB = createPendingUploadEntry( 'b.txt', 200 );
+		const { discardPendingUpload } = importModule( [ itemA, itemB ] );
+		discardPendingUpload.mockResolvedValue();
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		const discardButtons = list.querySelectorAll( '.discard-upload' );
+
+		// Discard the first item.
+		discardButtons[ 0 ].click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// Focus should move to the next item's Resume button.
+		const nextResumeBtn =
+			list.children[ 0 ].querySelector( '.resume-upload' );
+		expect( document.activeElement ).toBe( nextResumeBtn );
+	} );
+
+	it( 'moves focus to last item when discarding last in list', async () => {
+		setupDOM();
+
+		const itemA = createPendingUploadEntry( 'a.txt', 100 );
+		const itemB = createPendingUploadEntry( 'b.txt', 200 );
+		const { discardPendingUpload } = importModule( [ itemA, itemB ] );
+		discardPendingUpload.mockResolvedValue();
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		const discardButtons = list.querySelectorAll( '.discard-upload' );
+
+		// Discard the last item.
+		discardButtons[ 1 ].click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// Focus should move to the previous (now last) item's Resume button.
+		const lastResumeBtn =
+			list.lastElementChild.querySelector( '.resume-upload' );
+		expect( document.activeElement ).toBe( lastResumeBtn );
+	} );
+
+	it( 'moves focus to browse button when list becomes empty', async () => {
+		setupDOM();
+
+		const browseBtn = document.createElement( 'button' );
+		browseBtn.id = 'plupload-browse-button';
+		document.body.appendChild( browseBtn );
+
+		const pending = createPendingUploadEntry( 'only.txt', 512 );
+		const { discardPendingUpload } = importModule( [ pending ] );
+		discardPendingUpload.mockResolvedValue();
+
+		document.querySelector( '.discard-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( document.activeElement ).toBe( browseBtn );
 	} );
 } );
