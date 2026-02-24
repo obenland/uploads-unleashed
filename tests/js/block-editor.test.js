@@ -17,6 +17,32 @@ jest.mock( '@wordpress/api-fetch', () => {
 	return { __esModule: true, default: fn };
 } );
 
+jest.mock( '@wordpress/data', () => ( {
+	dispatch: jest.fn( () => ( {
+		createWarningNotice: jest.fn(),
+		createInfoNotice: jest.fn(),
+	} ) ),
+} ) );
+
+jest.mock( '@wordpress/notices', () => ( {
+	store: 'core/notices',
+} ) );
+
+jest.mock( '@wordpress/i18n', () => ( {
+	__: ( text ) => text,
+	sprintf: ( format, ...args ) => {
+		let result = format;
+		args.forEach( ( arg, index ) => {
+			result = result.replace(
+				new RegExp( `%${ index + 1 }\\$s`, 'g' ),
+				String( arg )
+			);
+		} );
+		return result;
+	},
+	_n: ( single, plural, count ) => ( count === 1 ? single : plural ),
+} ) );
+
 import { upload } from '../../src/tus-client';
 
 // Capture the middleware when it's registered
@@ -242,8 +268,82 @@ describe( 'tusMiddleware', () => {
 			expect( console ).toHaveWarned();
 		} );
 
+		it( 'dispatches warning notice on TUS failure before fallback', async () => {
+			const { dispatch } = require( '@wordpress/data' );
+			const mockCreateWarningNotice = jest.fn();
+			dispatch.mockReturnValue( {
+				createWarningNotice: mockCreateWarningNotice,
+				createInfoNotice: jest.fn(),
+			} );
+
+			const file = new File( [ 'test' ], 'test.txt' );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			upload.mockRejectedValue( new Error( 'Network error' ) );
+			next.mockResolvedValue( { id: 456 } );
+
+			const options = {
+				path: '/wp/v2/media',
+				method: 'POST',
+				body: formData,
+			};
+
+			await tusMiddleware( options, next );
+
+			expect( dispatch ).toHaveBeenCalled();
+			expect( mockCreateWarningNotice ).toHaveBeenCalledWith(
+				'Resumable upload unavailable for this file. Using standard upload.',
+				expect.objectContaining( {
+					id: 'uploads-unleashed-fallback-test.txt',
+					isDismissible: true,
+					type: 'snackbar',
+				} )
+			);
+			expect( console ).toHaveWarned();
+		} );
+
+		it( 'warning notice has snackbar type', async () => {
+			const { dispatch } = require( '@wordpress/data' );
+			const mockCreateWarningNotice = jest.fn();
+			dispatch.mockReturnValue( {
+				createWarningNotice: mockCreateWarningNotice,
+				createInfoNotice: jest.fn(),
+			} );
+
+			const file = new File( [ 'test' ], 'report.pdf' );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			upload.mockRejectedValue( new Error( 'Server error' ) );
+			next.mockResolvedValue( { id: 789 } );
+
+			const options = {
+				path: '/wp/v2/media',
+				method: 'POST',
+				body: formData,
+			};
+
+			await tusMiddleware( options, next );
+
+			expect( mockCreateWarningNotice ).toHaveBeenCalledWith(
+				expect.any( String ),
+				expect.objectContaining( {
+					type: 'snackbar',
+				} )
+			);
+			expect( console ).toHaveWarned();
+		} );
+
 		it( 'respects allowFallback filter returning false', async () => {
 			const { applyFilters } = require( '@wordpress/hooks' );
+			const { dispatch } = require( '@wordpress/data' );
+			const mockCreateWarningNotice = jest.fn();
+			dispatch.mockReturnValue( {
+				createWarningNotice: mockCreateWarningNotice,
+				createInfoNotice: jest.fn(),
+			} );
+
 			const file = new File( [ 'test' ], 'test.txt' );
 			const formData = new FormData();
 			formData.append( 'file', file );
@@ -276,6 +376,8 @@ describe( 'tusMiddleware', () => {
 			expect( next ).not.toHaveBeenCalled();
 			// Warning is logged before checking allowFallback filter
 			expect( console ).toHaveWarned();
+			// Notice should NOT be dispatched — fallback didn't happen
+			expect( mockCreateWarningNotice ).not.toHaveBeenCalled();
 		} );
 	} );
 

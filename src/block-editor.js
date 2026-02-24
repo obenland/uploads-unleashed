@@ -7,6 +7,9 @@
  */
 
 import { applyFilters } from '@wordpress/hooks';
+import { dispatch } from '@wordpress/data';
+import { store as noticesStore } from '@wordpress/notices';
+import { __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
 import { upload } from '@uploads-unleashed/tus-client';
 
@@ -122,6 +125,18 @@ const tusMiddleware = async ( options, next ) => {
 		);
 
 		if ( allowFallback ) {
+			dispatch( noticesStore ).createWarningNotice(
+				__(
+					'Resumable upload unavailable for this file. Using standard upload.',
+					'uploads-unleashed'
+				),
+				{
+					id: 'uploads-unleashed-fallback-' + file.name,
+					isDismissible: true,
+					type: 'snackbar',
+				}
+			);
+
 			// Fall back to standard WordPress upload
 			return next( options );
 		}
