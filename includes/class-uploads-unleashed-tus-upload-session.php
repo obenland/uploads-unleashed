@@ -134,6 +134,44 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	}
 
 	/**
+	 * Lists all active upload sessions.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return array[] Array of session data arrays.
+	 */
+	public static function list_all(): array {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$results = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT option_value FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$wpdb->esc_like( '_transient_' . self::TRANSIENT_PREFIX ) . '%'
+			)
+		);
+
+		if ( ! $results ) {
+			return array();
+		}
+
+		$sessions = array();
+		foreach ( $results as $row ) {
+			$data = maybe_unserialize( $row->option_value );
+			if ( ! is_array( $data ) || ! isset( $data['upload_id'] ) ) {
+				continue;
+			}
+			// Skip expired sessions.
+			if ( isset( $data['expires_at'] ) && time() > $data['expires_at'] ) {
+				continue;
+			}
+			$sessions[] = $data;
+		}
+
+		return $sessions;
+	}
+
+	/**
 	 * Deletes all upload session transients.
 	 *
 	 * @since 1.0.0
