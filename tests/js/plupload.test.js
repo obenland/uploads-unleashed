@@ -11,6 +11,10 @@ jest.mock( '@wordpress/hooks', () => ( {
 	applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
 } ) );
 
+jest.mock( '@wordpress/i18n', () => ( {
+	__: ( text ) => text,
+} ) );
+
 import { upload } from '../../src/tus-client';
 
 // Capture the BeforeUpload handler when it's bound
@@ -255,6 +259,85 @@ describe( 'handleBeforeUpload', () => {
 				'UploadProgress',
 				file
 			);
+		} );
+	} );
+
+	describe( 'resumable badge', () => {
+		it( 'creates badge on first onProgress when media-item exists', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+			file.id = 'o_12345';
+
+			// Create DOM elements matching media-new.php structure
+			const mediaItem = document.createElement( 'div' );
+			mediaItem.id = 'media-item-o_12345';
+			const progress = document.createElement( 'div' );
+			progress.className = 'progress';
+			mediaItem.appendChild( progress );
+			document.body.appendChild( mediaItem );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			beforeUploadHandler( uploader, file );
+
+			const onProgress = upload.mock.calls[ 0 ][ 1 ].onProgress;
+			onProgress( 10, 100 );
+
+			const badge = mediaItem.querySelector( '.uploads-unleashed-badge' );
+			expect( badge ).not.toBeNull();
+			expect( badge.textContent ).toBe( 'Resumable' );
+
+			document.body.removeChild( mediaItem );
+		} );
+
+		it( 'does not duplicate badge on subsequent onProgress calls', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+			file.id = 'o_12346';
+
+			const mediaItem = document.createElement( 'div' );
+			mediaItem.id = 'media-item-o_12346';
+			const progress = document.createElement( 'div' );
+			progress.className = 'progress';
+			mediaItem.appendChild( progress );
+			document.body.appendChild( mediaItem );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			beforeUploadHandler( uploader, file );
+
+			const onProgress = upload.mock.calls[ 0 ][ 1 ].onProgress;
+			onProgress( 10, 100 );
+			onProgress( 50, 500 );
+			onProgress( 90, 900 );
+
+			const badges = mediaItem.querySelectorAll(
+				'.uploads-unleashed-badge'
+			);
+			expect( badges.length ).toBe( 1 );
+
+			document.body.removeChild( mediaItem );
+		} );
+
+		it( 'does not error when media-item element is missing', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+			file.id = 'o_99999';
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			beforeUploadHandler( uploader, file );
+
+			const onProgress = upload.mock.calls[ 0 ][ 1 ].onProgress;
+
+			// Should not throw
+			expect( () => onProgress( 50, 500 ) ).not.toThrow();
 		} );
 	} );
 

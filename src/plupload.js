@@ -7,6 +7,7 @@
  */
 
 import { applyFilters } from '@wordpress/hooks';
+import { __ } from '@wordpress/i18n';
 import { upload } from '@uploads-unleashed/tus-client';
 
 /**
@@ -101,6 +102,23 @@ function handleBeforeUpload( uploader, file ) {
 			}
 
 			uploader.trigger( 'UploadProgress', file );
+
+			// Add resumable badge on first progress tick (media-new.php only).
+			const mediaItem = document.getElementById(
+				'media-item-' + file.id
+			);
+			if (
+				mediaItem &&
+				! mediaItem.querySelector( '.uploads-unleashed-badge' )
+			) {
+				const badge = document.createElement( 'span' );
+				badge.className = 'uploads-unleashed-badge';
+				badge.textContent = __( 'Resumable', 'uploads-unleashed' );
+				const progress = mediaItem.querySelector( '.progress' );
+				if ( progress ) {
+					progress.after( badge );
+				}
+			}
 		},
 	} )
 		.then( ( attachment ) => {

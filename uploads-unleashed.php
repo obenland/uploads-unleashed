@@ -100,6 +100,8 @@ function uploads_unleashed_register_scripts() {
 		true
 	);
 
+	wp_set_script_translations( 'uploads-unleashed-plupload', 'uploads-unleashed' );
+
 	// Register block editor integration.
 	$block_editor_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/block-editor.asset.php';
 
