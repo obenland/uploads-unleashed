@@ -643,17 +643,6 @@ describe( 'resume file selection UX', () => {
 		delete window.showOpenFilePicker;
 	} );
 
-	it( 'renders help text with filename and size', () => {
-		setupDOM();
-
-		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
-
-		const helpText = document.querySelector( '.uploads-unleashed-help' );
-		expect( helpText ).not.toBeNull();
-		expect( helpText.textContent ).toContain( 'photo.jpg' );
-		expect( helpText.textContent ).toContain( '5.0 MB' );
-	} );
-
 	it( 'hides error by default', () => {
 		setupDOM();
 

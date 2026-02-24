@@ -175,27 +175,11 @@ function createPendingUploadItem( item ) {
 	discardBtn.className = 'button discard-upload';
 	discardBtn.textContent = __( 'Discard', 'uploads-unleashed' );
 
-	const helpText = document.createElement( 'span' );
-	helpText.className = 'uploads-unleashed-help';
-	helpText.textContent = sprintf(
-		/* translators: 1: filename, 2: file size */
-		__( 'Select the original file: %1$s (%2$s)', 'uploads-unleashed' ),
-		item.filename,
-		formatFileSize( item.size )
-	);
-
 	const errorMsg = document.createElement( 'span' );
 	errorMsg.className = 'uploads-unleashed-error';
 	errorMsg.style.display = 'none';
 
-	li.append(
-		filenameSpan,
-		sizeSpan,
-		resumeBtn,
-		discardBtn,
-		helpText,
-		errorMsg
-	);
+	li.append( filenameSpan, sizeSpan, resumeBtn, discardBtn, errorMsg );
 
 	return li;
 }
