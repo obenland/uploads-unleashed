@@ -348,6 +348,128 @@ class Test_Uploads_Unleashed_TUS_Chunk_Storage extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that list_active_sessions returns sessions with chunk files.
+	 */
+	public function test_list_active_sessions_returns_sessions() {
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+
+		$upload_id1 = $session->create(
+			array(
+				'filename' => 'file1.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			),
+			$request
+		);
+		$upload_id2 = $session->create(
+			array(
+				'filename' => 'file2.txt',
+				'filetype' => 'text/plain',
+				'length'   => 2048,
+			),
+			$request
+		);
+
+		// Create chunk files on disk.
+		$this->storage->append( $upload_id1, 'a', 0 );
+		$this->storage->append( $upload_id2, 'b', 0 );
+
+		$sessions = Uploads_Unleashed_TUS_Chunk_Storage::list_active_sessions();
+
+		$this->assertCount( 2, $sessions );
+		$ids = wp_list_pluck( $sessions, 'upload_id' );
+		$this->assertContains( $upload_id1, $ids );
+		$this->assertContains( $upload_id2, $ids );
+	}
+
+	/**
+	 * Tests that list_active_sessions excludes expired sessions.
+	 */
+	public function test_list_active_sessions_excludes_expired() {
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+
+		$active_id = $session->create(
+			array(
+				'filename' => 'active.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			),
+			$request
+		);
+
+		// Create an expired session directly.
+		$expired_id   = wp_generate_uuid4();
+		$expired_data = array(
+			'upload_id'  => $expired_id,
+			'user_id'    => $admin_id,
+			'filename'   => 'expired.txt',
+			'filetype'   => 'text/plain',
+			'length'     => 512,
+			'offset'     => 0,
+			'created_at' => time() - DAY_IN_SECONDS * 2,
+			'expires_at' => time() - HOUR_IN_SECONDS,
+		);
+		set_transient( 'tus_upload_' . $expired_id, $expired_data, DAY_IN_SECONDS );
+
+		// Create chunk files for both.
+		$this->storage->append( $active_id, 'a', 0 );
+		$this->storage->append( $expired_id, 'b', 0 );
+
+		$sessions = Uploads_Unleashed_TUS_Chunk_Storage::list_active_sessions();
+
+		$this->assertCount( 1, $sessions );
+		$this->assertSame( $active_id, $sessions[0]['upload_id'] );
+	}
+
+	/**
+	 * Tests that list_active_sessions returns empty when no chunk files exist.
+	 */
+	public function test_list_active_sessions_returns_empty_when_none_exist() {
+		$sessions = Uploads_Unleashed_TUS_Chunk_Storage::list_active_sessions();
+
+		$this->assertIsArray( $sessions );
+		$this->assertEmpty( $sessions );
+	}
+
+	/**
+	 * Tests that list_active_sessions excludes orphaned chunks without sessions.
+	 */
+	public function test_list_active_sessions_excludes_orphaned_chunks() {
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+
+		$valid_id  = $session->create(
+			array(
+				'filename' => 'valid.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			),
+			$request
+		);
+		$orphan_id = wp_generate_uuid4();
+
+		// Create chunk files for both.
+		$this->storage->append( $valid_id, 'a', 0 );
+		$this->storage->append( $orphan_id, 'b', 0 );
+
+		$sessions = Uploads_Unleashed_TUS_Chunk_Storage::list_active_sessions();
+
+		$this->assertCount( 1, $sessions );
+		$this->assertSame( $valid_id, $sessions[0]['upload_id'] );
+	}
+
+	/**
 	 * Tests that append returns WP_Error when fopen fails.
 	 *
 	 * Covers line 106 (fopen failure path).
