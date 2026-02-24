@@ -8,7 +8,10 @@
  */
 
 import { sprintf, __ } from '@wordpress/i18n';
-import { getPendingUploads, discardPendingUpload } from './tus-client';
+import {
+	getPendingUploads,
+	discardPendingUpload,
+} from '@uploads-unleashed/tus-client';
 import './resume-ui.css';
 
 /**

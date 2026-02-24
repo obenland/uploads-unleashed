@@ -6,7 +6,9 @@
  * @package
  */
 
-import { upload } from './tus-client';
+import { applyFilters } from '@wordpress/hooks';
+import apiFetch from '@wordpress/api-fetch';
+import { upload } from '@uploads-unleashed/tus-client';
 
 /**
  * Checks if a request is a media upload that should use TUS.
@@ -66,13 +68,22 @@ const tusMiddleware = async ( options, next ) => {
 		return next( options );
 	}
 
-	// Allow plugins to opt out of TUS for specific files.
-	const shouldUseTus =
-		window.wp?.hooks?.applyFilters?.(
-			'uploadsUnleashed.shouldUseTus',
-			true,
-			file
-		) ?? true;
+	/**
+	 * Filters whether to use TUS for a given file upload.
+	 *
+	 * Returning false causes the block editor to use the standard
+	 * wp.apiFetch upload path instead of the TUS protocol.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param {boolean} shouldUseTus Whether to use TUS. Default true.
+	 * @param {File}    file         The file being uploaded.
+	 */
+	const shouldUseTus = applyFilters(
+		'uploadsUnleashed.shouldUseTus',
+		true,
+		file
+	);
 
 	if ( ! shouldUseTus ) {
 		return next( options );
@@ -91,9 +102,19 @@ const tusMiddleware = async ( options, next ) => {
 			error
 		);
 
-		// Allow WordPress hooks to decide whether to fall back
-		// This enables plugins/themes to customize fallback behavior
-		const allowFallback = window.wp?.hooks?.applyFilters?.(
+		/**
+		 * Filters whether to fall back to the standard upload after a TUS failure.
+		 *
+		 * Returning false causes the error to be re-thrown instead of
+		 * falling back to the default wp.apiFetch upload.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param {boolean} allowFallback Whether to allow fallback. Default true.
+		 * @param {Error}   error         The error that caused TUS to fail.
+		 * @param {File}    file          The file that was being uploaded.
+		 */
+		const allowFallback = applyFilters(
 			'uploadsUnleashed.allowFallback',
 			true,
 			error,
@@ -110,16 +131,5 @@ const tusMiddleware = async ( options, next ) => {
 	}
 };
 
-/**
- * Registers the TUS middleware with wp.apiFetch.
- */
-function registerMiddleware() {
-	if ( ! window.wp?.apiFetch?.use ) {
-		return;
-	}
-
-	window.wp.apiFetch.use( tusMiddleware );
-}
-
-// Initialize immediately
-registerMiddleware();
+// Register middleware immediately.
+apiFetch.use( tusMiddleware );

@@ -7,6 +7,7 @@
  */
 
 import * as tus from 'tus-js-client';
+import { addFilter } from '@wordpress/hooks';
 
 /**
  * Upload expiration time in milliseconds (24 hours).
@@ -522,7 +523,8 @@ function isVideoPressActive() {
 	);
 }
 
-window.wp?.hooks?.addFilter?.(
+// Skip TUS for video files when VideoPress is handling them.
+addFilter(
 	'uploadsUnleashed.shouldUseTus',
 	'uploads-unleashed/videopress-compat',
 	( shouldUseTus, file ) => {
