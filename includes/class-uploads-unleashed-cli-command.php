@@ -32,6 +32,8 @@ class Uploads_Unleashed_CLI_Command {
 	 *     wp tus list
 	 *     wp tus list --format=json
 	 *
+	 * @subcommand list
+	 *
 	 * @param array $args       Positional arguments.
 	 * @param array $assoc_args Associative arguments.
 	 */
