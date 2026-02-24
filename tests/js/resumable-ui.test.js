@@ -518,7 +518,7 @@ describe( 'resume button', () => {
 		document.createElement.mockRestore();
 	} );
 
-	it( 'shows alert for wrong file and keeps item', async () => {
+	it( 'shows inline error for wrong file and keeps item', async () => {
 		setupDOM();
 		setupMoxieShim();
 
@@ -538,9 +538,13 @@ describe( 'resume button', () => {
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-		expect( alertSpy ).toHaveBeenCalled();
-		const alertMsg = alertSpy.mock.calls[ 0 ][ 0 ];
-		expect( alertMsg ).toContain( 'photo.jpg' );
+		// No alert should be called - we use inline errors now
+		expect( alertSpy ).not.toHaveBeenCalled();
+
+		// Inline error should be visible
+		const errorEl = document.querySelector( '.uploads-unleashed-error' );
+		expect( errorEl.style.display ).toBe( 'block' );
+		expect( errorEl.textContent ).toContain( 'photo.jpg' );
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
 		expect( list.children.length ).toBe( 1 );
@@ -608,6 +612,122 @@ describe( 'resume button', () => {
 		expect( list.children.length ).toBe( 1 );
 
 		document.createElement.mockRestore();
+	} );
+} );
+
+describe( 'resume file selection UX', () => {
+	function setupMoxieShim() {
+		const shim = document.createElement( 'div' );
+		shim.className = 'moxie-shim';
+		const input = document.createElement( 'input' );
+		input.type = 'file';
+		let storedFiles = null;
+		Object.defineProperty( input, 'files', {
+			get: () => storedFiles,
+			set: ( val ) => {
+				storedFiles = val;
+			},
+		} );
+		shim.appendChild( input );
+		document.body.appendChild( shim );
+		return input;
+	}
+
+	function mockShowOpenFilePicker( file ) {
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
+		);
+	}
+
+	afterEach( () => {
+		delete window.showOpenFilePicker;
+	} );
+
+	it( 'renders help text with filename and size', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+
+		const helpText = document.querySelector( '.uploads-unleashed-help' );
+		expect( helpText ).not.toBeNull();
+		expect( helpText.textContent ).toContain( 'photo.jpg' );
+		expect( helpText.textContent ).toContain( '5.0 MB' );
+	} );
+
+	it( 'hides error by default', () => {
+		setupDOM();
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		const errorEl = document.querySelector( '.uploads-unleashed-error' );
+		expect( errorEl ).not.toBeNull();
+		expect( errorEl.style.display ).toBe( 'none' );
+	} );
+
+	it( 'shows inline error on wrong file instead of alert', async () => {
+		setupDOM();
+		setupMoxieShim();
+
+		const size = 5242880;
+		const pending = createPendingUploadEntry( 'photo.jpg', size );
+		importModule( [ pending ] );
+
+		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
+			type: 'text/plain',
+		} );
+		mockShowOpenFilePicker( wrongFile );
+
+		const alertSpy = jest.spyOn( window, 'alert' ).mockImplementation();
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// alert should NOT be called
+		expect( alertSpy ).not.toHaveBeenCalled();
+
+		// Inline error should be shown
+		const errorEl = document.querySelector( '.uploads-unleashed-error' );
+		expect( errorEl.style.display ).toBe( 'block' );
+		expect( errorEl.textContent ).toContain( 'photo.jpg' );
+
+		alertSpy.mockRestore();
+	} );
+
+	it( 'clears error on retry', async () => {
+		setupDOM();
+		setupMoxieShim();
+
+		const size = 5242880;
+		const pending = createPendingUploadEntry( 'photo.jpg', size );
+		importModule( [ pending ] );
+
+		// First attempt: wrong file
+		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
+			type: 'text/plain',
+		} );
+		mockShowOpenFilePicker( wrongFile );
+
+		document.querySelector( '.resume-upload' ).click();
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const errorEl = document.querySelector( '.uploads-unleashed-error' );
+		expect( errorEl.style.display ).toBe( 'block' );
+
+		// Second attempt: right file
+		const rightFile = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
+			type: 'image/jpeg',
+		} );
+		mockShowOpenFilePicker( rightFile );
+
+		document.querySelector( '.resume-upload' ).click();
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// Error should be cleared (hidden) even before result
+		// The item gets removed on success, so we check the error was cleared
+		// by verifying the upload succeeded (item removed)
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 0 );
 	} );
 } );
 

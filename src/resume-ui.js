@@ -39,12 +39,14 @@ function formatFileSize( bytes ) {
  * Prompts user to re-select a file for resuming upload.
  * Uses File System Access API if available, falls back to file input.
  *
- * @param {Object} pendingUpload          Pending upload metadata.
- * @param {string} pendingUpload.filename Original filename.
- * @param {number} pendingUpload.size     File size in bytes.
+ * @param {Object}   pendingUpload          Pending upload metadata.
+ * @param {string}   pendingUpload.filename Original filename.
+ * @param {number}   pendingUpload.size     File size in bytes.
+ * @param {Object}   options                Optional settings.
+ * @param {Function} options.onMismatch     Callback when selected file doesn't match.
  * @return {Promise<boolean>} True if upload was resumed, false if canceled.
  */
-async function resumeUpload( pendingUpload ) {
+async function resumeUpload( pendingUpload, options = {} ) {
 	let file = null;
 
 	// Extract file extension for filtering (more reliable than MIME type)
@@ -97,18 +99,19 @@ async function resumeUpload( pendingUpload ) {
 		file.name !== pendingUpload.filename ||
 		file.size !== pendingUpload.size
 	) {
-		// eslint-disable-next-line no-alert
-		alert(
-			sprintf(
-				/* translators: 1: filename, 2: file size */
-				__(
-					'Please select the original file: %1$s (%2$s)',
-					'uploads-unleashed'
-				),
-				pendingUpload.filename,
-				formatFileSize( pendingUpload.size )
-			)
-		);
+		if ( options.onMismatch ) {
+			options.onMismatch(
+				sprintf(
+					/* translators: 1: filename, 2: file size */
+					__(
+						'Please select the original file: %1$s (%2$s)',
+						'uploads-unleashed'
+					),
+					pendingUpload.filename,
+					formatFileSize( pendingUpload.size )
+				)
+			);
+		}
 		return false;
 	}
 
@@ -172,7 +175,27 @@ function createPendingUploadItem( item ) {
 	discardBtn.className = 'button discard-upload';
 	discardBtn.textContent = __( 'Discard', 'uploads-unleashed' );
 
-	li.append( filenameSpan, sizeSpan, resumeBtn, discardBtn );
+	const helpText = document.createElement( 'span' );
+	helpText.className = 'uploads-unleashed-help';
+	helpText.textContent = sprintf(
+		/* translators: 1: filename, 2: file size */
+		__( 'Select the original file: %1$s (%2$s)', 'uploads-unleashed' ),
+		item.filename,
+		formatFileSize( item.size )
+	);
+
+	const errorMsg = document.createElement( 'span' );
+	errorMsg.className = 'uploads-unleashed-error';
+	errorMsg.style.display = 'none';
+
+	li.append(
+		filenameSpan,
+		sizeSpan,
+		resumeBtn,
+		discardBtn,
+		helpText,
+		errorMsg
+	);
 
 	return li;
 }
@@ -200,7 +223,21 @@ function renderPendingUploads() {
 			li.querySelector( '.resume-upload' ).addEventListener(
 				'click',
 				async () => {
-					const resumed = await resumeUpload( item );
+					const errorEl = li.querySelector(
+						'.uploads-unleashed-error'
+					);
+					if ( errorEl ) {
+						errorEl.style.display = 'none';
+					}
+
+					const resumed = await resumeUpload( item, {
+						onMismatch: ( message ) => {
+							if ( errorEl ) {
+								errorEl.textContent = message;
+								errorEl.style.display = 'block';
+							}
+						},
+					} );
 					if ( resumed ) {
 						li.remove();
 						if ( list.children.length === 0 ) {

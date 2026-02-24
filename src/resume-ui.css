@@ -76,3 +76,19 @@
 	box-shadow: 0 0 0 1px #b32d2e;
 	color: #fff;
 }
+
+.uploads-unleashed-help {
+	display: block;
+	width: 100%;
+	color: #646970;
+	font-size: 12px;
+	font-style: italic;
+}
+
+.uploads-unleashed-error {
+	display: block;
+	width: 100%;
+	color: #d63638;
+	font-size: 12px;
+	font-weight: 500;
+}
