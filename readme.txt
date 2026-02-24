@@ -4,7 +4,7 @@ Tags: uploads, photos, import, video, media
 Requires at least: 6.4
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -67,6 +67,17 @@ WordPress goes back to handling uploads the way it normally does. Files you alre
 1. Resumable uploads — pick up where you left off after a connection drop.
 
 == Changelog ==
+
+= 1.1.0 =
+* Fix HEAD request 404 on nginx servers by @obenland in #53
+* Use proper package imports for WordPress dependencies by @obenland in #56
+* Add pre-flight multisite quota check by @obenland in #55
+* Add accessibility to resume UI by @obenland in #54
+* Add snackbar warning on block editor TUS fallback by @obenland in #57
+* Add WP-CLI command for upload session management by @obenland in #60
+* Replace alert() with inline help text and error in resume UI by @obenland in #58
+* Add @subcommand annotation for WP-CLI list command by @obenland in #62
+* Add pending uploads notice to Block Editor and Media Library by @obenland in #61
 
 = 1.0.0 =
 * Add uploadsUnleashed.shouldUseTus filter for VideoPress compatibility.
