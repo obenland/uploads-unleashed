@@ -876,7 +876,7 @@ describe( 'accessibility', () => {
 		expect( document.activeElement ).toBe( lastResumeBtn );
 	} );
 
-	it( 'moves focus to heading when list becomes empty', async () => {
+	it( 'does not attempt focus when list becomes empty', async () => {
 		setupDOM();
 
 		const pending = createPendingUploadEntry( 'only.txt', 512 );
@@ -887,8 +887,9 @@ describe( 'accessibility', () => {
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
+		// Container is hidden — no focusable element to move to.
+		// The speak() announcement handles the screen reader notification.
 		const heading = document.querySelector( 'p.uploads-unleashed-notice' );
-		expect( document.activeElement ).toBe( heading );
-		expect( heading.getAttribute( 'tabindex' ) ).toBe( '-1' );
+		expect( document.activeElement ).not.toBe( heading );
 	} );
 } );

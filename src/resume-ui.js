@@ -262,13 +262,6 @@ function renderPendingUploads() {
 						'polite'
 					);
 					if ( list.children.length === 0 ) {
-						const heading = container.querySelector(
-							'p.uploads-unleashed-notice'
-						);
-						if ( heading ) {
-							heading.setAttribute( 'tabindex', '-1' );
-							heading.focus();
-						}
 						container.style.display = 'none';
 					} else if ( nextLi ) {
 						nextLi.querySelector( '.resume-upload' )?.focus();
