@@ -9,9 +9,9 @@
 import { applyFilters } from '@wordpress/hooks';
 import { dispatch } from '@wordpress/data';
 import { store as noticesStore } from '@wordpress/notices';
-import { __ } from '@wordpress/i18n';
+import { sprintf, _n, __ } from '@wordpress/i18n';
 import apiFetch from '@wordpress/api-fetch';
-import { upload } from '@uploads-unleashed/tus-client';
+import { upload, getPendingUploads } from '@uploads-unleashed/tus-client';
 
 /**
  * Checks if a request is a media upload that should use TUS.
@@ -148,3 +148,39 @@ const tusMiddleware = async ( options, next ) => {
 
 // Register middleware immediately.
 apiFetch.use( tusMiddleware );
+
+/**
+ * Shows a snackbar notice if there are pending uploads.
+ */
+function showPendingUploadsNotice() {
+	const pending = getPendingUploads();
+	if ( pending.length === 0 ) {
+		return;
+	}
+
+	dispatch( noticesStore ).createInfoNotice(
+		sprintf(
+			/* translators: %d: number of pending uploads */
+			_n(
+				'You have %d interrupted upload.',
+				'You have %d interrupted uploads.',
+				pending.length,
+				'uploads-unleashed'
+			),
+			pending.length
+		),
+		{
+			id: 'uploads-unleashed-pending',
+			isDismissible: true,
+			type: 'snackbar',
+			actions: [
+				{
+					url: window.uploadsUnleashed?.mediaNewUrl,
+					label: __( 'Resume uploads', 'uploads-unleashed' ),
+				},
+			],
+		}
+	);
+}
+
+showPendingUploadsNotice();
