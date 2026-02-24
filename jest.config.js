@@ -10,6 +10,7 @@ module.exports = {
 	testEnvironment: 'jsdom',
 	moduleNameMapper: {
 		'^@wordpress/i18n$': '<rootDir>/tests/js/__mocks__/@wordpress/i18n.js',
+		'^@uploads-unleashed/tus-client$': '<rootDir>/src/tus-client.js',
 	},
 	transform: {
 		'\\.[jt]sx?$':

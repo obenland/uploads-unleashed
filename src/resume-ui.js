@@ -9,7 +9,10 @@
 
 import { sprintf, __ } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
-import { getPendingUploads, discardPendingUpload } from './tus-client';
+import {
+	getPendingUploads,
+	discardPendingUpload,
+} from '@uploads-unleashed/tus-client';
 import './resume-ui.css';
 
 /**
@@ -223,19 +226,19 @@ function renderPendingUploads() {
 			li.querySelector( '.resume-upload' ).addEventListener(
 				'click',
 				async () => {
-					speak(
-						sprintf(
-							/* translators: 1: filename */
-							__(
-								'Resuming upload of %1$s',
-								'uploads-unleashed'
-							),
-							item.filename
-						),
-						'polite'
-					);
 					const resumed = await resumeUpload( item );
 					if ( resumed ) {
+						speak(
+							sprintf(
+								/* translators: 1: filename */
+								__(
+									'Resuming upload of %1$s',
+									'uploads-unleashed'
+								),
+								item.filename
+							),
+							'polite'
+						);
 						li.remove();
 						if ( list.children.length === 0 ) {
 							container.style.display = 'none';
@@ -263,6 +266,9 @@ function renderPendingUploads() {
 					);
 					if ( list.children.length === 0 ) {
 						container.style.display = 'none';
+						document
+							.getElementById( 'plupload-browse-button' )
+							?.focus();
 					} else if ( nextLi ) {
 						nextLi.querySelector( '.resume-upload' )?.focus();
 					} else {

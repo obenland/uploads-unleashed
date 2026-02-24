@@ -808,18 +808,34 @@ describe( 'accessibility', () => {
 		);
 	} );
 
-	it( 'calls speak on resume with filename', async () => {
+	it( 'calls speak on successful resume', async () => {
 		setupDOM();
 
+		// Add moxie-shim input so resumeUpload can dispatch the file.
+		const shim = document.createElement( 'div' );
+		shim.className = 'moxie-shim';
+		const fileInput = document.createElement( 'input' );
+		fileInput.type = 'file';
+		let storedFiles = null;
+		Object.defineProperty( fileInput, 'files', {
+			get: () => storedFiles,
+			set: ( val ) => {
+				storedFiles = val;
+			},
+		} );
+		shim.appendChild( fileInput );
+		document.body.appendChild( shim );
+
 		const { speak } = require( '@wordpress/a11y' );
-		const pending = createPendingUploadEntry( 'video.mp4', 1024 );
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'video.mp4', size );
 		importModule( [ pending ] );
 
-		// showOpenFilePicker throws AbortError (user cancels) — we just need
-		// to verify speak was called before the async picker resolves.
-		const abortError = new DOMException( 'The user aborted', 'AbortError' );
+		const file = new File( [ 'x'.repeat( size ) ], 'video.mp4', {
+			type: 'video/mp4',
+		} );
 		window.showOpenFilePicker = jest.fn( () =>
-			Promise.reject( abortError )
+			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
 		);
 
 		document.querySelector( '.resume-upload' ).click();
@@ -830,6 +846,25 @@ describe( 'accessibility', () => {
 			'Resuming upload of video.mp4',
 			'polite'
 		);
+	} );
+
+	it( 'does not call speak when resume is canceled', async () => {
+		setupDOM();
+
+		const { speak } = require( '@wordpress/a11y' );
+		const pending = createPendingUploadEntry( 'video.mp4', 1024 );
+		importModule( [ pending ] );
+
+		const abortError = new DOMException( 'The user aborted', 'AbortError' );
+		window.showOpenFilePicker = jest.fn( () =>
+			Promise.reject( abortError )
+		);
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( speak ).not.toHaveBeenCalled();
 	} );
 
 	it( 'moves focus to next item after discard', async () => {
@@ -876,8 +911,12 @@ describe( 'accessibility', () => {
 		expect( document.activeElement ).toBe( lastResumeBtn );
 	} );
 
-	it( 'does not attempt focus when list becomes empty', async () => {
+	it( 'moves focus to browse button when list becomes empty', async () => {
 		setupDOM();
+
+		const browseBtn = document.createElement( 'button' );
+		browseBtn.id = 'plupload-browse-button';
+		document.body.appendChild( browseBtn );
 
 		const pending = createPendingUploadEntry( 'only.txt', 512 );
 		const { discardPendingUpload } = importModule( [ pending ] );
@@ -887,9 +926,6 @@ describe( 'accessibility', () => {
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-		// Container is hidden — no focusable element to move to.
-		// The speak() announcement handles the screen reader notification.
-		const heading = document.querySelector( 'p.uploads-unleashed-notice' );
-		expect( document.activeElement ).not.toBe( heading );
+		expect( document.activeElement ).toBe( browseBtn );
 	} );
 } );

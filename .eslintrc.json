@@ -3,6 +3,11 @@
 	"env": {
 		"browser": true
 	},
+	"rules": {
+		"import/no-unresolved": [ "error", {
+			"ignore": [ "^@uploads-unleashed/" ]
+		} ]
+	},
 	"overrides": [
 		{
 			"files": [ "tests/js/**/*.js" ],
