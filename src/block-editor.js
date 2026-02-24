@@ -105,18 +105,6 @@ const tusMiddleware = async ( options, next ) => {
 			error
 		);
 
-		dispatch( noticesStore ).createWarningNotice(
-			__(
-				'Resumable upload unavailable for this file. Using standard upload.',
-				'uploads-unleashed'
-			),
-			{
-				id: 'uploads-unleashed-fallback-' + file.name,
-				isDismissible: true,
-				type: 'snackbar',
-			}
-		);
-
 		/**
 		 * Filters whether to fall back to the standard upload after a TUS failure.
 		 *
@@ -137,6 +125,18 @@ const tusMiddleware = async ( options, next ) => {
 		);
 
 		if ( allowFallback ) {
+			dispatch( noticesStore ).createWarningNotice(
+				__(
+					'Resumable upload unavailable for this file. Using standard upload.',
+					'uploads-unleashed'
+				),
+				{
+					id: 'uploads-unleashed-fallback-' + file.name,
+					isDismissible: true,
+					type: 'snackbar',
+				}
+			);
+
 			// Fall back to standard WordPress upload
 			return next( options );
 		}

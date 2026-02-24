@@ -337,6 +337,13 @@ describe( 'tusMiddleware', () => {
 
 		it( 'respects allowFallback filter returning false', async () => {
 			const { applyFilters } = require( '@wordpress/hooks' );
+			const { dispatch } = require( '@wordpress/data' );
+			const mockCreateWarningNotice = jest.fn();
+			dispatch.mockReturnValue( {
+				createWarningNotice: mockCreateWarningNotice,
+				createInfoNotice: jest.fn(),
+			} );
+
 			const file = new File( [ 'test' ], 'test.txt' );
 			const formData = new FormData();
 			formData.append( 'file', file );
@@ -369,6 +376,8 @@ describe( 'tusMiddleware', () => {
 			expect( next ).not.toHaveBeenCalled();
 			// Warning is logged before checking allowFallback filter
 			expect( console ).toHaveWarned();
+			// Notice should NOT be dispatched — fallback didn't happen
+			expect( mockCreateWarningNotice ).not.toHaveBeenCalled();
 		} );
 	} );
 
