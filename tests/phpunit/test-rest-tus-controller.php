@@ -1621,4 +1621,72 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$data = $response->get_data();
 		$this->assertSame( 'rest_chunk_too_large', $data['code'] );
 	}
+
+	/**
+	 * Test create upload rejects when multisite quota is exceeded.
+	 *
+	 * @group ms-required
+	 */
+	public function test_create_upload_rejects_when_quota_exceeded() {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Multisite only.' );
+		}
+
+		// Mock quota: 10 MB allowed, 9.5 MB used.
+		$space_used_callback = function () {
+			return 9.5;
+		};
+		add_filter( 'pre_get_space_used', $space_used_callback );
+
+		$space_allowed_callback = function () {
+			return 10;
+		};
+		add_filter( 'get_space_allowed', $space_allowed_callback );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', (string) MB_IN_BYTES ); // 1 MB, would exceed quota.
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'large.zip' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'pre_get_space_used', $space_used_callback );
+		remove_filter( 'get_space_allowed', $space_allowed_callback );
+
+		$this->assertSame( 400, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'rest_quota_exceeded', $data['code'] );
+	}
+
+	/**
+	 * Test create upload succeeds when within multisite quota.
+	 *
+	 * @group ms-required
+	 */
+	public function test_create_upload_succeeds_within_quota() {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Multisite only.' );
+		}
+
+		// Mock quota: 100 MB allowed, 1 MB used.
+		$space_used_callback = function () {
+			return 1;
+		};
+		add_filter( 'pre_get_space_used', $space_used_callback );
+
+		$space_allowed_callback = function () {
+			return 100;
+		};
+		add_filter( 'get_space_allowed', $space_allowed_callback );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', (string) MB_IN_BYTES ); // 1 MB, well within quota.
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'small.zip' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'pre_get_space_used', $space_used_callback );
+		remove_filter( 'get_space_allowed', $space_allowed_callback );
+
+		$this->assertSame( 201, $response->get_status() );
+	}
 }
