@@ -8,6 +8,7 @@
  */
 
 import { sprintf, __ } from '@wordpress/i18n';
+import { speak } from '@wordpress/a11y';
 import { getPendingUploads, discardPendingUpload } from './tus-client';
 import './resume-ui.css';
 
@@ -166,11 +167,27 @@ function createPendingUploadItem( item ) {
 	resumeBtn.type = 'button';
 	resumeBtn.className = 'button resume-upload';
 	resumeBtn.textContent = __( 'Resume', 'uploads-unleashed' );
+	resumeBtn.setAttribute(
+		'aria-label',
+		sprintf(
+			/* translators: 1: filename */
+			__( 'Resume upload of %1$s', 'uploads-unleashed' ),
+			item.filename
+		)
+	);
 
 	const discardBtn = document.createElement( 'button' );
 	discardBtn.type = 'button';
 	discardBtn.className = 'button discard-upload';
 	discardBtn.textContent = __( 'Discard', 'uploads-unleashed' );
+	discardBtn.setAttribute(
+		'aria-label',
+		sprintf(
+			/* translators: 1: filename */
+			__( 'Discard upload of %1$s', 'uploads-unleashed' ),
+			item.filename
+		)
+	);
 
 	li.append( filenameSpan, sizeSpan, resumeBtn, discardBtn );
 
@@ -187,6 +204,12 @@ function renderPendingUploads() {
 		return;
 	}
 
+	container.setAttribute( 'role', 'region' );
+	container.setAttribute(
+		'aria-label',
+		__( 'Pending uploads', 'uploads-unleashed' )
+	);
+
 	const pending = getPendingUploads();
 	if ( pending.length === 0 ) {
 		container.style.display = 'none';
@@ -200,6 +223,17 @@ function renderPendingUploads() {
 			li.querySelector( '.resume-upload' ).addEventListener(
 				'click',
 				async () => {
+					speak(
+						sprintf(
+							/* translators: 1: filename */
+							__(
+								'Resuming upload of %1$s',
+								'uploads-unleashed'
+							),
+							item.filename
+						),
+						'polite'
+					);
 					const resumed = await resumeUpload( item );
 					if ( resumed ) {
 						li.remove();
@@ -214,9 +248,34 @@ function renderPendingUploads() {
 				'click',
 				async () => {
 					await discardPendingUpload( item );
+					const nextLi = li.nextElementSibling;
 					li.remove();
+					speak(
+						sprintf(
+							/* translators: 1: filename */
+							__(
+								'Upload of %1$s discarded',
+								'uploads-unleashed'
+							),
+							item.filename
+						),
+						'polite'
+					);
 					if ( list.children.length === 0 ) {
+						const heading = container.querySelector(
+							'p.uploads-unleashed-notice'
+						);
+						if ( heading ) {
+							heading.setAttribute( 'tabindex', '-1' );
+							heading.focus();
+						}
 						container.style.display = 'none';
+					} else if ( nextLi ) {
+						nextLi.querySelector( '.resume-upload' )?.focus();
+					} else {
+						list.lastElementChild
+							?.querySelector( '.resume-upload' )
+							?.focus();
 					}
 				}
 			);
