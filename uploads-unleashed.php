@@ -65,8 +65,9 @@ function uploads_unleashed_register_scripts() {
 		'uploads-unleashed',
 		'uploadsUnleashed',
 		array(
-			'endpoint' => rest_url( 'wp/v2/media' ),
-			'nonce'    => wp_create_nonce( 'wp_rest' ),
+			'endpoint'    => rest_url( 'wp/v2/media' ),
+			'nonce'       => wp_create_nonce( 'wp_rest' ),
+			'mediaNewUrl' => admin_url( 'media-new.php' ),
 		)
 	);
 
@@ -133,6 +134,7 @@ function uploads_unleashed_enqueue_ui() {
 	wp_enqueue_script( 'uploads-unleashed-ui' );
 	wp_enqueue_style( 'uploads-unleashed-ui' );
 }
+add_action( 'admin_print_scripts-upload.php', 'uploads_unleashed_enqueue_ui' );
 add_action( 'admin_print_scripts-media-new.php', 'uploads_unleashed_enqueue_ui' );
 
 /**
@@ -161,6 +163,29 @@ function uploads_unleashed_pending_ui() {
 	<?php
 }
 add_action( 'post-plupload-upload-ui', 'uploads_unleashed_pending_ui' );
+
+/**
+ * Renders a pending uploads notice on the Media Library screen.
+ *
+ * Outputs a hidden container that is populated by JavaScript when
+ * pending uploads are detected.
+ *
+ * @since 1.1.0
+ */
+function uploads_unleashed_pending_uploads_notice() {
+	$screen = get_current_screen();
+	if ( ! $screen || 'upload' !== $screen->id ) {
+		return;
+	}
+
+	printf(
+		'<div id="uploads-unleashed-pending-notice" class="notice notice-info is-dismissible" style="display:none;"><p>%s <a href="%s">%s</a></p></div>',
+		esc_html__( 'You have interrupted uploads.', 'uploads-unleashed' ),
+		esc_url( admin_url( 'media-new.php' ) ),
+		esc_html__( 'Resume uploads', 'uploads-unleashed' )
+	);
+}
+add_action( 'admin_notices', 'uploads_unleashed_pending_uploads_notice' );
 
 /**
  * Registers REST API routes.

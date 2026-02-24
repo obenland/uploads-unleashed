@@ -362,6 +362,14 @@ function init() {
 
 	renderPendingUploads();
 
+	// Show notice on upload.php if pending uploads exist.
+	const noticeContainer = document.getElementById(
+		'uploads-unleashed-pending-notice'
+	);
+	if ( noticeContainer ) {
+		noticeContainer.style.display = 'block';
+	}
+
 	// Hook plupload via jQuery ready (uploader is created by handlers.js)
 	if ( typeof window.jQuery !== 'undefined' ) {
 		window.jQuery( hookPlupload );

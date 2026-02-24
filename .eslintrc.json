@@ -4,9 +4,12 @@
 		"browser": true
 	},
 	"rules": {
-		"import/no-unresolved": [ "error", {
-			"ignore": [ "^@uploads-unleashed/" ]
-		} ]
+		"import/no-unresolved": [
+			"error",
+			{
+				"ignore": [ "^@uploads-unleashed/" ]
+			}
+		]
 	},
 	"overrides": [
 		{

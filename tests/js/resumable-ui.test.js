@@ -1038,3 +1038,33 @@ describe( 'accessibility', () => {
 		expect( document.activeElement ).toBe( browseBtn );
 	} );
 } );
+
+describe( 'upload.php pending notice', () => {
+	it( 'shows notice container when pending uploads exist', () => {
+		setupDOM();
+
+		// Add the upload.php notice container
+		const notice = document.createElement( 'div' );
+		notice.id = 'uploads-unleashed-pending-notice';
+		notice.style.display = 'none';
+		document.body.appendChild( notice );
+
+		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+
+		expect( notice.style.display ).toBe( 'block' );
+	} );
+
+	it( 'keeps notice hidden when no pending uploads', () => {
+		setupDOM();
+
+		const notice = document.createElement( 'div' );
+		notice.id = 'uploads-unleashed-pending-notice';
+		notice.style.display = 'none';
+		document.body.appendChild( notice );
+
+		importModule( [] );
+
+		// init() exits early when no pending, so container remains hidden
+		expect( notice.style.display ).toBe( 'none' );
+	} );
+} );

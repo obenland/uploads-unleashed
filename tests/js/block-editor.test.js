@@ -5,6 +5,7 @@
 // Mock tus-client module
 jest.mock( '../../src/tus-client', () => ( {
 	upload: jest.fn(),
+	getPendingUploads: jest.fn( () => [] ),
 } ) );
 
 jest.mock( '@wordpress/hooks', () => ( {
@@ -32,13 +33,15 @@ jest.mock( '@wordpress/i18n', () => ( {
 	__: ( text ) => text,
 	sprintf: ( format, ...args ) => {
 		let result = format;
+		let argIndex = 0;
 		args.forEach( ( arg, index ) => {
 			result = result.replace(
 				new RegExp( `%${ index + 1 }\\$s`, 'g' ),
 				String( arg )
 			);
 		} );
-		return result;
+		result = result.replace( /%[ds]/g, () => String( args[ argIndex++ ] ) );
+		return result.replace( /%%/g, '%' );
 	},
 	_n: ( single, plural, count ) => ( count === 1 ? single : plural ),
 } ) );
@@ -454,5 +457,56 @@ describe( 'tusMiddleware', () => {
 				file
 			);
 		} );
+	} );
+} );
+
+describe( 'pending uploads notice', () => {
+	it( 'dispatches info notice when pending uploads exist', () => {
+		const { dispatch } = require( '@wordpress/data' );
+		const mockCreateInfoNotice = jest.fn();
+		dispatch.mockReturnValue( {
+			createWarningNotice: jest.fn(),
+			createInfoNotice: mockCreateInfoNotice,
+		} );
+
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		getPendingUploads.mockReturnValue( [
+			{ key: 'k1', filename: 'test.txt', size: 1024 },
+		] );
+
+		jest.isolateModules( () => {
+			const apiFetch = require( '@wordpress/api-fetch' ).default;
+			apiFetch.use = jest.fn();
+			require( '../../src/block-editor' );
+		} );
+
+		expect( mockCreateInfoNotice ).toHaveBeenCalledWith(
+			expect.stringContaining( '1' ),
+			expect.objectContaining( {
+				id: 'uploads-unleashed-pending',
+				isDismissible: true,
+				type: 'snackbar',
+			} )
+		);
+	} );
+
+	it( 'does not dispatch notice when no pending uploads', () => {
+		const { dispatch } = require( '@wordpress/data' );
+		const mockCreateInfoNotice = jest.fn();
+		dispatch.mockReturnValue( {
+			createWarningNotice: jest.fn(),
+			createInfoNotice: mockCreateInfoNotice,
+		} );
+
+		const { getPendingUploads } = require( '../../src/tus-client' );
+		getPendingUploads.mockReturnValue( [] );
+
+		jest.isolateModules( () => {
+			const apiFetch = require( '@wordpress/api-fetch' ).default;
+			apiFetch.use = jest.fn();
+			require( '../../src/block-editor' );
+		} );
+
+		expect( mockCreateInfoNotice ).not.toHaveBeenCalled();
 	} );
 } );
