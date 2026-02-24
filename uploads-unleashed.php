@@ -350,5 +350,5 @@ register_deactivation_hook( __FILE__, 'uploads_unleashed_deactivate' );
 // Register WP-CLI command.
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-cli-command.php';
-	WP_CLI::add_command( 'uploads-unleashed', 'Uploads_Unleashed_CLI_Command' );
+	WP_CLI::add_command( 'tus', 'Uploads_Unleashed_CLI_Command' );
 }

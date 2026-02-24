@@ -29,14 +29,14 @@ class Uploads_Unleashed_CLI_Command {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp uploads-unleashed list
-	 *     wp uploads-unleashed list --format=json
+	 *     wp tus list
+	 *     wp tus list --format=json
 	 *
 	 * @param array $args       Positional arguments.
 	 * @param array $assoc_args Associative arguments.
 	 */
 	public function list_( $args, $assoc_args ) {
-		$sessions = Uploads_Unleashed_TUS_Upload_Session::list_all();
+		$sessions = Uploads_Unleashed_TUS_Chunk_Storage::list_active_sessions();
 
 		if ( empty( $sessions ) ) {
 			WP_CLI::success( 'No active upload sessions.' );
@@ -80,12 +80,12 @@ class Uploads_Unleashed_CLI_Command {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp uploads-unleashed cancel abc-123-def
+	 *     wp tus cancel abc-123-def
 	 *
 	 * @param array $args       Positional arguments.
 	 * @param array $assoc_args Associative arguments.
 	 */
-	public function cancel( $args, $assoc_args ) {
+	public function cancel( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- WP-CLI command signature.
 		$upload_id = $args[0];
 
 		$session = new Uploads_Unleashed_TUS_Upload_Session();
@@ -107,12 +107,12 @@ class Uploads_Unleashed_CLI_Command {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp uploads-unleashed cleanup
+	 *     wp tus cleanup
 	 *
 	 * @param array $args       Positional arguments.
 	 * @param array $assoc_args Associative arguments.
 	 */
-	public function cleanup( $args, $assoc_args ) {
+	public function cleanup( $args, $assoc_args ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter -- WP-CLI command signature.
 		Uploads_Unleashed_TUS_Chunk_Storage::cleanup_expired();
 
 		WP_CLI::success( 'Expired uploads cleaned up.' );

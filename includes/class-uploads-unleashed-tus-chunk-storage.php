@@ -232,6 +232,41 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Lists all active upload sessions by scanning chunk files on disk.
+	 *
+	 * Uses get_transient() for each session lookup so it works regardless
+	 * of whether an external object cache is active.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @return array[] Array of session data arrays.
+	 */
+	public static function list_active_sessions(): array {
+		$storage = new self();
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+
+		$files = glob( self::$base_dir . '*.part' );
+
+		if ( ! $files ) {
+			return array();
+		}
+
+		$sessions = array();
+		foreach ( $files as $file ) {
+			$upload_id = basename( $file, '.part' );
+			$data      = $session->get( $upload_id );
+
+			if ( ! $data || time() > $data['expires_at'] ) {
+				continue;
+			}
+
+			$sessions[] = $data;
+		}
+
+		return $sessions;
+	}
+
+	/**
 	 * Cleans up expired chunk files.
 	 *
 	 * This method is intended to be called via WP-Cron.
