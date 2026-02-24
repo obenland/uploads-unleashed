@@ -15,7 +15,23 @@ module.exports = {
 		'block-editor': path.resolve( __dirname, 'src/block-editor.js' ),
 		plupload: path.resolve( __dirname, 'src/plupload.js' ),
 		'resume-ui': path.resolve( __dirname, 'src/resume-ui.js' ),
-		'tus-client': path.resolve( __dirname, 'src/tus-client.js' ),
+		'tus-client': {
+			import: path.resolve( __dirname, 'src/tus-client.js' ),
+			library: {
+				name: [ 'uploadsUnleashed', 'tusClient' ],
+				type: 'window',
+			},
+		},
+	},
+	resolve: {
+		...defaultConfig.resolve,
+		alias: {
+			...( defaultConfig.resolve?.alias || {} ),
+			'@uploads-unleashed/tus-client': path.resolve(
+				__dirname,
+				'src/tus-client.js'
+			),
+		},
 	},
 	plugins: [
 		...defaultConfig.plugins.filter(
@@ -27,10 +43,16 @@ module.exports = {
 				if ( request === 'tus-js-client' ) {
 					return 'tus';
 				}
+				if ( request === '@uploads-unleashed/tus-client' ) {
+					return [ 'uploadsUnleashed', 'tusClient' ];
+				}
 			},
 			requestToHandle( request ) {
 				if ( request === 'tus-js-client' ) {
 					return 'uploads-unleashed-tus';
+				}
+				if ( request === '@uploads-unleashed/tus-client' ) {
+					return 'uploads-unleashed';
 				}
 			},
 		} ),

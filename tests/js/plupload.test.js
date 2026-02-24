@@ -7,6 +7,10 @@ jest.mock( '../../src/tus-client', () => ( {
 	upload: jest.fn(),
 } ) );
 
+jest.mock( '@wordpress/hooks', () => ( {
+	applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
+} ) );
+
 import { upload } from '../../src/tus-client';
 
 // Capture the BeforeUpload handler when it's bound
@@ -53,9 +57,6 @@ beforeAll( () => {
 		Uploader: jest.fn( function () {
 			this.uploader = createMockUploader();
 		} ),
-		hooks: {
-			applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
-		},
 		media: {
 			attachment: jest.fn( () =>
 				createMockAttachmentModel( {
@@ -85,7 +86,8 @@ beforeAll( () => {
 
 beforeEach( () => {
 	jest.clearAllMocks();
-	window.wp.hooks.applyFilters.mockImplementation(
+	const { applyFilters } = require( '@wordpress/hooks' );
+	applyFilters.mockImplementation(
 		( hookName, defaultValue ) => defaultValue
 	);
 	upload.mockResolvedValue( { id: 123 } );
@@ -432,19 +434,18 @@ describe( 'handleBeforeUpload', () => {
 
 	describe( 'shouldUseTus filter', () => {
 		it( 'skips TUS when filter returns false', () => {
+			const { applyFilters } = require( '@wordpress/hooks' );
 			const nativeFile = new File( [ 'video' ], 'movie.mp4', {
 				type: 'video/mp4',
 			} );
 			const file = createMockFile( nativeFile );
 
-			window.wp.hooks.applyFilters.mockImplementation(
-				( hookName, defaultValue ) => {
-					if ( hookName === 'uploadsUnleashed.shouldUseTus' ) {
-						return false;
-					}
-					return defaultValue;
+			applyFilters.mockImplementation( ( hookName, defaultValue ) => {
+				if ( hookName === 'uploadsUnleashed.shouldUseTus' ) {
+					return false;
 				}
-			);
+				return defaultValue;
+			} );
 
 			const result = beforeUploadHandler( uploader, file );
 
@@ -467,6 +468,7 @@ describe( 'handleBeforeUpload', () => {
 		} );
 
 		it( 'passes native file to the filter', () => {
+			const { applyFilters } = require( '@wordpress/hooks' );
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
@@ -474,28 +476,11 @@ describe( 'handleBeforeUpload', () => {
 
 			beforeUploadHandler( uploader, file );
 
-			expect( window.wp.hooks.applyFilters ).toHaveBeenCalledWith(
+			expect( applyFilters ).toHaveBeenCalledWith(
 				'uploadsUnleashed.shouldUseTus',
 				true,
 				nativeFile
 			);
-		} );
-
-		it( 'defaults to TUS when wp.hooks is unavailable', () => {
-			const nativeFile = new File( [ 'test' ], 'test.txt', {
-				type: 'text/plain',
-			} );
-			const file = createMockFile( nativeFile );
-
-			const originalHooks = window.wp.hooks;
-			window.wp.hooks = undefined;
-
-			const result = beforeUploadHandler( uploader, file );
-
-			expect( result ).toBe( false );
-			expect( upload ).toHaveBeenCalled();
-
-			window.wp.hooks = originalHooks;
 		} );
 	} );
 } );

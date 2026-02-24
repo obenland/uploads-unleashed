@@ -6,7 +6,8 @@
  * @package
  */
 
-import { upload } from './tus-client';
+import { applyFilters } from '@wordpress/hooks';
+import { upload } from '@uploads-unleashed/tus-client';
 
 /**
  * Plupload file status constants.
@@ -64,13 +65,22 @@ function handleBeforeUpload( uploader, file ) {
 		return; // Let plupload's default behavior run
 	}
 
-	// Allow plugins to opt out of TUS for specific files.
-	const shouldUseTus =
-		window.wp?.hooks?.applyFilters?.(
-			'uploadsUnleashed.shouldUseTus',
-			true,
-			nativeFile
-		) ?? true;
+	/**
+	 * Filters whether to use TUS for a given file upload.
+	 *
+	 * Returning false lets plupload handle the upload using
+	 * its default chunked upload behavior.
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param {boolean} shouldUseTus Whether to use TUS. Default true.
+	 * @param {File}    file         The native File object being uploaded.
+	 */
+	const shouldUseTus = applyFilters(
+		'uploadsUnleashed.shouldUseTus',
+		true,
+		nativeFile
+	);
 
 	if ( ! shouldUseTus ) {
 		return; // Let plupload's default behavior run

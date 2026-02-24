@@ -7,52 +7,43 @@ jest.mock( '../../src/tus-client', () => ( {
 	upload: jest.fn(),
 } ) );
 
+jest.mock( '@wordpress/hooks', () => ( {
+	applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
+} ) );
+
+jest.mock( '@wordpress/api-fetch', () => {
+	const fn = jest.fn();
+	fn.use = jest.fn();
+	return { __esModule: true, default: fn };
+} );
+
 import { upload } from '../../src/tus-client';
 
 // Capture the middleware when it's registered
 let tusMiddleware;
 
-// Setup wp.apiFetch mock
 beforeAll( () => {
-	window.wp = {
-		apiFetch: {
-			use: jest.fn( ( middleware ) => {
-				tusMiddleware = middleware;
-			} ),
-		},
-		hooks: {
-			applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
-		},
-	};
+	const apiFetch = require( '@wordpress/api-fetch' ).default;
+	apiFetch.use.mockImplementation( ( middleware ) => {
+		tusMiddleware = middleware;
+	} );
 
-	// Import to trigger registerMiddleware
+	// Import to trigger middleware registration
 	require( '../../src/block-editor' );
 } );
 
 beforeEach( () => {
 	jest.clearAllMocks();
-	window.wp.hooks.applyFilters.mockImplementation(
+	const { applyFilters } = require( '@wordpress/hooks' );
+	applyFilters.mockImplementation(
 		( hookName, defaultValue ) => defaultValue
 	);
 } );
 
 describe( 'registerMiddleware', () => {
-	it( 'registers middleware with wp.apiFetch', () => {
+	it( 'registers middleware with apiFetch', () => {
 		expect( tusMiddleware ).toBeDefined();
 		expect( typeof tusMiddleware ).toBe( 'function' );
-	} );
-
-	it( 'does not throw when wp.apiFetch is not available', () => {
-		const originalWp = window.wp;
-		window.wp = undefined;
-
-		expect( () => {
-			jest.isolateModules( () => {
-				require( '../../src/block-editor' );
-			} );
-		} ).not.toThrow();
-
-		window.wp = originalWp;
 	} );
 } );
 
@@ -252,20 +243,19 @@ describe( 'tusMiddleware', () => {
 		} );
 
 		it( 'respects allowFallback filter returning false', async () => {
+			const { applyFilters } = require( '@wordpress/hooks' );
 			const file = new File( [ 'test' ], 'test.txt' );
 			const formData = new FormData();
 			formData.append( 'file', file );
 
 			const tusError = new Error( 'TUS failed' );
 			upload.mockRejectedValue( tusError );
-			window.wp.hooks.applyFilters.mockImplementation(
-				( hookName, defaultValue ) => {
-					if ( hookName === 'uploadsUnleashed.allowFallback' ) {
-						return false;
-					}
-					return defaultValue;
+			applyFilters.mockImplementation( ( hookName, defaultValue ) => {
+				if ( hookName === 'uploadsUnleashed.allowFallback' ) {
+					return false;
 				}
-			);
+				return defaultValue;
+			} );
 
 			const options = {
 				path: '/wp/v2/media',
@@ -277,7 +267,7 @@ describe( 'tusMiddleware', () => {
 				'TUS failed'
 			);
 
-			expect( window.wp.hooks.applyFilters ).toHaveBeenCalledWith(
+			expect( applyFilters ).toHaveBeenCalledWith(
 				'uploadsUnleashed.allowFallback',
 				true,
 				tusError,
@@ -291,20 +281,19 @@ describe( 'tusMiddleware', () => {
 
 	describe( 'shouldUseTus filter', () => {
 		it( 'skips TUS when filter returns false', async () => {
+			const { applyFilters } = require( '@wordpress/hooks' );
 			const file = new File( [ 'video' ], 'movie.mp4', {
 				type: 'video/mp4',
 			} );
 			const formData = new FormData();
 			formData.append( 'file', file );
 
-			window.wp.hooks.applyFilters.mockImplementation(
-				( hookName, defaultValue ) => {
-					if ( hookName === 'uploadsUnleashed.shouldUseTus' ) {
-						return false;
-					}
-					return defaultValue;
+			applyFilters.mockImplementation( ( hookName, defaultValue ) => {
+				if ( hookName === 'uploadsUnleashed.shouldUseTus' ) {
+					return false;
 				}
-			);
+				return defaultValue;
+			} );
 
 			const options = {
 				path: '/wp/v2/media',
@@ -340,6 +329,7 @@ describe( 'tusMiddleware', () => {
 		} );
 
 		it( 'passes file to the filter', async () => {
+			const { applyFilters } = require( '@wordpress/hooks' );
 			const file = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
@@ -356,39 +346,11 @@ describe( 'tusMiddleware', () => {
 
 			await tusMiddleware( options, next );
 
-			expect( window.wp.hooks.applyFilters ).toHaveBeenCalledWith(
+			expect( applyFilters ).toHaveBeenCalledWith(
 				'uploadsUnleashed.shouldUseTus',
 				true,
 				file
 			);
-		} );
-
-		it( 'defaults to TUS when wp.hooks is unavailable', async () => {
-			const file = new File( [ 'test' ], 'test.txt', {
-				type: 'text/plain',
-			} );
-			const formData = new FormData();
-			formData.append( 'file', file );
-
-			const originalHooks = window.wp.hooks;
-			window.wp.hooks = undefined;
-
-			try {
-				upload.mockResolvedValue( { id: 123 } );
-
-				const options = {
-					path: '/wp/v2/media',
-					method: 'POST',
-					body: formData,
-				};
-
-				await tusMiddleware( options, next );
-
-				expect( upload ).toHaveBeenCalled();
-				expect( next ).not.toHaveBeenCalled();
-			} finally {
-				window.wp.hooks = originalHooks;
-			}
 		} );
 	} );
 } );
