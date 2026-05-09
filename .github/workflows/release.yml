@@ -20,7 +20,7 @@ jobs:
 
             - name: Generate GitHub App token
               id: app-token
-              uses: actions/create-github-app-token@v2
+              uses: actions/create-github-app-token@v3
               with:
                   app-id: ${{ secrets.APP_ID }}
                   private-key: ${{ secrets.APP_PRIVATE_KEY }}
@@ -117,7 +117,7 @@ jobs:
                   node-version: '22'
 
             - name: Cache node_modules
-              uses: actions/cache@v4
+              uses: actions/cache@v5
               id: node-modules-cache
               with:
                   path: node_modules
@@ -138,7 +138,7 @@ jobs:
                   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
 
             - name: Create GitHub release
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@v3
               with:
                   body: ${{ steps.changelog.outputs.changelog }}
                   files: ${{ steps.deploy.outputs.zip-path }}
