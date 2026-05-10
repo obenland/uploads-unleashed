@@ -52,14 +52,13 @@ test.describe( 'Uploads Unleashed', () => {
 	test( 'registers a REST route under the wp/v2 namespace for the tus controller', async ( {
 		request,
 	} ) => {
-		// The tus controller hangs off `wp/v2/media/<id>/tus` (per the
-		// controller class). Verifying the namespace listing exposes
-		// either that route or the `wp/v2/media` parent is enough to
-		// confirm the controller is registered without depending on a
-		// specific upload existing.
-		const response = await request.get(
-			'/?rest_route=/wp/v2'
-		);
+		// The tus controller registers
+		// `/wp/v2/media/(?P<id>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})`
+		// (UUIDv4-shaped path segment). Asserting that exact pattern
+		// appears in the namespace listing pins the plugin's controller
+		// is wired up — not just core's base `/wp/v2/media`, which
+		// would still exist if the plugin were absent.
+		const response = await request.get( '/?rest_route=/wp/v2' );
 		expect( response.ok() ).toBe( true );
 
 		const body = await response.json();
@@ -68,9 +67,13 @@ test.describe( 'Uploads Unleashed', () => {
 		const routes = Object.keys(
 			( body as { routes: Record< string, unknown > } ).routes
 		);
-		// At minimum, the parent `wp/v2/media` collection has to be
-		// reachable for the plugin's uploader to send anything.
-		expect( routes ).toContain( '/wp/v2/media' );
+		const tusRoutePattern =
+			/^\/wp\/v2\/media\/\(\?P<id>\[a-f0-9\]\{8\}-\[a-f0-9\]\{4\}-\[a-f0-9\]\{4\}-\[a-f0-9\]\{4\}-\[a-f0-9\]\{12\}\)/;
+		const tusRoute = routes.find( ( r ) => tusRoutePattern.test( r ) );
+		expect(
+			tusRoute,
+			`Expected the plugin's tus controller route to be registered. Routes: ${ routes.join( ', ' ) }`
+		).toBeDefined();
 	} );
 
 	test( 'uploads a file via Media → Add New and the file appears in the library', async ( {
