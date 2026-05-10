@@ -23,6 +23,7 @@
 		"tus-js-client": "^4.3.1"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.47.0",
 		"@wordpress/a11y": "^4.40.0",
 		"@wordpress/api-fetch": "^7.40.0",
 		"@wordpress/data": "^10.40.0",
@@ -46,6 +47,9 @@
 		"test:js": "wp-scripts test-unit-js",
 		"test:js:coverage": "wp-scripts test-unit-js --coverage --coverageDirectory=coverage/js",
 		"test:js:watch": "wp-scripts test-unit-js --watch",
+		"test:e2e": "playwright test",
+		"test:e2e:ui": "playwright test --ui",
+		"test:e2e:install": "playwright install --with-deps chromium",
 		"destroy": "wp-env destroy",
 		"cli": "wp-env run cli",
 		"lint": "npm run lint:php && npm run lint:js && npm run lint:pkg-json",

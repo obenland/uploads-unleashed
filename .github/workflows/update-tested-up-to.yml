@@ -65,6 +65,12 @@ jobs:
             - name: Run JS unit tests
               run: npm run test:js
 
+            - name: Install Playwright browsers
+              run: npm run test:e2e:install
+
+            - name: Run Playwright E2E against latest WordPress
+              run: npm run test:e2e
+
     update:
         needs: validate
         if: github.ref == 'refs/heads/trunk'
