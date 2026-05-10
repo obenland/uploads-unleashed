@@ -22,6 +22,9 @@ Thumbs.db
 .phpunit.result.cache
 /coverage/
 coverage.xml
+/playwright-report/
+/test-results/
+/playwright/.cache/
 
 # Local wp-env overrides
 .wp-env.override.json
