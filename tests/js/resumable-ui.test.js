@@ -742,8 +742,11 @@ describe( 'removePendingEntry without container', () => {
 		window.uploader = mockUploader;
 		window.jQuery = jest.fn( ( fn ) => fn() );
 
-		// Should not throw.
-		importModule( [ createPendingUploadEntry( 'test.txt', 100 ) ] );
+		// The "should not throw" intent is now an explicit assertion so
+		// jest/expect-expect can see it.
+		expect( () =>
+			importModule( [ createPendingUploadEntry( 'test.txt', 100 ) ] )
+		).not.toThrow();
 	} );
 } );
 
@@ -753,8 +756,9 @@ describe( 'hookPlupload', () => {
 		delete window.uploader;
 		window.jQuery = jest.fn( ( fn ) => fn() );
 
-		// Should not throw.
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		expect( () =>
+			importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] )
+		).not.toThrow();
 	} );
 } );
 
