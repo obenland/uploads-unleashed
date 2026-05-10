@@ -38,14 +38,18 @@ test.describe( 'Uploads Unleashed', () => {
 		// without these, so this is the cheapest direct check that the
 		// plugin's wiring made it onto the page.
 		const config = await page.evaluate(
-			() => ( window as unknown as Record< string, unknown > )
-				.uploadsUnleashed
+			() =>
+				( window as unknown as Record< string, unknown > )
+					.uploadsUnleashed
 		);
 		expect( config ).toBeDefined();
 		expect( config ).toHaveProperty( 'endpoint' );
 		expect( config ).toHaveProperty( 'nonce' );
-		expect( ( config as { endpoint: string } ).endpoint ).toContain(
-			'/wp-json/wp/v2/media'
+		// `rest_url()` returns either the pretty `/wp-json/wp/v2/media`
+		// form or the `?rest_route=/wp/v2/media` fallback depending on
+		// whether pretty permalinks are active. Accept either.
+		expect( ( config as { endpoint: string } ).endpoint ).toMatch(
+			/\/(wp-json|index\.php\?rest_route=)\/wp\/v2\/media$/
 		);
 	} );
 
@@ -72,7 +76,9 @@ test.describe( 'Uploads Unleashed', () => {
 		const tusRoute = routes.find( ( r ) => tusRoutePattern.test( r ) );
 		expect(
 			tusRoute,
-			`Expected the plugin's tus controller route to be registered. Routes: ${ routes.join( ', ' ) }`
+			`Expected the plugin's tus controller route to be registered. Routes: ${ routes.join(
+				', '
+			) }`
 		).toBeDefined();
 	} );
 
@@ -80,25 +86,20 @@ test.describe( 'Uploads Unleashed', () => {
 		page,
 	} ) => {
 		await loginAsAdmin( page );
-		await page.goto( '/wp-admin/media-new.php' );
-
-		// The "Browser uploader" fallback path uses a plain <input type=file>
-		// inside the #html-upload form. That works regardless of whether
-		// plupload / the tus shim is active, and exercises WordPress's
-		// upload pipeline end-to-end with the plugin loaded — i.e. it
-		// regression-tests that nothing in Uploads Unleashed has broken
-		// the basic media upload flow.
-		await page.locator( 'a[href*="browser-uploader=1"]' ).click();
-		await page.waitForLoadState( 'networkidle' );
+		// Navigate directly to the browser-uploader fallback. Modern
+		// WordPress no longer surfaces the link to it on media-new.php
+		// by default, but the URL parameter is still honoured and gives
+		// us a deterministic plain `<input type=file>` form to drive.
+		await page.goto( '/wp-admin/media-new.php?browser-uploader=1' );
+		await expect( page.locator( '#async-upload' ) ).toBeVisible( {
+			timeout: 10000,
+		} );
 
 		// Use a filename unique to this test run so the assertion can't
 		// match attachments left over from earlier runs (or other tests
 		// in the same wp-env).
 		const stamp = Date.now();
-		const fixtureSrc = path.resolve(
-			__dirname,
-			'fixtures/test-image.png'
-		);
+		const fixtureSrc = path.resolve( __dirname, 'fixtures/test-image.png' );
 		const fixtureCopy = path.resolve(
 			__dirname,
 			`fixtures/upload-fixture-${ stamp }.png`
@@ -106,9 +107,7 @@ test.describe( 'Uploads Unleashed', () => {
 		await fs.copyFile( fixtureSrc, fixtureCopy );
 
 		try {
-			await page
-				.locator( '#async-upload' )
-				.setInputFiles( fixtureCopy );
+			await page.locator( '#async-upload' ).setInputFiles( fixtureCopy );
 
 			// `Promise.all` ensures we observe the navigation triggered
 			// by the form submit before continuing — without this,
@@ -124,11 +123,9 @@ test.describe( 'Uploads Unleashed', () => {
 			// Force list mode so the attachment row uses a deterministic
 			// table layout we can assert against by filename.
 			await page.goto( '/wp-admin/upload.php?mode=list' );
-			const row = page
-				.locator( 'tr[id^="post-"]' )
-				.filter( {
-					hasText: `upload-fixture-${ stamp }`,
-				} );
+			const row = page.locator( 'tr[id^="post-"]' ).filter( {
+				hasText: `upload-fixture-${ stamp }`,
+			} );
 			await expect( row ).toHaveCount( 1, { timeout: 10000 } );
 		} finally {
 			await fs.unlink( fixtureCopy ).catch( () => undefined );

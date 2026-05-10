@@ -6,6 +6,8 @@ import type { Page } from '@playwright/test';
  * Goes via wp-login.php so the test starts from a known unauthenticated
  * state; trying to navigate directly to wp-admin assumes the cookie is
  * already set, which it isn't in a fresh browser context.
+ *
+ * @param page Playwright `page` fixture for the current browser context.
  */
 export async function loginAsAdmin( page: Page ): Promise< void > {
 	await page.goto( '/wp-login.php' );
