@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loginAsAdmin } from './utils';
 
@@ -87,22 +88,47 @@ test.describe( 'Uploads Unleashed', () => {
 		await page.locator( 'a[href*="browser-uploader=1"]' ).click();
 		await page.waitForLoadState( 'networkidle' );
 
-		const fixture = path.resolve( __dirname, 'fixtures/test-image.png' );
-		await page
-			.locator( '#async-upload' )
-			.setInputFiles( fixture );
-		await page.locator( '#html-upload' ).click();
+		// Use a filename unique to this test run so the assertion can't
+		// match attachments left over from earlier runs (or other tests
+		// in the same wp-env).
+		const stamp = Date.now();
+		const fixtureSrc = path.resolve(
+			__dirname,
+			'fixtures/test-image.png'
+		);
+		const fixtureCopy = path.resolve(
+			__dirname,
+			`fixtures/upload-fixture-${ stamp }.png`
+		);
+		await fs.copyFile( fixtureSrc, fixtureCopy );
 
-		// After upload, WordPress redirects to upload.php with a success
-		// notice. Visit the library and assert the new attachment is there.
-		await page.goto( '/wp-admin/upload.php' );
-		await expect(
-			page.locator( '.attachments li' ).first()
-		).toBeVisible( { timeout: 10000 } );
+		try {
+			await page
+				.locator( '#async-upload' )
+				.setInputFiles( fixtureCopy );
 
-		// At least one attachment exists now. The list is most-recent-first
-		// in WordPress's default order, so the first item is our upload.
-		const attachmentCount = await page.locator( '.attachments li' ).count();
-		expect( attachmentCount ).toBeGreaterThanOrEqual( 1 );
+			// `Promise.all` ensures we observe the navigation triggered
+			// by the form submit before continuing — without this,
+			// `.click()` may resolve before the upload pipeline finishes
+			// and the subsequent goto can race with the response.
+			await Promise.all( [
+				page.waitForURL( /\/wp-admin\/upload\.php/, {
+					timeout: 30000,
+				} ),
+				page.locator( '#html-upload' ).click(),
+			] );
+
+			// Force list mode so the attachment row uses a deterministic
+			// table layout we can assert against by filename.
+			await page.goto( '/wp-admin/upload.php?mode=list' );
+			const row = page
+				.locator( 'tr[id^="post-"]' )
+				.filter( {
+					hasText: `upload-fixture-${ stamp }`,
+				} );
+			await expect( row ).toHaveCount( 1, { timeout: 10000 } );
+		} finally {
+			await fs.unlink( fixtureCopy ).catch( () => undefined );
+		}
 	} );
 } );
