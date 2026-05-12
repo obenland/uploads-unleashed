@@ -42,7 +42,6 @@ playwright.config.ts
 
 # Documentation (developer-focused)
 CONTRIBUTING.md
-README.md
 /docs
 
 # WordPress.org assets

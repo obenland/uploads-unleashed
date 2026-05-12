@@ -47,25 +47,25 @@ jobs:
 
                   sed -i "s/\* Version: .*/* Version: ${{ github.ref_name }}/" uploads-unleashed.php
                   sed -i "s/UPLOADS_UNLEASHED_VERSION', '[^']*'/UPLOADS_UNLEASHED_VERSION', '${{ github.ref_name }}'/" uploads-unleashed.php
-                  sed -i "s/Stable tag: .*/Stable tag: ${{ github.ref_name }}/" readme.txt
+                  sed -i "s/Stable tag: .*/Stable tag: ${{ github.ref_name }}/" README.md
                   sed -i 's/"version": "[^"]*"/"version": "${{ github.ref_name }}"/' package.json
                   sed -i '/"name": "uploads-unleashed"/{n;s/"version": "[^"]*"/"version": "${{ github.ref_name }}"/}' package-lock.json
 
-                  # Format changelog for readme.txt: strip markdown headers, convert list markers, remove "Full Changelog" line and blank lines
+                  # Format changelog for README.md: strip markdown headers, convert list markers, remove "Full Changelog" line and blank lines
                   {
                       echo ""
-                      echo "= ${{ github.ref_name }} ="
+                      echo "### ${{ github.ref_name }}"
                       echo "$CHANGELOG_RAW" | sed -e '/^## /d' -e '/^\*\*Full Changelog\*\*/d' -e 's/^- /* /' -e '/^[[:space:]]*$/d'
                   } > /tmp/changelog_entry.txt
 
-                  if grep -q "^= ${{ github.ref_name }} =$" readme.txt; then
+                  if grep -q "^### ${{ github.ref_name }}$" README.md; then
                       echo "Changelog entry for ${{ github.ref_name }} already exists, skipping insertion."
                   else
-                      sed -i "/^== Changelog ==[[:space:]]*$/r /tmp/changelog_entry.txt" readme.txt
+                      sed -i "/^## Changelog[[:space:]]*$/r /tmp/changelog_entry.txt" README.md
                   fi
 
-                  if ! grep -q "^= ${{ github.ref_name }} =$" readme.txt; then
-                      echo "::error::Failed to insert changelog entry into readme.txt."
+                  if ! grep -q "^### ${{ github.ref_name }}$" README.md; then
+                      echo "::error::Failed to insert changelog entry into README.md."
                       exit 1
                   fi
 
@@ -83,7 +83,7 @@ jobs:
                   }
 
                   TREE_ITEMS="[]"
-                  for FILE in uploads-unleashed.php readme.txt package.json package-lock.json; do
+                  for FILE in uploads-unleashed.php README.md package.json package-lock.json; do
                       BLOB_SHA=$(create_blob "$FILE")
                       TREE_ITEMS=$(echo "$TREE_ITEMS" | jq --arg path "$FILE" --arg sha "$BLOB_SHA" \
                           '. + [{"path": $path, "mode": "100644", "type": "blob", "sha": $sha}]')
