@@ -18,5 +18,6 @@ jobs:
             - uses: 10up/action-wordpress-plugin-asset-update@stable
               env:
                   SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+                  README_NAME: README.md
                   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
                   IGNORE_OTHER_FILES: true
