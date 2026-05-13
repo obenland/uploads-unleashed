@@ -6,7 +6,7 @@ on:
             - trunk
         paths:
             - '.wordpress-org/**'
-            - 'readme.txt'
+            - 'README.md'
 
 jobs:
     update-assets:
