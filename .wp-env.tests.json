@@ -1,12 +1,10 @@
 {
 	"core": null,
 	"phpVersion": "8.4",
+	"port": 8889,
 	"testsEnvironment": false,
 	"mappings": {
 		"wp-content/plugins/uploads-unleashed": "."
-	},
-	"lifecycleScripts": {
-		"afterStart": "npx wp-env run cli wp plugin activate uploads-unleashed"
 	},
 	"config": {
 		"WP_DEBUG": true,
