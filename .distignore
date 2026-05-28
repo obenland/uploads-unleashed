@@ -11,6 +11,7 @@
 
 # Development environment
 .wp-env.json
+.wp-env.tests.json
 .wp-env.override.json
 
 # Build tooling

@@ -23,7 +23,7 @@ jobs:
               id: docker-cache
               with:
                   path: /tmp/docker-images.tar
-                  key: docker-${{ matrix.php }}-${{ hashFiles('.wp-env.json') }}
+                  key: docker-${{ matrix.php }}-${{ hashFiles('.wp-env.tests.json') }}
 
             - name: Setup PHP
               uses: shivammathur/setup-php@v2
@@ -67,7 +67,7 @@ jobs:
               run: docker load -i /tmp/docker-images.tar
 
             - name: Start WordPress environment
-              run: npm run start
+              run: npm run start:tests
               env:
                   WP_ENV_PHP_VERSION: ${{ matrix.php }}
 
