@@ -112,7 +112,7 @@ jobs:
                       --field sha="$COMMIT_SHA" \
                       --field force=true
 
-            - uses: actions/setup-node@v6
+            - uses: actions/setup-node@v7
               with:
                   node-version: '22'
 
