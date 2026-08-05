@@ -25,7 +25,7 @@
 	"devDependencies": {
 		"@playwright/test": "^1.62.0",
 		"@wordpress/a11y": "^4.50.0",
-		"@wordpress/api-fetch": "^7.51.0",
+		"@wordpress/api-fetch": "^7.52.0",
 		"@wordpress/data": "^10.50.0",
 		"@wordpress/env": "^11.11.0",
 		"@wordpress/hooks": "^4.51.0",
