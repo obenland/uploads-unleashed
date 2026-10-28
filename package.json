@@ -31,7 +31,7 @@
 		"@wordpress/hooks": "^4.57.0",
 		"@wordpress/i18n": "^7.0.0",
 		"@wordpress/notices": "^5.57.0",
-		"@wordpress/scripts": "^34.2.0"
+		"@wordpress/scripts": "^37.0.0"
 	},
 	"scripts": {
 		"build": "wp-scripts build && npm run build:vendor",
