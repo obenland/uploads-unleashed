@@ -298,11 +298,61 @@ function createTusUpload( file, callbacks ) {
 				}
 			}
 
+			// The server deletes the session when it rejects the finished upload,
+			// so it can't be resumed anymore.
+			if ( isRejectedFinalChunk( error, file ) ) {
+				forgetUpload( tusUpload );
+			}
+
 			callbacks.onError( new Error( cleanMessage ) );
 		},
 	} );
 
 	return tusUpload;
+}
+
+/**
+ * Checks whether the server rejected the request carrying the last chunk.
+ *
+ * @param {Error} error TUS error.
+ * @param {File}  file  The file being uploaded.
+ * @return {boolean} True if the last chunk got a 4xx response.
+ */
+function isRejectedFinalChunk( error, file ) {
+	const status = error.originalResponse?.getStatus?.();
+	const offset = Number(
+		error.originalRequest?.getHeader?.( 'Upload-Offset' )
+	);
+
+	return (
+		status >= 400 &&
+		status < 500 &&
+		offset + DEFAULT_TUS_OPTIONS.chunkSize >= file.size
+	);
+}
+
+/**
+ * Removes an upload from localStorage, so it isn't offered for resuming.
+ *
+ * @param {tus.Upload} tusUpload The TUS upload instance.
+ * @return {Promise<void>}
+ */
+function forgetUpload( tusUpload ) {
+	removeUploadProgress( tusUpload.url );
+
+	return tusUpload
+		.findPreviousUploads()
+		.then( ( previousUploads ) =>
+			Promise.all(
+				previousUploads
+					.filter( ( { uploadUrl } ) => uploadUrl === tusUpload.url )
+					.map( ( { urlStorageKey } ) =>
+						DEFAULT_TUS_OPTIONS.urlStorage.removeUpload(
+							urlStorageKey
+						)
+					)
+			)
+		);
 }
 
 // ============================================================================

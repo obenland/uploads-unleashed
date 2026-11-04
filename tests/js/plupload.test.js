@@ -348,7 +348,7 @@ describe( 'handleBeforeUpload', () => {
 	} );
 
 	describe( 'upload error', () => {
-		it( 'triggers Error event on failure', async () => {
+		it( 'triggers a failed FileUploaded event on upload.php', async () => {
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
@@ -362,11 +362,40 @@ describe( 'handleBeforeUpload', () => {
 			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
 			expect( file.status ).toBe( 4 ); // FAILED
-			expect( uploader.trigger ).toHaveBeenCalledWith( 'Error', {
-				code: -200,
-				message: 'Network error',
+			expect( uploader.trigger ).toHaveBeenCalledWith(
+				'FileUploaded',
 				file,
+				{
+					response: JSON.stringify( {
+						success: false,
+						data: { message: 'Network error', filename: file.name },
+					} ),
+				}
+			);
+		} );
+
+		it( 'ignores wpFileError on upload.php', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
 			} );
+			const file = createMockFile( nativeFile );
+
+			// handlers.js is loaded on upload.php too.
+			window.wpFileError = vi.fn();
+			upload.mockRejectedValue( new Error( 'Rejected' ) );
+
+			beforeUploadHandler( uploader, file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			expect( window.wpFileError ).not.toHaveBeenCalled();
+			expect( uploader.trigger ).toHaveBeenCalledWith(
+				'FileUploaded',
+				file,
+				expect.anything()
+			);
+
+			delete window.wpFileError;
 		} );
 
 		it( 'calls wpFileError on media-new.php', async () => {
@@ -376,6 +405,9 @@ describe( 'handleBeforeUpload', () => {
 			const file = createMockFile( nativeFile );
 
 			window.wpFileError = vi.fn();
+			const mediaItems = document.createElement( 'div' );
+			mediaItems.id = 'media-items';
+			document.body.appendChild( mediaItems );
 			upload.mockRejectedValue( new Error( 'Upload failed' ) );
 
 			beforeUploadHandler( uploader, file );
@@ -388,6 +420,7 @@ describe( 'handleBeforeUpload', () => {
 			);
 
 			delete window.wpFileError;
+			document.body.removeChild( mediaItems );
 		} );
 	} );
 

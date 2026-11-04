@@ -484,6 +484,82 @@ describe( 'upload', () => {
 
 			await expect( promise ).rejects.toThrow( 'Upload failed' );
 		} );
+
+		describe( 'server rejection', () => {
+			const uploadUrl = '/wp-json/wp/v2/media/abc';
+			const storageKey = 'tus::tus-br|test.txt::9999999999999::1';
+			const httpError = ( status, offset ) => ( {
+				message: 'TUS error',
+				originalRequest: {
+					getHeader: ( name ) =>
+						name === 'Upload-Offset' ? String( offset ) : undefined,
+				},
+				originalResponse: {
+					getStatus: () => status,
+					getBody: () => JSON.stringify( { message: 'Rejected' } ),
+				},
+			} );
+
+			beforeEach( () => {
+				localStorage.clear();
+				localStorage.setItem( storageKey, '{}' );
+				localStorage.setItem( `tus-progress::${ uploadUrl }`, '4' );
+			} );
+
+			// Called after upload(), so the initial resume lookup stays empty.
+			const mockStoredUpload = () => {
+				const mockUpload = tus.Upload.mock.results[ 0 ].value;
+				mockUpload.url = uploadUrl;
+				mockUpload.findPreviousUploads.mockResolvedValueOnce( [
+					{ uploadUrl, urlStorageKey: storageKey },
+				] );
+			};
+
+			afterEach( () => {
+				tus.Upload.mock.results[ 0 ].value.url = null;
+			} );
+
+			it( 'forgets the upload when the final chunk is rejected', async () => {
+				const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+				mockStoredUpload();
+
+				capturedCallbacks.onError( httpError( 400, 0 ) );
+
+				await expect( promise ).rejects.toThrow( 'Rejected' );
+				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+				expect( localStorage.getItem( storageKey ) ).toBeNull();
+				expect(
+					localStorage.getItem( `tus-progress::${ uploadUrl }` )
+				).toBeNull();
+			} );
+
+			it( 'keeps the upload when an earlier chunk is rejected', async () => {
+				const file = new File(
+					[ new Uint8Array( 6 * 1024 * 1024 ) ],
+					'test.txt'
+				);
+				const promise = upload( file );
+				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+				mockStoredUpload();
+
+				capturedCallbacks.onError( httpError( 403, 0 ) );
+
+				await expect( promise ).rejects.toThrow( 'Rejected' );
+				expect( localStorage.getItem( storageKey ) ).toBe( '{}' );
+			} );
+
+			it( 'keeps the upload on server errors', async () => {
+				const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+				mockStoredUpload();
+
+				capturedCallbacks.onError( httpError( 500, 0 ) );
+
+				await expect( promise ).rejects.toThrow( 'Rejected' );
+				expect( localStorage.getItem( storageKey ) ).toBe( '{}' );
+			} );
+		} );
 	} );
 
 	describe( 'AbortSignal', () => {

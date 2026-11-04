@@ -34,17 +34,23 @@ const hookedUploaders = new WeakSet();
 function handlePluploadError( up, file, message ) {
 	file.status = PLUPLOAD_STATUS.FAILED;
 
-	if ( typeof window.wpFileError === 'function' ) {
-		// media-new.php path
+	// For media-new.php (handlers.js is loaded on upload.php too, so check for #media-items)
+	if (
+		typeof window.wpFileError === 'function' &&
+		document.getElementById( 'media-items' )
+	) {
 		window.wpFileError( file, message );
-	} else {
-		// upload.php path
-		up.trigger( 'Error', {
-			code: -200,
-			message,
-			file,
-		} );
+		return;
 	}
+
+	// For upload.php: respond like a rejected async-upload.php request, so
+	// wp.Uploader removes the placeholder and shows the server's message.
+	up.trigger( 'FileUploaded', file, {
+		response: JSON.stringify( {
+			success: false,
+			data: { message, filename: file.name },
+		} ),
+	} );
 }
 
 /**
