@@ -14,4 +14,5 @@ jobs:
               run: gh pr merge --auto --squash "$PR_URL"
               env:
                   PR_URL: ${{ github.event.pull_request.html_url }}
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  # A PAT-merged push triggers trunk workflows (and their caches); GITHUB_TOKEN pushes don't.
+                  GH_TOKEN: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
