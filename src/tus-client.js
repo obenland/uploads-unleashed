@@ -220,11 +220,11 @@ const DEFAULT_TUS_OPTIONS = {
  * Creates a raw TUS upload instance.
  * For internal use - prefer upload() for the public API.
  *
- * @param {File}     file                   The file to upload.
- * @param {Object}   callbacks              Callback functions.
- * @param {Function} [callbacks.onProgress] Progress callback.
- * @param {Function} callbacks.onSuccess    Success callback.
- * @param {Function} callbacks.onError      Error callback.
+ * @param {File}                                                                 file                   The file to upload.
+ * @param {Object}                                                               callbacks              Callback functions.
+ * @param {(percent: number, bytesUploaded: number, bytesTotal: number) => void} [callbacks.onProgress] Progress callback.
+ * @param {(attachment: Object|null) => void}                                    callbacks.onSuccess    Success callback.
+ * @param {(error: Error) => void}                                               callbacks.onError      Error callback.
  * @return {tus.Upload} TUS upload instance.
  */
 function createTusUpload( file, callbacks ) {
@@ -318,10 +318,10 @@ function createTusUpload( file, callbacks ) {
  * - Progress callbacks.
  * - AbortSignal for cancellation.
  *
- * @param {File}        file                 The file to upload.
- * @param {Object}      [options]            Upload options.
- * @param {Function}    [options.onProgress] Progress callback (percent, bytesUploaded, bytesTotal).
- * @param {AbortSignal} [options.signal]     AbortSignal for cancellation.
+ * @param {File}                                                                 file                 The file to upload.
+ * @param {Object}                                                               [options]            Upload options.
+ * @param {(percent: number, bytesUploaded: number, bytesTotal: number) => void} [options.onProgress] Progress callback.
+ * @param {AbortSignal}                                                          [options.signal]     AbortSignal for cancellation.
  * @return {Promise<Object>} Resolves with WordPress attachment data.
  *
  * @example

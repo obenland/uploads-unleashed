@@ -2,24 +2,31 @@
  * Tests for the TUS uploader core module.
  */
 
-import { upload, abort } from '../../src/tus-client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+	abort,
+	discardPendingUpload,
+	getPendingUploads,
+	upload,
+} from '../../src/tus-client';
 import * as tus from 'tus-js-client';
 
 // Store callbacks for testing
 let capturedCallbacks = {};
 
 // Mock tus-js-client
-jest.mock( 'tus-js-client', () => {
+vi.mock( 'tus-js-client', () => {
 	const mockUpload = {
 		url: null,
-		start: jest.fn(),
-		abort: jest.fn().mockResolvedValue( undefined ),
-		findPreviousUploads: jest.fn().mockResolvedValue( [] ),
-		resumeFromPreviousUpload: jest.fn(),
+		start: vi.fn(),
+		abort: vi.fn().mockResolvedValue( undefined ),
+		findPreviousUploads: vi.fn().mockResolvedValue( [] ),
+		resumeFromPreviousUpload: vi.fn(),
 	};
 
 	return {
-		Upload: jest.fn().mockImplementation( ( file, options ) => {
+		Upload: vi.fn().mockImplementation( function ( file, options ) {
 			// Capture callbacks for testing
 			capturedCallbacks = {
 				onProgress: options.onProgress,
@@ -38,7 +45,7 @@ beforeEach( () => {
 		nonce: 'test-nonce',
 	};
 	capturedCallbacks = {};
-	jest.clearAllMocks();
+	vi.clearAllMocks();
 } );
 
 describe( 'upload', () => {
@@ -331,7 +338,7 @@ describe( 'upload', () => {
 	describe( 'onProgress callback', () => {
 		it( 'calls onProgress with percent and bytes', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
-			const onProgress = jest.fn();
+			const onProgress = vi.fn();
 
 			upload( file, { onProgress } );
 
@@ -511,7 +518,7 @@ describe( 'upload', () => {
 describe( 'abort', () => {
 	it( 'calls abort with cleanup flag', async () => {
 		const mockTusUpload = {
-			abort: jest.fn().mockResolvedValue( undefined ),
+			abort: vi.fn().mockResolvedValue( undefined ),
 		};
 
 		await abort( mockTusUpload );
@@ -521,7 +528,7 @@ describe( 'abort', () => {
 
 	it( 'returns a promise', () => {
 		const mockTusUpload = {
-			abort: jest.fn().mockResolvedValue( undefined ),
+			abort: vi.fn().mockResolvedValue( undefined ),
 		};
 
 		const result = abort( mockTusUpload );
@@ -581,12 +588,10 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'returns empty array when no pending uploads', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		expect( getPendingUploads() ).toEqual( [] );
 	} );
 
 	it( 'returns entries matching current endpoint', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
 		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
@@ -606,7 +611,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'filters out entries for different endpoints', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
 		const fp = `tus-br|test.txt|1024|12345|/other-endpoint`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
@@ -620,7 +624,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'cleans up expired entries', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const pastExpiry = Date.now() - 1000;
 		const endpoint = '/wp-json/wp/v2/media';
 		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
@@ -634,7 +637,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'cleans up malformed entries with wrong key format', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const endpoint = '/wp-json/wp/v2/media';
 		// Only 3 parts instead of 4.
 		const key = `tus::tus-br|test.txt|1024|12345|${ endpoint }::abc`;
@@ -646,7 +648,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'cleans up entries with invalid JSON', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
 		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
@@ -660,7 +661,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'cleans up entries with wrong fingerprint part count', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
 		// Fingerprint with only 3 parts instead of 5.
@@ -675,7 +675,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'returns bytesUploaded from progress storage', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
 		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
@@ -691,7 +690,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'returns 0 when no progress entry exists', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
 		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
@@ -708,7 +706,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'URL-decodes filenames', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
 		const fp = `tus-br|my%20file%20(1).txt|1024|12345|${ endpoint }`;
@@ -721,7 +718,6 @@ describe( 'getPendingUploads', () => {
 	} );
 
 	it( 'skips non-tus localStorage entries', () => {
-		const { getPendingUploads } = require( '../../src/tus-client' );
 		localStorage.setItem( 'other-key', 'value' );
 		localStorage.setItem(
 			'not-tus-prefix',
@@ -737,7 +733,7 @@ describe( 'getPendingUploads', () => {
 describe( 'discardPendingUpload', () => {
 	beforeEach( () => {
 		localStorage.clear();
-		global.fetch = jest.fn().mockResolvedValue( { ok: true } );
+		global.fetch = vi.fn().mockResolvedValue( { ok: true } );
 	} );
 
 	afterEach( () => {
@@ -745,8 +741,6 @@ describe( 'discardPendingUpload', () => {
 	} );
 
 	it( 'sends DELETE to uploadUrl with nonce header', async () => {
-		const { discardPendingUpload } = require( '../../src/tus-client' );
-
 		await discardPendingUpload( {
 			key: 'test-key',
 			uploadUrl: '/wp-json/wp/v2/media/abc',
@@ -762,8 +756,6 @@ describe( 'discardPendingUpload', () => {
 	} );
 
 	it( 'removes key from localStorage', async () => {
-		const { discardPendingUpload } = require( '../../src/tus-client' );
-
 		localStorage.setItem( 'test-key', 'value' );
 
 		await discardPendingUpload( {
@@ -775,8 +767,6 @@ describe( 'discardPendingUpload', () => {
 	} );
 
 	it( 'removes progress entry', async () => {
-		const { discardPendingUpload } = require( '../../src/tus-client' );
-
 		const uploadUrl = '/wp-json/wp/v2/media/abc';
 		localStorage.setItem( 'test-key', 'value' );
 		localStorage.setItem( `tus-progress::${ uploadUrl }`, '512' );
@@ -792,9 +782,7 @@ describe( 'discardPendingUpload', () => {
 	} );
 
 	it( 'handles fetch failure gracefully', async () => {
-		const { discardPendingUpload } = require( '../../src/tus-client' );
-
-		global.fetch = jest.fn().mockRejectedValue( new Error( 'Network' ) );
+		global.fetch = vi.fn().mockRejectedValue( new Error( 'Network' ) );
 		localStorage.setItem( 'test-key', 'value' );
 
 		await discardPendingUpload( {

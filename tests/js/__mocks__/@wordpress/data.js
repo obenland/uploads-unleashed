@@ -1,10 +1,10 @@
 /**
- * Mock for @wordpress/data module.
+ * Mock for the `@wordpress/data` module.
  */
 
-module.exports = {
-	dispatch: jest.fn( () => ( {
-		createWarningNotice: jest.fn(),
-		createInfoNotice: jest.fn(),
-	} ) ),
-};
+import { vi } from 'vitest';
+
+export const dispatch = vi.fn( () => ( {
+	createWarningNotice: vi.fn(),
+	createInfoNotice: vi.fn(),
+} ) );

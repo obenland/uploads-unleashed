@@ -9,10 +9,12 @@
  * - Script tag for legacy Jetpack block editor middleware
  */
 
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
 let videoPressFilter;
 
-jest.mock( '@wordpress/hooks', () => ( {
-	addFilter: jest.fn( ( hookName, namespace, callback ) => {
+vi.mock( '@wordpress/hooks', () => ( {
+	addFilter: vi.fn( ( hookName, namespace, callback ) => {
 		if (
 			hookName === 'uploadsUnleashed.shouldUseTus' &&
 			namespace === 'uploads-unleashed/videopress-compat'
@@ -22,12 +24,9 @@ jest.mock( '@wordpress/hooks', () => ( {
 	} ),
 } ) );
 
-beforeAll( () => {
+beforeAll( async () => {
 	// Import tus-client to trigger the addFilter side effect.
-	// We need isolateModules so the module re-executes.
-	jest.isolateModules( () => {
-		require( '../../src/tus-client' );
-	} );
+	await import( '../../src/tus-client' );
 } );
 
 beforeEach( () => {

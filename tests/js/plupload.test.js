@@ -2,15 +2,18 @@
  * Tests for the Plupload TUS integration.
  */
 
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
 // Mock tus-client module
-jest.mock( '../../src/tus-client', () => ( {
-	upload: jest.fn(),
+vi.mock( '../../src/tus-client', () => ( {
+	upload: vi.fn(),
 } ) );
 
-jest.mock( '@wordpress/hooks', () => ( {
-	applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
+vi.mock( '@wordpress/hooks', () => ( {
+	applyFilters: vi.fn( ( hookName, defaultValue ) => defaultValue ),
 } ) );
 
+import { applyFilters } from '@wordpress/hooks';
 import { upload } from '../../src/tus-client';
 
 // Capture the BeforeUpload handler when it's bound
@@ -19,14 +22,14 @@ let beforeUploadHandler;
 // Mock plupload uploader instance
 function createMockUploader() {
 	return {
-		bind: jest.fn( ( event, handler ) => {
+		bind: vi.fn( ( event, handler ) => {
 			if ( event === 'BeforeUpload' ) {
 				beforeUploadHandler = handler;
 			}
 		} ),
-		trigger: jest.fn(),
-		removeFile: jest.fn(),
-		start: jest.fn(),
+		trigger: vi.fn(),
+		removeFile: vi.fn(),
+		start: vi.fn(),
 		_tusHooked: false,
 	};
 }
@@ -34,7 +37,7 @@ function createMockUploader() {
 // Mock plupload file object
 function createMockFile( nativeFile ) {
 	return {
-		getNative: jest.fn( () => nativeFile ),
+		getNative: vi.fn( () => nativeFile ),
 		status: 1, // QUEUED
 		loaded: 0,
 		percent: 0,
@@ -45,20 +48,20 @@ function createMockFile( nativeFile ) {
 let mockAttachmentModel;
 function createMockAttachmentModel( legacyData ) {
 	mockAttachmentModel = {
-		fetch: jest.fn().mockResolvedValue(),
-		toJSON: jest.fn( () => legacyData ),
+		fetch: vi.fn().mockResolvedValue(),
+		toJSON: vi.fn( () => legacyData ),
 	};
 	return mockAttachmentModel;
 }
 
 // Setup wp and jQuery mocks
-beforeAll( () => {
+beforeAll( async () => {
 	window.wp = {
-		Uploader: jest.fn( function () {
+		Uploader: vi.fn( function () {
 			this.uploader = createMockUploader();
 		} ),
 		media: {
-			attachment: jest.fn( () =>
+			attachment: vi.fn( () =>
 				createMockAttachmentModel( {
 					id: 123,
 					title: 'Test',
@@ -76,17 +79,16 @@ beforeAll( () => {
 		},
 	};
 
-	window.jQuery = jest.fn( () => ( {
-		ready: jest.fn(),
+	window.jQuery = vi.fn( () => ( {
+		ready: vi.fn(),
 	} ) );
 
 	// Import to trigger init()
-	require( '../../src/plupload' );
+	await import( '../../src/plupload' );
 } );
 
 beforeEach( () => {
-	jest.clearAllMocks();
-	const { applyFilters } = require( '@wordpress/hooks' );
+	vi.clearAllMocks();
 	applyFilters.mockImplementation(
 		( hookName, defaultValue ) => defaultValue
 	);
@@ -176,7 +178,7 @@ describe( 'handleBeforeUpload', () => {
 	} );
 
 	it( 'triggers next file in queue', () => {
-		jest.useFakeTimers();
+		vi.useFakeTimers();
 
 		const nativeFile = new File( [ 'test' ], 'test.txt', {
 			type: 'text/plain',
@@ -185,10 +187,10 @@ describe( 'handleBeforeUpload', () => {
 
 		beforeUploadHandler( uploader, file );
 
-		jest.runAllTimers();
+		vi.runAllTimers();
 		expect( uploader.start ).toHaveBeenCalled();
 
-		jest.useRealTimers();
+		vi.useRealTimers();
 	} );
 
 	it( 'passes native file to upload, not plupload wrapper', () => {
@@ -212,7 +214,7 @@ describe( 'handleBeforeUpload', () => {
 			} );
 			const file = createMockFile( nativeFile );
 
-			const mockModel = { set: jest.fn() };
+			const mockModel = { set: vi.fn() };
 			file.attachment = mockModel;
 
 			upload.mockResolvedValue( { id: 123 } );
@@ -325,7 +327,7 @@ describe( 'handleBeforeUpload', () => {
 			} );
 			const file = createMockFile( nativeFile );
 
-			window.uploadSuccess = jest.fn();
+			window.uploadSuccess = vi.fn();
 			const mediaItems = document.createElement( 'div' );
 			mediaItems.id = 'media-items';
 			document.body.appendChild( mediaItems );
@@ -373,7 +375,7 @@ describe( 'handleBeforeUpload', () => {
 			} );
 			const file = createMockFile( nativeFile );
 
-			window.wpFileError = jest.fn();
+			window.wpFileError = vi.fn();
 			upload.mockRejectedValue( new Error( 'Upload failed' ) );
 
 			beforeUploadHandler( uploader, file );
@@ -390,51 +392,48 @@ describe( 'handleBeforeUpload', () => {
 	} );
 
 	describe( 'extendWpUploader guard', () => {
-		it( 'does not throw when wp.Uploader is missing', () => {
-			jest.isolateModules( () => {
-				const originalUploader = window.wp.Uploader;
-				delete window.wp.Uploader;
-				window.jQuery = jest.fn( () => ( {
-					ready: jest.fn(),
-				} ) );
+		it( 'does not throw when wp.Uploader is missing', async () => {
+			vi.resetModules();
+			const originalUploader = window.wp.Uploader;
+			delete window.wp.Uploader;
+			window.jQuery = vi.fn( () => ( {
+				ready: vi.fn(),
+			} ) );
 
-				expect( () => {
-					require( '../../src/plupload' );
-				} ).not.toThrow();
+			await expect(
+				import( '../../src/plupload' )
+			).resolves.toBeDefined();
 
-				window.wp.Uploader = originalUploader;
-			} );
+			window.wp.Uploader = originalUploader;
 		} );
 	} );
 
 	describe( 'extendGlobalUploader via jQuery ready', () => {
-		it( 'hooks global uploader when present', () => {
+		it( 'hooks global uploader when present', async () => {
 			// Re-import to trigger init with a fresh jQuery mock.
-			jest.isolateModules( () => {
-				window.wp.Uploader = jest.fn( function () {
-					this.uploader = createMockUploader();
-				} );
-				window.jQuery = jest.fn( () => ( {
-					ready: jest.fn( ( fn ) => {
-						// Simulate ready callback.
-						const globalUp = createMockUploader();
-						window.uploader = globalUp;
-						fn();
-
-						// Global uploader should be hooked.
-						expect( globalUp._tusHooked ).toBe( true );
-
-						delete window.uploader;
-					} ),
-				} ) );
-				require( '../../src/plupload' );
+			vi.resetModules();
+			window.wp.Uploader = vi.fn( function () {
+				this.uploader = createMockUploader();
 			} );
+			window.jQuery = vi.fn( () => ( {
+				ready: vi.fn( ( fn ) => {
+					// Simulate ready callback.
+					const globalUp = createMockUploader();
+					window.uploader = globalUp;
+					fn();
+
+					// Global uploader should be hooked.
+					expect( globalUp._tusHooked ).toBe( true );
+
+					delete window.uploader;
+				} ),
+			} ) );
+			await import( '../../src/plupload' );
 		} );
 	} );
 
 	describe( 'shouldUseTus filter', () => {
 		it( 'skips TUS when filter returns false', () => {
-			const { applyFilters } = require( '@wordpress/hooks' );
 			const nativeFile = new File( [ 'video' ], 'movie.mp4', {
 				type: 'video/mp4',
 			} );
@@ -468,7 +467,6 @@ describe( 'handleBeforeUpload', () => {
 		} );
 
 		it( 'passes native file to the filter', () => {
-			const { applyFilters } = require( '@wordpress/hooks' );
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
