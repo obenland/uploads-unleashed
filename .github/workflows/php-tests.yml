@@ -50,7 +50,7 @@ jobs:
               id: build-cache
               with:
                   path: build
-                  key: build-${{ hashFiles('src/**', 'package.json', 'package-lock.json', 'webpack.config.js') }}
+                  key: build-${{ hashFiles('src/**', 'package.json', 'package-lock.json', 'webpack.config.js', '.nvmrc') }}
 
             - name: Setup Node.js
               if: steps.build-cache.outputs.cache-hit != 'true'
@@ -74,7 +74,13 @@ jobs:
 
             - name: Resolve latest WordPress version
               id: wp
-              run: echo "version=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')" >> "$GITHUB_OUTPUT"
+              run: |
+                  version=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')
+                  if ! [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+                      echo "Unexpected WordPress version: '$version'" >&2
+                      exit 1
+                  fi
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
 
             - name: Restore WordPress and test library
               uses: actions/cache/restore@v6
