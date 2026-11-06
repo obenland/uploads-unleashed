@@ -131,4 +131,43 @@ test.describe( 'Uploads Unleashed', () => {
 			await fs.unlink( fixtureCopy ).catch( () => undefined );
 		}
 	} );
+
+	test( 'shows the server error when an upload is rejected server-side in the grid', async ( {
+		page,
+	} ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/upload.php?mode=grid' );
+		await page.locator( '.page-title-action' ).click();
+
+		// Passes plupload's extension filter, but the server rejects it.
+		await page
+			.locator( '.moxie-shim input[type="file"]' )
+			.first()
+			.setInputFiles( {
+				name: 'fake-image.jpg',
+				mimeType: 'image/jpeg',
+				buffer: Buffer.from( 'not an image' ),
+			} );
+
+		const uploadError = page.locator( '.upload-error' );
+		await expect( uploadError ).toContainText( 'fake-image.jpg', {
+			timeout: 15000,
+		} );
+		await expect( page.locator( '.attachment.uploading' ) ).toHaveCount(
+			0
+		);
+		expect( page.url() ).not.toContain( 'item=' );
+
+		// Cleanup waits on a HEAD round-trip, so poll until the stale entry is gone.
+		await expect
+			.poll( () =>
+				page.evaluate(
+					() =>
+						Object.keys( localStorage ).filter( ( key ) =>
+							key.startsWith( 'tus::' )
+						).length
+				)
+			)
+			.toBe( 0 );
+	} );
 } );

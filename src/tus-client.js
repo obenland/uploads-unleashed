@@ -298,11 +298,57 @@ function createTusUpload( file, callbacks ) {
 				}
 			}
 
+			// Only server responses can mean the session is gone.
+			if ( error.originalResponse && tusUpload.url ) {
+				forgetUploadIfGone( tusUpload );
+			}
+
 			callbacks.onError( new Error( cleanMessage ) );
 		},
 	} );
 
 	return tusUpload;
+}
+
+/**
+ * Removes an upload from localStorage if the server deleted its session, e.g. after rejecting the file.
+ *
+ * @param {tus.Upload} tusUpload The TUS upload instance.
+ * @return {Promise<void>}
+ */
+async function forgetUploadIfGone( tusUpload ) {
+	const uploadUrl = tusUpload.url;
+
+	try {
+		const response = await fetch( uploadUrl, {
+			method: 'HEAD',
+			headers: { 'X-WP-Nonce': getNonce() },
+		} );
+
+		// 404: session deleted, 410: session expired.
+		if ( 404 !== response.status && 410 !== response.status ) {
+			return;
+		}
+	} catch {
+		// Status unknown, keep the upload resumable.
+		return;
+	}
+
+	removeUploadProgress( uploadUrl );
+
+	const previousUploads = await tusUpload.findPreviousUploads();
+
+	await Promise.all(
+		previousUploads
+			.filter(
+				( previousUpload ) => previousUpload.uploadUrl === uploadUrl
+			)
+			.map( ( previousUpload ) =>
+				DEFAULT_TUS_OPTIONS.urlStorage.removeUpload(
+					previousUpload.urlStorageKey
+				)
+			)
+	);
 }
 
 // ============================================================================
