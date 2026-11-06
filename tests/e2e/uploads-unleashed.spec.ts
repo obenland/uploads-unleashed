@@ -158,13 +158,16 @@ test.describe( 'Uploads Unleashed', () => {
 		);
 		expect( page.url() ).not.toContain( 'item=' );
 
-		// The server deleted the session, so there's nothing to resume.
-		const storedUploads = await page.evaluate(
-			() =>
-				Object.keys( localStorage ).filter( ( key ) =>
-					key.startsWith( 'tus::' )
-				).length
-		);
-		expect( storedUploads ).toBe( 0 );
+		// Cleanup waits on a HEAD round-trip, so poll until the stale entry is gone.
+		await expect
+			.poll( () =>
+				page.evaluate(
+					() =>
+						Object.keys( localStorage ).filter( ( key ) =>
+							key.startsWith( 'tus::' )
+						).length
+				)
+			)
+			.toBe( 0 );
 	} );
 } );

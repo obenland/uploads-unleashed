@@ -298,10 +298,9 @@ function createTusUpload( file, callbacks ) {
 				}
 			}
 
-			// The server deletes the session when it rejects the finished upload,
-			// so it can't be resumed anymore.
-			if ( isRejectedFinalChunk( error, file ) ) {
-				forgetUpload( tusUpload );
+			// Only server responses can mean the session is gone.
+			if ( error.originalResponse && tusUpload.url ) {
+				forgetUploadIfGone( tusUpload );
 			}
 
 			callbacks.onError( new Error( cleanMessage ) );
@@ -312,47 +311,44 @@ function createTusUpload( file, callbacks ) {
 }
 
 /**
- * Checks whether the server rejected the request carrying the last chunk.
- *
- * @param {Error} error TUS error.
- * @param {File}  file  The file being uploaded.
- * @return {boolean} True if the last chunk got a 4xx response.
- */
-function isRejectedFinalChunk( error, file ) {
-	const status = error.originalResponse?.getStatus?.();
-	const offset = Number(
-		error.originalRequest?.getHeader?.( 'Upload-Offset' )
-	);
-
-	return (
-		status >= 400 &&
-		status < 500 &&
-		offset + DEFAULT_TUS_OPTIONS.chunkSize >= file.size
-	);
-}
-
-/**
- * Removes an upload from localStorage, so it isn't offered for resuming.
+ * Removes an upload from localStorage if the server deleted its session, e.g. after rejecting the file.
  *
  * @param {tus.Upload} tusUpload The TUS upload instance.
  * @return {Promise<void>}
  */
-function forgetUpload( tusUpload ) {
-	removeUploadProgress( tusUpload.url );
+async function forgetUploadIfGone( tusUpload ) {
+	const uploadUrl = tusUpload.url;
 
-	return tusUpload
-		.findPreviousUploads()
-		.then( ( previousUploads ) =>
-			Promise.all(
-				previousUploads
-					.filter( ( { uploadUrl } ) => uploadUrl === tusUpload.url )
-					.map( ( { urlStorageKey } ) =>
-						DEFAULT_TUS_OPTIONS.urlStorage.removeUpload(
-							urlStorageKey
-						)
-					)
+	try {
+		const response = await fetch( uploadUrl, {
+			method: 'HEAD',
+			headers: { 'X-WP-Nonce': getNonce() },
+		} );
+
+		// 404: session deleted, 410: session expired.
+		if ( 404 !== response.status && 410 !== response.status ) {
+			return;
+		}
+	} catch {
+		// Status unknown, keep the upload resumable.
+		return;
+	}
+
+	removeUploadProgress( uploadUrl );
+
+	const previousUploads = await tusUpload.findPreviousUploads();
+
+	await Promise.all(
+		previousUploads
+			.filter(
+				( previousUpload ) => previousUpload.uploadUrl === uploadUrl
 			)
-		);
+			.map( ( previousUpload ) =>
+				DEFAULT_TUS_OPTIONS.urlStorage.removeUpload(
+					previousUpload.urlStorageKey
+				)
+			)
+	);
 }
 
 // ============================================================================

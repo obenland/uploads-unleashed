@@ -43,8 +43,7 @@ function handlePluploadError( up, file, message ) {
 		return;
 	}
 
-	// For upload.php: respond like a rejected async-upload.php request, so
-	// wp.Uploader removes the placeholder and shows the server's message.
+	// For upload.php: mimic a rejected async-upload.php response so core shows the server's message.
 	up.trigger( 'FileUploaded', file, {
 		response: JSON.stringify( {
 			success: false,

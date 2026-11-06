@@ -488,17 +488,14 @@ describe( 'upload', () => {
 		describe( 'server rejection', () => {
 			const uploadUrl = '/wp-json/wp/v2/media/abc';
 			const storageKey = 'tus::tus-br|test.txt::9999999999999::1';
-			const httpError = ( status, offset ) => ( {
+			const httpError = () => ( {
 				message: 'TUS error',
-				originalRequest: {
-					getHeader: ( name ) =>
-						name === 'Upload-Offset' ? String( offset ) : undefined,
-				},
 				originalResponse: {
-					getStatus: () => status,
 					getBody: () => JSON.stringify( { message: 'Rejected' } ),
 				},
 			} );
+			const flush = () =>
+				new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
 			beforeEach( () => {
 				localStorage.clear();
@@ -516,47 +513,90 @@ describe( 'upload', () => {
 			};
 
 			afterEach( () => {
-				tus.Upload.mock.results[ 0 ].value.url = null;
+				const mockUpload = tus.Upload.mock.results[ 0 ].value;
+				mockUpload.url = null;
+				// Drop unconsumed one-off lookups so they can't leak into later tests.
+				mockUpload.findPreviousUploads.mockReset();
+				mockUpload.findPreviousUploads.mockResolvedValue( [] );
+				delete global.fetch;
 			} );
 
-			it( 'forgets the upload when the final chunk is rejected', async () => {
+			it( 'forgets the upload when the server deleted the session', async () => {
+				global.fetch = vi.fn().mockResolvedValue( { status: 404 } );
 				const promise = upload( new File( [ 'test' ], 'test.txt' ) );
-				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+				await flush();
 				mockStoredUpload();
 
-				capturedCallbacks.onError( httpError( 400, 0 ) );
+				capturedCallbacks.onError( httpError() );
 
 				await expect( promise ).rejects.toThrow( 'Rejected' );
-				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+				await flush();
+				expect( global.fetch ).toHaveBeenCalledWith( uploadUrl, {
+					method: 'HEAD',
+					headers: { 'X-WP-Nonce': 'test-nonce' },
+				} );
 				expect( localStorage.getItem( storageKey ) ).toBeNull();
 				expect(
 					localStorage.getItem( `tus-progress::${ uploadUrl }` )
 				).toBeNull();
 			} );
 
-			it( 'keeps the upload when an earlier chunk is rejected', async () => {
-				const file = new File(
-					[ new Uint8Array( 6 * 1024 * 1024 ) ],
-					'test.txt'
-				);
-				const promise = upload( file );
-				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+			it( 'forgets the upload when the session expired', async () => {
+				global.fetch = vi.fn().mockResolvedValue( { status: 410 } );
+				const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+				await flush();
 				mockStoredUpload();
 
-				capturedCallbacks.onError( httpError( 403, 0 ) );
+				capturedCallbacks.onError( httpError() );
 
 				await expect( promise ).rejects.toThrow( 'Rejected' );
+				await flush();
+				expect( localStorage.getItem( storageKey ) ).toBeNull();
+			} );
+
+			it( 'keeps the upload when the server still has the session', async () => {
+				// E.g. the last chunk failed on an expired nonce.
+				global.fetch = vi.fn().mockResolvedValue( { status: 403 } );
+				const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+				await flush();
+				mockStoredUpload();
+
+				capturedCallbacks.onError( httpError() );
+
+				await expect( promise ).rejects.toThrow( 'Rejected' );
+				await flush();
+				expect( localStorage.getItem( storageKey ) ).toBe( '{}' );
+				expect(
+					localStorage.getItem( `tus-progress::${ uploadUrl }` )
+				).toBe( '4' );
+			} );
+
+			it( 'keeps the upload when the status check fails', async () => {
+				global.fetch = vi
+					.fn()
+					.mockRejectedValue( new Error( 'Network' ) );
+				const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+				await flush();
+				mockStoredUpload();
+
+				capturedCallbacks.onError( httpError() );
+
+				await expect( promise ).rejects.toThrow( 'Rejected' );
+				await flush();
 				expect( localStorage.getItem( storageKey ) ).toBe( '{}' );
 			} );
 
-			it( 'keeps the upload on server errors', async () => {
+			it( 'skips the status check without a server response', async () => {
+				global.fetch = vi.fn();
 				const promise = upload( new File( [ 'test' ], 'test.txt' ) );
-				await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+				await flush();
 				mockStoredUpload();
 
-				capturedCallbacks.onError( httpError( 500, 0 ) );
+				capturedCallbacks.onError( new Error( 'Network error' ) );
 
-				await expect( promise ).rejects.toThrow( 'Rejected' );
+				await expect( promise ).rejects.toThrow( 'Network error' );
+				await flush();
+				expect( global.fetch ).not.toHaveBeenCalled();
 				expect( localStorage.getItem( storageKey ) ).toBe( '{}' );
 			} );
 		} );
