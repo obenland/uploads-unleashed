@@ -5,8 +5,8 @@ permissions: {}
 
 jobs:
     dependabot:
-        # The PR author, unlike github.actor, can't be changed by whoever triggered the run.
-        if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+        # Author and sender must both be Dependabot, so human pushes to its branches don't qualify.
+        if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.sender.login == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
         runs-on: ubuntu-latest
         # Needed when it falls back to GITHUB_TOKEN.
         permissions:

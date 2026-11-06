@@ -6,8 +6,9 @@ on:
             # `+` repeats the preceding class, so only plain X.Y.Z tags match.
             - '[0-9]+.[0-9]+.[0-9]+'
 
+# Writes use the scoped app token, so the default token only reads.
 permissions:
-    contents: write
+    contents: read
     pull-requests: read
 
 jobs:
@@ -26,7 +27,7 @@ jobs:
               with:
                   app-id: ${{ secrets.APP_ID }}
                   private-key: ${{ secrets.APP_PRIVATE_KEY }}
-                  # Only the git data API calls below need it.
+                  # Only the git data API calls and the release below need it.
                   permission-contents: write
 
             - name: Build changelog
@@ -147,5 +148,6 @@ jobs:
             - name: Create GitHub release
               uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
               with:
+                  token: ${{ steps.app-token.outputs.token }}
                   body: ${{ steps.changelog.outputs.changelog }}
                   files: ${{ steps.deploy.outputs.zip-path }}
