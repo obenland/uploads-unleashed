@@ -98,6 +98,8 @@ WP_ENV_PORT=8890 bin/start-e2e-wordpress.sh <db-user> <db-pass> [db-host] [wp-ve
 WP_ENV_PORT=8890 npm run test:e2e
 ```
 
+The server keeps running in the background. Rerunning the script replaces it; `pkill -f 'php -S localhost:8890'` stops it.
+
 ### Code Coverage Reports
 
 The coverage configuration is already set up in `phpunit.xml.dist` to analyze the code in the `includes` directory. To generate code coverage reports, you'll need to start wp-env with Xdebug enabled for coverage:

@@ -56,33 +56,70 @@ jobs:
 
             - name: Resolve Playwright version
               id: playwright
-              run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+              run: |
+                  echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+                  echo "image=$ImageOS" >> "$GITHUB_OUTPUT"
 
             - name: Cache Playwright browsers
               uses: actions/cache@v6
               id: playwright-cache
               with:
                   path: ~/.cache/ms-playwright
-                  key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+                  key: playwright-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
 
-            # The runner image ships Chrome, so its system libraries are only installed alongside a fresh download.
+            # The runner image ships Chrome's system libraries; keying on the image reinstalls them on a new one.
             - name: Install Playwright browsers
               if: steps.playwright-cache.outputs.cache-hit != 'true'
               run: npm run test:e2e:install
 
+            - name: Resolve latest WordPress version
+              id: wp
+              run: echo "version=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')" >> "$GITHUB_OUTPUT"
+
+            - name: Restore WordPress
+              uses: actions/cache/restore@v6
+              id: wp-cache
+              with:
+                  path: |
+                      ${{ env.WP_E2E_DIR }}
+                      !${{ env.WP_E2E_DIR }}/server.*
+                      !${{ env.WP_E2E_DIR }}/wp-content/debug.log
+                  key: wp-e2e-${{ steps.wp.outputs.version }}-${{ hashFiles('bin/start-e2e-wordpress.sh') }}
+
             - name: Start WordPress
-              run: bin/start-e2e-wordpress.sh root root 127.0.0.1
+              run: bin/start-e2e-wordpress.sh root root 127.0.0.1 "$WP_VERSION"
+              env:
+                  WP_VERSION: ${{ steps.wp.outputs.version }}
+
+            # Saved before the tests run, so test uploads don't end up in the cache.
+            - name: Save WordPress
+              if: steps.wp-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v6
+              with:
+                  path: |
+                      ${{ env.WP_E2E_DIR }}
+                      !${{ env.WP_E2E_DIR }}/server.*
+                      !${{ env.WP_E2E_DIR }}/wp-content/debug.log
+                  key: ${{ steps.wp-cache.outputs.cache-primary-key }}
 
             - name: Run Playwright tests
               run: npm run test:e2e
 
-            - name: Upload Playwright report and server logs on failure
+            - name: Upload Playwright report on failure
               if: failure()
               uses: actions/upload-artifact@v7
               with:
                   name: playwright-report
+                  path: playwright-report/
+                  retention-days: 14
+
+            # Its own artifact, so the report stays at the root of its artifact.
+            - name: Upload server logs on failure
+              if: failure()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: wordpress-logs
                   path: |
-                      playwright-report/
                       ${{ env.WP_E2E_DIR }}/server.log
                       ${{ env.WP_E2E_DIR }}/wp-content/debug.log
                   retention-days: 14
