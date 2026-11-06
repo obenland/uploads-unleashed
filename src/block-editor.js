@@ -56,8 +56,8 @@ function extractFile( formData ) {
  * - Uses `wp.hooks` for extensibility
  * - No global state pollution
  *
- * @param {Object}   options apiFetch options.
- * @param {Function} next    Next middleware in the chain.
+ * @param {Object}                                options apiFetch options.
+ * @param {(options: Object) => Promise<unknown>} next    Next middleware in the chain.
  * @return {Promise} Upload result or next middleware result.
  */
 const tusMiddleware = async ( options, next ) => {

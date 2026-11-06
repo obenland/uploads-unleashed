@@ -2,34 +2,44 @@
  * Tests for the Block Editor TUS integration.
  */
 
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from 'vitest';
+
 // Mock tus-client module
-jest.mock( '../../src/tus-client', () => ( {
-	upload: jest.fn(),
-	getPendingUploads: jest.fn( () => [] ),
+vi.mock( '../../src/tus-client', () => ( {
+	upload: vi.fn(),
+	getPendingUploads: vi.fn( () => [] ),
 } ) );
 
-jest.mock( '@wordpress/hooks', () => ( {
-	applyFilters: jest.fn( ( hookName, defaultValue ) => defaultValue ),
+vi.mock( '@wordpress/hooks', () => ( {
+	applyFilters: vi.fn( ( hookName, defaultValue ) => defaultValue ),
 } ) );
 
-jest.mock( '@wordpress/api-fetch', () => {
-	const fn = jest.fn();
-	fn.use = jest.fn();
+vi.mock( '@wordpress/api-fetch', () => {
+	const fn = vi.fn();
+	fn.use = vi.fn();
 	return { __esModule: true, default: fn };
 } );
 
-jest.mock( '@wordpress/data', () => ( {
-	dispatch: jest.fn( () => ( {
-		createWarningNotice: jest.fn(),
-		createInfoNotice: jest.fn(),
+vi.mock( '@wordpress/data', () => ( {
+	dispatch: vi.fn( () => ( {
+		createWarningNotice: vi.fn(),
+		createInfoNotice: vi.fn(),
 	} ) ),
 } ) );
 
-jest.mock( '@wordpress/notices', () => ( {
+vi.mock( '@wordpress/notices', () => ( {
 	store: 'core/notices',
 } ) );
 
-jest.mock( '@wordpress/i18n', () => ( {
+vi.mock( '@wordpress/i18n', () => ( {
 	__: ( text ) => text,
 	sprintf: ( format, ...args ) => {
 		let result = format;
@@ -46,27 +56,36 @@ jest.mock( '@wordpress/i18n', () => ( {
 	_n: ( single, plural, count ) => ( count === 1 ? single : plural ),
 } ) );
 
+import apiFetch from '@wordpress/api-fetch';
+import { dispatch } from '@wordpress/data';
+import { applyFilters } from '@wordpress/hooks';
 import { upload } from '../../src/tus-client';
 
 // Capture the middleware when it's registered
 let tusMiddleware;
 
-beforeAll( () => {
-	const apiFetch = require( '@wordpress/api-fetch' ).default;
+// Silences and records the fallback warnings logged by the middleware.
+let consoleWarn;
+
+beforeAll( async () => {
 	apiFetch.use.mockImplementation( ( middleware ) => {
 		tusMiddleware = middleware;
 	} );
 
 	// Import to trigger middleware registration
-	require( '../../src/block-editor' );
+	await import( '../../src/block-editor' );
 } );
 
 beforeEach( () => {
-	jest.clearAllMocks();
-	const { applyFilters } = require( '@wordpress/hooks' );
+	vi.clearAllMocks();
+	consoleWarn = vi.spyOn( console, 'warn' ).mockImplementation( () => {} );
 	applyFilters.mockImplementation(
 		( hookName, defaultValue ) => defaultValue
 	);
+} );
+
+afterEach( () => {
+	consoleWarn.mockRestore();
 } );
 
 describe( 'registerMiddleware', () => {
@@ -80,7 +99,7 @@ describe( 'tusMiddleware', () => {
 	let next;
 
 	beforeEach( () => {
-		next = jest.fn().mockResolvedValue( { id: 1 } );
+		next = vi.fn().mockResolvedValue( { id: 1 } );
 	} );
 
 	describe( 'isMediaUpload detection', () => {
@@ -268,15 +287,14 @@ describe( 'tusMiddleware', () => {
 			expect( upload ).toHaveBeenCalled();
 			expect( next ).toHaveBeenCalledWith( options );
 			expect( result ).toEqual( { id: 456 } );
-			expect( console ).toHaveWarned();
+			expect( consoleWarn ).toHaveBeenCalled();
 		} );
 
 		it( 'dispatches warning notice on TUS failure before fallback', async () => {
-			const { dispatch } = require( '@wordpress/data' );
-			const mockCreateWarningNotice = jest.fn();
+			const mockCreateWarningNotice = vi.fn();
 			dispatch.mockReturnValue( {
 				createWarningNotice: mockCreateWarningNotice,
-				createInfoNotice: jest.fn(),
+				createInfoNotice: vi.fn(),
 			} );
 
 			const file = new File( [ 'test' ], 'test.txt' );
@@ -303,15 +321,14 @@ describe( 'tusMiddleware', () => {
 					type: 'snackbar',
 				} )
 			);
-			expect( console ).toHaveWarned();
+			expect( consoleWarn ).toHaveBeenCalled();
 		} );
 
 		it( 'warning notice has snackbar type', async () => {
-			const { dispatch } = require( '@wordpress/data' );
-			const mockCreateWarningNotice = jest.fn();
+			const mockCreateWarningNotice = vi.fn();
 			dispatch.mockReturnValue( {
 				createWarningNotice: mockCreateWarningNotice,
-				createInfoNotice: jest.fn(),
+				createInfoNotice: vi.fn(),
 			} );
 
 			const file = new File( [ 'test' ], 'report.pdf' );
@@ -335,16 +352,14 @@ describe( 'tusMiddleware', () => {
 					type: 'snackbar',
 				} )
 			);
-			expect( console ).toHaveWarned();
+			expect( consoleWarn ).toHaveBeenCalled();
 		} );
 
 		it( 'respects allowFallback filter returning false', async () => {
-			const { applyFilters } = require( '@wordpress/hooks' );
-			const { dispatch } = require( '@wordpress/data' );
-			const mockCreateWarningNotice = jest.fn();
+			const mockCreateWarningNotice = vi.fn();
 			dispatch.mockReturnValue( {
 				createWarningNotice: mockCreateWarningNotice,
-				createInfoNotice: jest.fn(),
+				createInfoNotice: vi.fn(),
 			} );
 
 			const file = new File( [ 'test' ], 'test.txt' );
@@ -378,7 +393,7 @@ describe( 'tusMiddleware', () => {
 			);
 			expect( next ).not.toHaveBeenCalled();
 			// Warning is logged before checking allowFallback filter
-			expect( console ).toHaveWarned();
+			expect( consoleWarn ).toHaveBeenCalled();
 			// Notice should NOT be dispatched — fallback didn't happen
 			expect( mockCreateWarningNotice ).not.toHaveBeenCalled();
 		} );
@@ -386,7 +401,6 @@ describe( 'tusMiddleware', () => {
 
 	describe( 'shouldUseTus filter', () => {
 		it( 'skips TUS when filter returns false', async () => {
-			const { applyFilters } = require( '@wordpress/hooks' );
 			const file = new File( [ 'video' ], 'movie.mp4', {
 				type: 'video/mp4',
 			} );
@@ -434,7 +448,6 @@ describe( 'tusMiddleware', () => {
 		} );
 
 		it( 'passes file to the filter', async () => {
-			const { applyFilters } = require( '@wordpress/hooks' );
 			const file = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
@@ -461,24 +474,24 @@ describe( 'tusMiddleware', () => {
 } );
 
 describe( 'pending uploads notice', () => {
-	it( 'dispatches info notice when pending uploads exist', () => {
-		const { dispatch } = require( '@wordpress/data' );
-		const mockCreateInfoNotice = jest.fn();
-		dispatch.mockReturnValue( {
-			createWarningNotice: jest.fn(),
+	it( 'dispatches info notice when pending uploads exist', async () => {
+		vi.resetModules();
+		const data = await import( '@wordpress/data' );
+		const tusClient = await import( '../../src/tus-client' );
+		const { default: freshApiFetch } =
+			await import( '@wordpress/api-fetch' );
+		const mockCreateInfoNotice = vi.fn();
+		data.dispatch.mockReturnValue( {
+			createWarningNotice: vi.fn(),
 			createInfoNotice: mockCreateInfoNotice,
 		} );
 
-		const { getPendingUploads } = require( '../../src/tus-client' );
-		getPendingUploads.mockReturnValue( [
+		tusClient.getPendingUploads.mockReturnValue( [
 			{ key: 'k1', filename: 'test.txt', size: 1024 },
 		] );
 
-		jest.isolateModules( () => {
-			const apiFetch = require( '@wordpress/api-fetch' ).default;
-			apiFetch.use = jest.fn();
-			require( '../../src/block-editor' );
-		} );
+		freshApiFetch.use = vi.fn();
+		await import( '../../src/block-editor' );
 
 		expect( mockCreateInfoNotice ).toHaveBeenCalledWith(
 			expect.stringContaining( '1' ),
@@ -490,22 +503,22 @@ describe( 'pending uploads notice', () => {
 		);
 	} );
 
-	it( 'does not dispatch notice when no pending uploads', () => {
-		const { dispatch } = require( '@wordpress/data' );
-		const mockCreateInfoNotice = jest.fn();
-		dispatch.mockReturnValue( {
-			createWarningNotice: jest.fn(),
+	it( 'does not dispatch notice when no pending uploads', async () => {
+		vi.resetModules();
+		const data = await import( '@wordpress/data' );
+		const tusClient = await import( '../../src/tus-client' );
+		const { default: freshApiFetch } =
+			await import( '@wordpress/api-fetch' );
+		const mockCreateInfoNotice = vi.fn();
+		data.dispatch.mockReturnValue( {
+			createWarningNotice: vi.fn(),
 			createInfoNotice: mockCreateInfoNotice,
 		} );
 
-		const { getPendingUploads } = require( '../../src/tus-client' );
-		getPendingUploads.mockReturnValue( [] );
+		tusClient.getPendingUploads.mockReturnValue( [] );
 
-		jest.isolateModules( () => {
-			const apiFetch = require( '@wordpress/api-fetch' ).default;
-			apiFetch.use = jest.fn();
-			require( '../../src/block-editor' );
-		} );
+		freshApiFetch.use = vi.fn();
+		await import( '../../src/block-editor' );
 
 		expect( mockCreateInfoNotice ).not.toHaveBeenCalled();
 	} );

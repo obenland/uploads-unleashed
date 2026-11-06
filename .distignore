@@ -6,6 +6,7 @@
 
 # IDE/Editor
 .editorconfig
+.nvmrc
 .idea
 .claude
 
@@ -17,7 +18,7 @@
 # Build tooling
 composer.json
 composer.lock
-jest.config.js
+vitest.config.mjs
 package.json
 package-lock.json
 tsconfig.json

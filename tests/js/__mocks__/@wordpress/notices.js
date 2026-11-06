@@ -1,7 +1,5 @@
 /**
- * Mock for @wordpress/notices module.
+ * Mock for the `@wordpress/notices` module.
  */
 
-module.exports = {
-	store: 'core/notices',
-};
+export const store = 'core/notices';
