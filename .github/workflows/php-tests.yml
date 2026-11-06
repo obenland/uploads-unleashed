@@ -50,7 +50,7 @@ jobs:
               id: build-cache
               with:
                   path: build
-                  key: build-${{ hashFiles('src/**', 'package-lock.json', 'webpack.config.js') }}
+                  key: build-${{ hashFiles('src/**', 'package.json', 'package-lock.json', 'webpack.config.js') }}
 
             - name: Setup Node.js
               if: steps.build-cache.outputs.cache-hit != 'true'
