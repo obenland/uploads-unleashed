@@ -81,6 +81,23 @@ For watch mode during development:
 npm run test:js:watch
 ```
 
+### End-to-End Tests
+
+Playwright tests run against the wp-env site on port 8888:
+
+```bash
+npm run test:e2e:install   # once, installs Chromium
+npm run start
+npm run test:e2e
+```
+
+CI skips wp-env and serves a fresh WordPress install with PHP's built-in server instead. To do the same locally, point it at a MySQL server and a free port:
+
+```bash
+WP_ENV_PORT=8890 bin/start-e2e-wordpress.sh <db-user> <db-pass> [db-host] [wp-version]
+WP_ENV_PORT=8890 npm run test:e2e
+```
+
 ### Code Coverage Reports
 
 The coverage configuration is already set up in `phpunit.xml.dist` to analyze the code in the `includes` directory. To generate code coverage reports, you'll need to start wp-env with Xdebug enabled for coverage:
