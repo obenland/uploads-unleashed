@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Uploads Unleashed! This guide wil
 ### Prerequisites
 
 - PHP 7.4 or higher
-- Node.js 22 or higher
+- Node.js 26 (see `.nvmrc`)
 - Docker (for wp-env)
 - Composer
 
@@ -63,7 +63,7 @@ npm test -- --filter Test_Uploads_Unleashed_TUS_Controller
 
 ### JavaScript Tests
 
-Jest tests run locally:
+Vitest tests run locally:
 
 ```bash
 npm run test:js

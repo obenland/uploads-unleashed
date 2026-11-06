@@ -1,7 +1,7 @@
 /**
- * ESLint flat config (ESLint 10 / @wordpress/scripts 32+).
+ * ESLint flat config (ESLint 10 / `@wordpress/scripts` 37+).
  *
- * Extends the default flat config from @wordpress/scripts and layers
+ * Extends the default flat config from `@wordpress/scripts` and layers
  * project-specific overrides on top:
  *
  * - `import/no-unresolved` ignores `@uploads-unleashed/*` paths because
@@ -13,8 +13,8 @@
  *   for prototype descriptor manipulation).
  * - The wp-scripts test-unit overrides default to `**`/`@(test|__tests__)/**`/`*.js`
  *   patterns; this project keeps unit tests under `tests/js/`, so the
- *   overrides are re-applied under that path so jest globals and
- *   jest/* rules apply.
+ *   overrides are re-applied under that path so the Vitest rules
+ *   (`@vitest/eslint-plugin`) apply.
  */
 
 // eslint-disable-next-line import/no-extraneous-dependencies -- transitive of @wordpress/scripts

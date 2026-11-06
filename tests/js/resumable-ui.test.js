@@ -2,7 +2,9 @@
  * Tests for the resumable UI module.
  */
 
-jest.mock( '@wordpress/i18n', () => ( {
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock( '@wordpress/i18n', () => ( {
 	__: ( text ) => text,
 	sprintf: ( format, ...args ) => {
 		let result = format;
@@ -16,16 +18,16 @@ jest.mock( '@wordpress/i18n', () => ( {
 	},
 } ) );
 
-jest.mock( '@wordpress/a11y', () => ( {
-	speak: jest.fn(),
+vi.mock( '@wordpress/a11y', () => ( {
+	speak: vi.fn(),
 } ) );
 
-jest.mock( '../../src/tus-client', () => ( {
-	getPendingUploads: jest.fn( () => [] ),
-	discardPendingUpload: jest.fn(),
+vi.mock( '../../src/tus-client', () => ( {
+	getPendingUploads: vi.fn( () => [] ),
+	discardPendingUpload: vi.fn(),
 } ) );
 
-jest.mock( '../../src/resume-ui.css', () => ( {} ) );
+vi.mock( '../../src/resume-ui.css', () => ( {} ) );
 
 // JSDOM does not provide DataTransfer; polyfill for resume-upload tests.
 if ( typeof global.DataTransfer === 'undefined' ) {
@@ -77,20 +79,18 @@ function setupDOM() {
 	return { container, list, notice };
 }
 
-function importModule( pendingUploads = [] ) {
-	let mocks;
-	jest.isolateModules( () => {
-		mocks = require( '../../src/tus-client' );
-		mocks.getPendingUploads.mockReturnValue( pendingUploads );
-		require( '../../src/resume-ui' );
-	} );
+async function importModule( pendingUploads = [] ) {
+	vi.resetModules();
+	const mocks = await import( '../../src/tus-client' );
+	mocks.getPendingUploads.mockReturnValue( pendingUploads );
+	await import( '../../src/resume-ui' );
 	return mocks;
 }
 
 beforeEach( () => {
 	localStorage.clear();
 	document.body.innerHTML = '';
-	jest.clearAllMocks();
+	vi.clearAllMocks();
 
 	window.uploadsUnleashed = {
 		endpoint: ENDPOINT,
@@ -103,48 +103,48 @@ beforeEach( () => {
 } );
 
 describe( 'renderPendingUploads', () => {
-	it( 'does not render when container is missing', () => {
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+	it( 'does not render when container is missing', async () => {
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		expect( document.querySelector( 'li' ) ).toBeNull();
 	} );
 
-	it( 'does not modify container when no pending uploads (init skips)', () => {
+	it( 'does not modify container when no pending uploads (init skips)', async () => {
 		const { container } = setupDOM();
 		container.style.display = 'block';
 
-		importModule( [] );
+		await importModule( [] );
 
 		// init() exits early when pending.length === 0, so renderPendingUploads is never called.
 		expect( container.style.display ).toBe( 'block' );
 	} );
 
-	it( 'hides container when renderPendingUploads finds no uploads', () => {
+	it( 'hides container when renderPendingUploads finds no uploads', async () => {
 		const { container } = setupDOM();
 		container.style.display = 'block';
 
 		// First render with uploads to trigger renderPendingUploads.
-		let mocks;
-		jest.isolateModules( () => {
-			mocks = require( '../../src/tus-client' );
-			// First call (init): has pending uploads.
-			// Second call (renderPendingUploads): no pending uploads.
-			mocks.getPendingUploads
-				.mockReturnValueOnce( [
-					createPendingUploadEntry( 'test.txt', 1024 ),
-				] )
-				.mockReturnValueOnce( [] );
-			require( '../../src/resume-ui' );
-		} );
+		vi.resetModules();
+		const mocks = await import( '../../src/tus-client' );
+		/*
+		 * First call (init): has pending uploads.
+		 * Second call (renderPendingUploads): no pending uploads.
+		 */
+		mocks.getPendingUploads
+			.mockReturnValueOnce( [
+				createPendingUploadEntry( 'test.txt', 1024 ),
+			] )
+			.mockReturnValueOnce( [] );
+		await import( '../../src/resume-ui' );
 
 		// renderPendingUploads was called with no uploads, so container is hidden.
 		expect( container.style.display ).toBe( 'none' );
 	} );
 
-	it( 'renders list items for pending uploads', () => {
+	it( 'renders list items for pending uploads', async () => {
 		const { list } = setupDOM();
 
-		importModule( [
+		await importModule( [
 			createPendingUploadEntry( 'photo.jpg', 5242880 ),
 			createPendingUploadEntry( 'doc.pdf', 1024 ),
 		] );
@@ -152,18 +152,20 @@ describe( 'renderPendingUploads', () => {
 		expect( list.children.length ).toBe( 2 );
 	} );
 
-	it( 'shows container when pending uploads exist', () => {
+	it( 'shows container when pending uploads exist', async () => {
 		const { container } = setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		expect( container.style.display ).toBe( 'block' );
 	} );
 
-	it( 'renders filename and size text', () => {
+	it( 'renders filename and size text', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+		await importModule( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.querySelector( '.filename' ).textContent ).toBe(
@@ -174,10 +176,10 @@ describe( 'renderPendingUploads', () => {
 		);
 	} );
 
-	it( 'renders Resume and Discard buttons', () => {
+	it( 'renders Resume and Discard buttons', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		const li = document.querySelector( 'li' );
 		const resume = li.querySelector( '.resume-upload' );
@@ -191,28 +193,34 @@ describe( 'renderPendingUploads', () => {
 } );
 
 describe( 'data attributes', () => {
-	it( 'stores filename as data attribute', () => {
+	it( 'stores filename as data attribute', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+		await importModule( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.dataset.filename ).toBe( 'photo.jpg' );
 	} );
 
-	it( 'stores size as data attribute', () => {
+	it( 'stores size as data attribute', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+		await importModule( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.dataset.size ).toBe( '5242880' );
 	} );
 
-	it( 'handles special characters in filename', () => {
+	it( 'handles special characters in filename', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'my file (1).jpg', 1024 ) ] );
+		await importModule( [
+			createPendingUploadEntry( 'my file (1).jpg', 1024 ),
+		] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.dataset.filename ).toBe( 'my file (1).jpg' );
@@ -221,11 +229,11 @@ describe( 'data attributes', () => {
 		);
 	} );
 
-	it( 'renders HTML in filename as inert text, not markup', () => {
+	it( 'renders HTML in filename as inert text, not markup', async () => {
 		setupDOM();
 
 		const xssFilename = '<img src=x onerror=alert(1)>';
-		importModule( [ createPendingUploadEntry( xssFilename, 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( xssFilename, 1024 ) ] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.querySelector( '.filename' ).textContent ).toBe(
@@ -234,10 +242,10 @@ describe( 'data attributes', () => {
 		expect( li.querySelector( 'img' ) ).toBeNull();
 	} );
 
-	it( 'does not expose key or uploadUrl as data attributes', () => {
+	it( 'does not expose key or uploadUrl as data attributes', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.dataset.key ).toBeUndefined();
@@ -248,11 +256,11 @@ describe( 'data attributes', () => {
 describe( 'removePendingEntry via plupload FilesAdded', () => {
 	let filesAddedHandler;
 
-	function setupWithPlupload( pendingUploads ) {
+	async function setupWithPlupload( pendingUploads ) {
 		setupDOM();
 
 		const mockUploader = {
-			bind: jest.fn( ( event, handler ) => {
+			bind: vi.fn( ( event, handler ) => {
 				if ( event === 'FilesAdded' ) {
 					filesAddedHandler = handler;
 				}
@@ -260,17 +268,17 @@ describe( 'removePendingEntry via plupload FilesAdded', () => {
 		};
 
 		window.uploader = mockUploader;
-		window.jQuery = jest.fn( ( fn ) => fn() );
+		window.jQuery = vi.fn( ( fn ) => fn() );
 
-		importModule( pendingUploads );
+		await importModule( pendingUploads );
 	}
 
-	it( 'removes matching entry by filename and size', () => {
+	it( 'removes matching entry by filename and size', async () => {
 		const pending = [
 			createPendingUploadEntry( 'photo.jpg', 5242880 ),
 			createPendingUploadEntry( 'doc.pdf', 1024 ),
 		];
-		setupWithPlupload( pending );
+		await setupWithPlupload( pending );
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
 		expect( list.children.length ).toBe( 2 );
@@ -281,8 +289,8 @@ describe( 'removePendingEntry via plupload FilesAdded', () => {
 		expect( list.children[ 0 ].dataset.filename ).toBe( 'doc.pdf' );
 	} );
 
-	it( 'does not remove entry with matching name but different size', () => {
-		setupWithPlupload( [
+	it( 'does not remove entry with matching name but different size', async () => {
+		await setupWithPlupload( [
 			createPendingUploadEntry( 'photo.jpg', 5242880 ),
 		] );
 
@@ -293,8 +301,8 @@ describe( 'removePendingEntry via plupload FilesAdded', () => {
 		expect( list.children.length ).toBe( 1 );
 	} );
 
-	it( 'does not remove entry with matching size but different name', () => {
-		setupWithPlupload( [
+	it( 'does not remove entry with matching size but different name', async () => {
+		await setupWithPlupload( [
 			createPendingUploadEntry( 'photo.jpg', 5242880 ),
 		] );
 
@@ -305,8 +313,8 @@ describe( 'removePendingEntry via plupload FilesAdded', () => {
 		expect( list.children.length ).toBe( 1 );
 	} );
 
-	it( 'hides container when last entry is removed', () => {
-		setupWithPlupload( [
+	it( 'hides container when last entry is removed', async () => {
+		await setupWithPlupload( [
 			createPendingUploadEntry( 'photo.jpg', 5242880 ),
 		] );
 
@@ -319,8 +327,8 @@ describe( 'removePendingEntry via plupload FilesAdded', () => {
 		expect( container.style.display ).toBe( 'none' );
 	} );
 
-	it( 'removes multiple matching entries in one event', () => {
-		setupWithPlupload( [
+	it( 'removes multiple matching entries in one event', async () => {
+		await setupWithPlupload( [
 			createPendingUploadEntry( 'a.jpg', 100 ),
 			createPendingUploadEntry( 'b.jpg', 200 ),
 			createPendingUploadEntry( 'c.jpg', 300 ),
@@ -343,7 +351,7 @@ describe( 'discard button', () => {
 		setupDOM();
 
 		const pending = createPendingUploadEntry( 'test.txt', 1024 );
-		const { discardPendingUpload } = importModule( [ pending ] );
+		const { discardPendingUpload } = await importModule( [ pending ] );
 		discardPendingUpload.mockResolvedValue();
 
 		const discard = document.querySelector( '.discard-upload' );
@@ -360,7 +368,7 @@ describe( 'discard button', () => {
 	it( 'hides container when last item is discarded', async () => {
 		setupDOM();
 
-		const { discardPendingUpload } = importModule( [
+		const { discardPendingUpload } = await importModule( [
 			createPendingUploadEntry( 'test.txt', 1024 ),
 		] );
 		discardPendingUpload.mockResolvedValue();
@@ -380,7 +388,7 @@ describe( 'discard button', () => {
 
 		const itemA = createPendingUploadEntry( 'a.txt', 100 );
 		const itemB = createPendingUploadEntry( 'b.txt', 200 );
-		const { discardPendingUpload } = importModule( [ itemA, itemB ] );
+		const { discardPendingUpload } = await importModule( [ itemA, itemB ] );
 		discardPendingUpload.mockResolvedValue();
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
@@ -424,7 +432,7 @@ describe( 'resume button', () => {
 	}
 
 	function mockShowOpenFilePicker( file ) {
-		window.showOpenFilePicker = jest.fn( () =>
+		window.showOpenFilePicker = vi.fn( () =>
 			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
 		);
 	}
@@ -439,7 +447,7 @@ describe( 'resume button', () => {
 
 		const size = 1024;
 		const pending = createPendingUploadEntry( 'photo.jpg', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		const file = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
 			type: 'image/jpeg',
@@ -463,13 +471,11 @@ describe( 'resume button', () => {
 		setupDOM();
 
 		const pending = createPendingUploadEntry( 'photo.jpg', 5242880 );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		// showOpenFilePicker throws AbortError on cancel
 		const abortError = new DOMException( 'The user aborted', 'AbortError' );
-		window.showOpenFilePicker = jest.fn( () =>
-			Promise.reject( abortError )
-		);
+		window.showOpenFilePicker = vi.fn( () => Promise.reject( abortError ) );
 
 		document.querySelector( '.resume-upload' ).click();
 
@@ -490,7 +496,7 @@ describe( 'resume button', () => {
 
 		const size = 1024;
 		const pending = createPendingUploadEntry( 'doc.txt', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		// No showOpenFilePicker — fallback to file input.
 		delete window.showOpenFilePicker;
@@ -498,7 +504,7 @@ describe( 'resume button', () => {
 		// Mock createElement to capture the file input.
 		const originalCreateElement = document.createElement.bind( document );
 		let capturedInput = null;
-		jest.spyOn( document, 'createElement' ).mockImplementation( ( tag ) => {
+		vi.spyOn( document, 'createElement' ).mockImplementation( ( tag ) => {
 			const el = originalCreateElement( tag );
 			if ( tag === 'input' ) {
 				capturedInput = el;
@@ -532,7 +538,7 @@ describe( 'resume button', () => {
 
 		const size = 5242880;
 		const pending = createPendingUploadEntry( 'photo.jpg', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		// Wrong file (different name).
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
@@ -540,7 +546,7 @@ describe( 'resume button', () => {
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
-		const alertSpy = jest.spyOn( window, 'alert' ).mockImplementation();
+		const alertSpy = vi.spyOn( window, 'alert' ).mockImplementation();
 
 		document.querySelector( '.resume-upload' ).click();
 
@@ -566,7 +572,7 @@ describe( 'resume button', () => {
 
 		const size = 1024;
 		const pending = createPendingUploadEntry( 'test.txt', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		const file = new File( [ 'x'.repeat( size ) ], 'test.txt', {
 			type: 'text/plain',
@@ -588,16 +594,16 @@ describe( 'resume button', () => {
 
 		const size = 1024;
 		const pending = createPendingUploadEntry( 'doc.txt', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		// Throw a non-AbortError so fallback kicks in.
-		window.showOpenFilePicker = jest.fn( () =>
+		window.showOpenFilePicker = vi.fn( () =>
 			Promise.reject( new Error( 'Not supported' ) )
 		);
 
 		// Mock createElement for fallback input that returns null (user cancels).
 		const originalCreateElement = document.createElement.bind( document );
-		jest.spyOn( document, 'createElement' ).mockImplementation( ( tag ) => {
+		vi.spyOn( document, 'createElement' ).mockImplementation( ( tag ) => {
 			const el = originalCreateElement( tag );
 			if ( tag === 'input' ) {
 				el.click = () => {
@@ -642,7 +648,7 @@ describe( 'resume file selection UX', () => {
 	}
 
 	function mockShowOpenFilePicker( file ) {
-		window.showOpenFilePicker = jest.fn( () =>
+		window.showOpenFilePicker = vi.fn( () =>
 			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
 		);
 	}
@@ -651,10 +657,10 @@ describe( 'resume file selection UX', () => {
 		delete window.showOpenFilePicker;
 	} );
 
-	it( 'hides error by default', () => {
+	it( 'hides error by default', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		const errorEl = document.querySelector( '.uploads-unleashed-error' );
 		expect( errorEl ).not.toBeNull();
@@ -667,14 +673,14 @@ describe( 'resume file selection UX', () => {
 
 		const size = 5242880;
 		const pending = createPendingUploadEntry( 'photo.jpg', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
 			type: 'text/plain',
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
-		const alertSpy = jest.spyOn( window, 'alert' ).mockImplementation();
+		const alertSpy = vi.spyOn( window, 'alert' ).mockImplementation();
 
 		document.querySelector( '.resume-upload' ).click();
 
@@ -697,7 +703,7 @@ describe( 'resume file selection UX', () => {
 
 		const size = 5242880;
 		const pending = createPendingUploadEntry( 'photo.jpg', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
 
 		// First attempt: wrong file
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
@@ -729,10 +735,10 @@ describe( 'resume file selection UX', () => {
 } );
 
 describe( 'removePendingEntry without container', () => {
-	it( 'does nothing when container is missing', () => {
+	it( 'does nothing when container is missing', async () => {
 		// No setupDOM — no container.
 		const mockUploader = {
-			bind: jest.fn( ( event, handler ) => {
+			bind: vi.fn( ( event, handler ) => {
 				if ( event === 'FilesAdded' ) {
 					// Call handler immediately.
 					handler( {}, [ { name: 'test.txt', size: 100 } ] );
@@ -740,30 +746,29 @@ describe( 'removePendingEntry without container', () => {
 			} ),
 		};
 		window.uploader = mockUploader;
-		window.jQuery = jest.fn( ( fn ) => fn() );
+		window.jQuery = vi.fn( ( fn ) => fn() );
 
-		// The "should not throw" intent is now an explicit assertion so
-		// jest/expect-expect can see it.
-		expect( () =>
+		// Explicit assertion so vitest/expect-expect sees the "should not throw" intent.
+		await expect(
 			importModule( [ createPendingUploadEntry( 'test.txt', 100 ) ] )
-		).not.toThrow();
+		).resolves.toBeDefined();
 	} );
 } );
 
 describe( 'hookPlupload', () => {
-	it( 'does nothing when window.uploader is not set', () => {
+	it( 'does nothing when window.uploader is not set', async () => {
 		setupDOM();
 		delete window.uploader;
-		window.jQuery = jest.fn( ( fn ) => fn() );
+		window.jQuery = vi.fn( ( fn ) => fn() );
 
-		expect( () =>
+		await expect(
 			importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] )
-		).not.toThrow();
+		).resolves.toBeDefined();
 	} );
 } );
 
 describe( 'DOMContentLoaded', () => {
-	it( 'defers init when document is loading', () => {
+	it( 'defers init when document is loading', async () => {
 		setupDOM();
 
 		// Mock readyState as 'loading'.
@@ -777,9 +782,9 @@ describe( 'DOMContentLoaded', () => {
 			configurable: true,
 		} );
 
-		const addEventSpy = jest.spyOn( document, 'addEventListener' );
+		const addEventSpy = vi.spyOn( document, 'addEventListener' );
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		expect( addEventSpy ).toHaveBeenCalledWith(
 			'DOMContentLoaded',
@@ -793,17 +798,17 @@ describe( 'DOMContentLoaded', () => {
 } );
 
 describe( 'formatFileSize', () => {
-	it( 'formats bytes', () => {
+	it( 'formats bytes', async () => {
 		setupDOM();
-		importModule( [ createPendingUploadEntry( 'tiny.txt', 500 ) ] );
+		await importModule( [ createPendingUploadEntry( 'tiny.txt', 500 ) ] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.querySelector( '.filesize' ).textContent ).toBe( '(500 B)' );
 	} );
 
-	it( 'formats kilobytes', () => {
+	it( 'formats kilobytes', async () => {
 		setupDOM();
-		importModule( [ createPendingUploadEntry( 'small.txt', 2048 ) ] );
+		await importModule( [ createPendingUploadEntry( 'small.txt', 2048 ) ] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.querySelector( '.filesize' ).textContent ).toBe(
@@ -811,9 +816,9 @@ describe( 'formatFileSize', () => {
 		);
 	} );
 
-	it( 'formats megabytes', () => {
+	it( 'formats megabytes', async () => {
 		setupDOM();
-		importModule( [
+		await importModule( [
 			createPendingUploadEntry( 'big.mp4', 10 * 1024 * 1024 ),
 		] );
 
@@ -823,9 +828,9 @@ describe( 'formatFileSize', () => {
 		);
 	} );
 
-	it( 'formats gigabytes', () => {
+	it( 'formats gigabytes', async () => {
 		setupDOM();
-		importModule( [
+		await importModule( [
 			createPendingUploadEntry( 'huge.iso', 1.5 * 1024 * 1024 * 1024 ),
 		] );
 
@@ -837,13 +842,13 @@ describe( 'formatFileSize', () => {
 } );
 
 describe( 'upload progress percentage', () => {
-	it( 'renders percentage when bytesUploaded > 0', () => {
+	it( 'renders percentage when bytesUploaded > 0', async () => {
 		setupDOM();
 
 		const entry = createPendingUploadEntry( 'photo.jpg', 52428800 );
 		entry.bytesUploaded = 22020096;
 
-		importModule( [ entry ] );
+		await importModule( [ entry ] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.querySelector( '.filesize' ).textContent ).toBe(
@@ -851,13 +856,13 @@ describe( 'upload progress percentage', () => {
 		);
 	} );
 
-	it( 'renders plain file size when bytesUploaded is 0', () => {
+	it( 'renders plain file size when bytesUploaded is 0', async () => {
 		setupDOM();
 
 		const entry = createPendingUploadEntry( 'photo.jpg', 52428800 );
 		entry.bytesUploaded = 0;
 
-		importModule( [ entry ] );
+		await importModule( [ entry ] );
 
 		const li = document.querySelector( 'li' );
 		expect( li.querySelector( '.filesize' ).textContent ).toBe(
@@ -867,10 +872,12 @@ describe( 'upload progress percentage', () => {
 } );
 
 describe( 'accessibility', () => {
-	it( 'sets aria-label on Resume button containing filename', () => {
+	it( 'sets aria-label on Resume button containing filename', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+		await importModule( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
 
 		const resumeBtn = document.querySelector( '.resume-upload' );
 		expect( resumeBtn.getAttribute( 'aria-label' ) ).toBe(
@@ -878,10 +885,12 @@ describe( 'accessibility', () => {
 		);
 	} );
 
-	it( 'sets aria-label on Discard button containing filename', () => {
+	it( 'sets aria-label on Discard button containing filename', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'photo.jpg', 5242880 ) ] );
+		await importModule( [
+			createPendingUploadEntry( 'photo.jpg', 5242880 ),
+		] );
 
 		const discardBtn = document.querySelector( '.discard-upload' );
 		expect( discardBtn.getAttribute( 'aria-label' ) ).toBe(
@@ -889,10 +898,10 @@ describe( 'accessibility', () => {
 		);
 	} );
 
-	it( 'sets role and aria-label on container', () => {
+	it( 'sets role and aria-label on container', async () => {
 		setupDOM();
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		const container = document.getElementById(
 			'uploads-unleashed-pending'
@@ -906,9 +915,9 @@ describe( 'accessibility', () => {
 	it( 'calls speak on discard with filename', async () => {
 		setupDOM();
 
-		const { speak } = require( '@wordpress/a11y' );
 		const pending = createPendingUploadEntry( 'report.pdf', 2048 );
-		const { discardPendingUpload } = importModule( [ pending ] );
+		const { discardPendingUpload } = await importModule( [ pending ] );
+		const { speak } = await import( '@wordpress/a11y' );
 		discardPendingUpload.mockResolvedValue();
 
 		document.querySelector( '.discard-upload' ).click();
@@ -939,15 +948,15 @@ describe( 'accessibility', () => {
 		shim.appendChild( fileInput );
 		document.body.appendChild( shim );
 
-		const { speak } = require( '@wordpress/a11y' );
 		const size = 1024;
 		const pending = createPendingUploadEntry( 'video.mp4', size );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
+		const { speak } = await import( '@wordpress/a11y' );
 
 		const file = new File( [ 'x'.repeat( size ) ], 'video.mp4', {
 			type: 'video/mp4',
 		} );
-		window.showOpenFilePicker = jest.fn( () =>
+		window.showOpenFilePicker = vi.fn( () =>
 			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
 		);
 
@@ -964,14 +973,12 @@ describe( 'accessibility', () => {
 	it( 'does not call speak when resume is canceled', async () => {
 		setupDOM();
 
-		const { speak } = require( '@wordpress/a11y' );
 		const pending = createPendingUploadEntry( 'video.mp4', 1024 );
-		importModule( [ pending ] );
+		await importModule( [ pending ] );
+		const { speak } = await import( '@wordpress/a11y' );
 
 		const abortError = new DOMException( 'The user aborted', 'AbortError' );
-		window.showOpenFilePicker = jest.fn( () =>
-			Promise.reject( abortError )
-		);
+		window.showOpenFilePicker = vi.fn( () => Promise.reject( abortError ) );
 
 		document.querySelector( '.resume-upload' ).click();
 
@@ -985,7 +992,7 @@ describe( 'accessibility', () => {
 
 		const itemA = createPendingUploadEntry( 'a.txt', 100 );
 		const itemB = createPendingUploadEntry( 'b.txt', 200 );
-		const { discardPendingUpload } = importModule( [ itemA, itemB ] );
+		const { discardPendingUpload } = await importModule( [ itemA, itemB ] );
 		discardPendingUpload.mockResolvedValue();
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
@@ -1007,7 +1014,7 @@ describe( 'accessibility', () => {
 
 		const itemA = createPendingUploadEntry( 'a.txt', 100 );
 		const itemB = createPendingUploadEntry( 'b.txt', 200 );
-		const { discardPendingUpload } = importModule( [ itemA, itemB ] );
+		const { discardPendingUpload } = await importModule( [ itemA, itemB ] );
 		discardPendingUpload.mockResolvedValue();
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
@@ -1032,7 +1039,7 @@ describe( 'accessibility', () => {
 		document.body.appendChild( browseBtn );
 
 		const pending = createPendingUploadEntry( 'only.txt', 512 );
-		const { discardPendingUpload } = importModule( [ pending ] );
+		const { discardPendingUpload } = await importModule( [ pending ] );
 		discardPendingUpload.mockResolvedValue();
 
 		document.querySelector( '.discard-upload' ).click();
@@ -1044,7 +1051,7 @@ describe( 'accessibility', () => {
 } );
 
 describe( 'upload.php pending notice', () => {
-	it( 'shows notice container when pending uploads exist', () => {
+	it( 'shows notice container when pending uploads exist', async () => {
 		setupDOM();
 
 		// Add the upload.php notice container
@@ -1053,12 +1060,12 @@ describe( 'upload.php pending notice', () => {
 		notice.style.display = 'none';
 		document.body.appendChild( notice );
 
-		importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
+		await importModule( [ createPendingUploadEntry( 'test.txt', 1024 ) ] );
 
 		expect( notice.style.display ).toBe( 'block' );
 	} );
 
-	it( 'keeps notice hidden when no pending uploads', () => {
+	it( 'keeps notice hidden when no pending uploads', async () => {
 		setupDOM();
 
 		const notice = document.createElement( 'div' );
@@ -1066,7 +1073,7 @@ describe( 'upload.php pending notice', () => {
 		notice.style.display = 'none';
 		document.body.appendChild( notice );
 
-		importModule( [] );
+		await importModule( [] );
 
 		// init() exits early when no pending, so container remains hidden
 		expect( notice.style.display ).toBe( 'none' );

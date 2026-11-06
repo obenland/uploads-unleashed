@@ -43,11 +43,11 @@ function formatFileSize( bytes ) {
  * Prompts user to re-select a file for resuming upload.
  * Uses File System Access API if available, falls back to file input.
  *
- * @param {Object}   pendingUpload          Pending upload metadata.
- * @param {string}   pendingUpload.filename Original filename.
- * @param {number}   pendingUpload.size     File size in bytes.
- * @param {Object}   options                Optional settings.
- * @param {Function} options.onMismatch     Callback when selected file doesn't match.
+ * @param {Object}                    pendingUpload          Pending upload metadata.
+ * @param {string}                    pendingUpload.filename Original filename.
+ * @param {number}                    pendingUpload.size     File size in bytes.
+ * @param {Object}                    options                Optional settings.
+ * @param {(message: string) => void} options.onMismatch     Callback when selected file doesn't match.
  * @return {Promise<boolean>} True if upload was resumed, false if canceled.
  */
 async function resumeUpload( pendingUpload, options = {} ) {
@@ -68,7 +68,7 @@ async function resumeUpload( pendingUpload, options = {} ) {
 								description: pendingUpload.filename,
 								accept: { '*/*': [ extension ] },
 							},
-					  ]
+						]
 					: undefined,
 			} );
 			file = await handle.getFile();

@@ -1,5 +1,5 @@
 /**
- * Jest test setup for Uploads Unleashed.
+ * Vitest test setup for Uploads Unleashed.
  *
  * Mocks WordPress globals and browser APIs needed for testing.
  */
@@ -36,6 +36,3 @@ Object.defineProperty( window, 'uploadsUnleashed', {
 	},
 	writable: true,
 } );
-
-// Export for test access
-module.exports = { localStorageMock };
