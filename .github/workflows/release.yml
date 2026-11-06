@@ -3,7 +3,8 @@ name: Release and Deploy
 on:
     push:
         tags:
-            - '[0-9]*.[0-9]*.[0-9]*'
+            # `+` repeats the preceding class, so only plain X.Y.Z tags match.
+            - '[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
     contents: write
@@ -14,20 +15,23 @@ jobs:
         name: Release and deploy to WordPress.org
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
+                  persist-credentials: false
                   fetch-depth: 0
 
             - name: Generate GitHub App token
               id: app-token
-              uses: actions/create-github-app-token@v3
+              uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
               with:
                   app-id: ${{ secrets.APP_ID }}
                   private-key: ${{ secrets.APP_PRIVATE_KEY }}
+                  # Only the git data API calls below need it.
+                  permission-contents: write
 
             - name: Build changelog
               id: changelog
-              uses: mikepenz/release-changelog-builder-action@v6
+              uses: mikepenz/release-changelog-builder-action@b0db9d18b53447ef9f940a46c8f31653c4d9f621 # v6.5.0
               with:
                   configuration: '.github/changelog_configuration.json'
               env:
@@ -36,8 +40,14 @@ jobs:
             - name: Update version strings and changelog
               env:
                   CHANGELOG_RAW: ${{ steps.changelog.outputs.changelog }}
+                  VERSION: ${{ github.ref_name }}
               run: |
                   set -euo pipefail
+                  if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                      echo "::error::Tag '$VERSION' is not a plain X.Y.Z version."
+                      exit 1
+                  fi
+
                   git checkout trunk
 
                   if [ -z "$CHANGELOG_RAW" ]; then
@@ -45,26 +55,26 @@ jobs:
                       exit 1
                   fi
 
-                  sed -i "s/\* Version: .*/* Version: ${{ github.ref_name }}/" uploads-unleashed.php
-                  sed -i "s/UPLOADS_UNLEASHED_VERSION', '[^']*'/UPLOADS_UNLEASHED_VERSION', '${{ github.ref_name }}'/" uploads-unleashed.php
-                  sed -i "s/Stable tag: .*/Stable tag: ${{ github.ref_name }}/" README.md
-                  sed -i 's/"version": "[^"]*"/"version": "${{ github.ref_name }}"/' package.json
-                  sed -i '/"name": "uploads-unleashed"/{n;s/"version": "[^"]*"/"version": "${{ github.ref_name }}"/}' package-lock.json
+                  sed -i "s/\* Version: .*/* Version: ${VERSION}/" uploads-unleashed.php
+                  sed -i "s/UPLOADS_UNLEASHED_VERSION', '[^']*'/UPLOADS_UNLEASHED_VERSION', '${VERSION}'/" uploads-unleashed.php
+                  sed -i "s/Stable tag: .*/Stable tag: ${VERSION}/" README.md
+                  sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" package.json
+                  sed -i "/\"name\": \"uploads-unleashed\"/{n;s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/}" package-lock.json
 
                   # Format changelog for README.md: strip markdown headers, convert list markers, remove "Full Changelog" line and blank lines
                   {
                       echo ""
-                      echo "### ${{ github.ref_name }}"
+                      echo "### ${VERSION}"
                       echo "$CHANGELOG_RAW" | sed -e '/^## /d' -e '/^\*\*Full Changelog\*\*/d' -e 's/^- /* /' -e '/^[[:space:]]*$/d'
                   } > /tmp/changelog_entry.txt
 
-                  if grep -q "^### ${{ github.ref_name }}$" README.md; then
-                      echo "Changelog entry for ${{ github.ref_name }} already exists, skipping insertion."
+                  if grep -q "^### ${VERSION}$" README.md; then
+                      echo "Changelog entry for ${VERSION} already exists, skipping insertion."
                   else
                       sed -i "/^## Changelog[[:space:]]*$/r /tmp/changelog_entry.txt" README.md
                   fi
 
-                  if ! grep -q "^### ${{ github.ref_name }}$" README.md; then
+                  if ! grep -q "^### ${VERSION}$" README.md; then
                       echo "::error::Failed to insert changelog entry into README.md."
                       exit 1
                   fi
@@ -72,12 +82,14 @@ jobs:
             - name: Push version bump to trunk
               env:
                   GH_TOKEN: ${{ steps.app-token.outputs.token }}
+                  VERSION: ${{ github.ref_name }}
               run: |
-                  TRUNK_SHA=$(gh api repos/${{ github.repository }}/git/ref/heads/trunk --jq '.object.sha')
+                  set -euo pipefail
+                  TRUNK_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/trunk" --jq '.object.sha')
 
                   create_blob() {
                       base64 -w0 "$1" | jq -Rs '{"encoding": "base64", "content": .}' > /tmp/blob.json
-                      gh api repos/${{ github.repository }}/git/blobs \
+                      gh api "repos/${GITHUB_REPOSITORY}/git/blobs" \
                           --input /tmp/blob.json \
                           --jq '.sha'
                   }
@@ -91,46 +103,41 @@ jobs:
 
                   echo "$TREE_ITEMS" | jq --arg base "$TRUNK_SHA" \
                       '{"base_tree": $base, "tree": .}' > /tmp/tree.json
-                  TREE_SHA=$(gh api repos/${{ github.repository }}/git/trees \
+                  TREE_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/trees" \
                       --input /tmp/tree.json \
                       --jq '.sha')
 
-                  jq -n --arg message "Bump version to ${{ github.ref_name }} [skip ci]" \
+                  jq -n --arg message "Bump version to ${VERSION} [skip ci]" \
                       --arg tree "$TREE_SHA" \
                       --arg parent "$TRUNK_SHA" \
                       '{"message": $message, "tree": $tree, "parents": [$parent]}' > /tmp/commit.json
-                  COMMIT_SHA=$(gh api repos/${{ github.repository }}/git/commits \
+                  COMMIT_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits" \
                       --input /tmp/commit.json \
                       --jq '.sha')
 
-                  gh api repos/${{ github.repository }}/git/refs/heads/trunk \
+                  gh api "repos/${GITHUB_REPOSITORY}/git/refs/heads/trunk" \
                       --method PATCH \
                       --field sha="$COMMIT_SHA"
 
-                  gh api repos/${{ github.repository }}/git/refs/tags/${{ github.ref_name }} \
+                  gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${VERSION}" \
                       --method PATCH \
                       --field sha="$COMMIT_SHA" \
                       --field force=true
 
-            - uses: actions/setup-node@v7
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version-file: '.nvmrc'
-
-            - name: Cache npm downloads
-              uses: actions/cache@v6
-              with:
-                  path: ~/.npm
-                  key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-                  restore-keys: npm-${{ runner.os }}-
+                  # What this job builds ships to WordPress.org, so never restore caches that PR runs can write.
+                  package-manager-cache: false
 
             - name: Install Node dependencies
-              run: npm ci --prefer-offline --no-audit --no-fund
+              run: npm ci --no-audit --no-fund
 
             - run: npm run build
 
             - name: Deploy to WordPress.org
               id: deploy
-              uses: 10up/action-wordpress-plugin-deploy@stable
+              uses: 10up/action-wordpress-plugin-deploy@54bd289b8525fd23a5c365ec369185f2966529c2 # 2.3.0
               with:
                   generate-zip: true
               env:
@@ -138,7 +145,7 @@ jobs:
                   SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
 
             - name: Create GitHub release
-              uses: softprops/action-gh-release@v3
+              uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
               with:
                   body: ${{ steps.changelog.outputs.changelog }}
                   files: ${{ steps.deploy.outputs.zip-path }}

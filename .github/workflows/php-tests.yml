@@ -6,6 +6,9 @@ on:
     pull_request:
         branches: [trunk]
 
+permissions:
+    contents: read
+
 jobs:
     test:
         runs-on: ubuntu-latest
@@ -20,21 +23,23 @@ jobs:
 
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
 
             # The runner image ships MySQL (root/root); starting it beats pulling a service container.
             - name: Start MySQL
               run: sudo systemctl start mysql.service
 
             - name: Setup PHP
-              uses: shivammathur/setup-php@v2
+              uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
               with:
                   php-version: ${{ matrix.php }}
                   extensions: dom, curl, libxml, mbstring, mysqli, zip
                   coverage: none
 
             - name: Cache Composer dependencies
-              uses: actions/cache@v6
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               id: composer-cache
               with:
                   path: vendor
@@ -46,7 +51,7 @@ jobs:
 
             # The plugin requires build/*.asset.php on init, so tests need built assets.
             - name: Cache built assets
-              uses: actions/cache@v6
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               id: build-cache
               with:
                   path: build
@@ -54,13 +59,13 @@ jobs:
 
             - name: Setup Node.js
               if: steps.build-cache.outputs.cache-hit != 'true'
-              uses: actions/setup-node@v7
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
                   node-version-file: '.nvmrc'
 
             - name: Cache npm downloads
               if: steps.build-cache.outputs.cache-hit != 'true'
-              uses: actions/cache@v6
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ~/.npm
                   key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -83,7 +88,7 @@ jobs:
                   echo "version=$version" >> "$GITHUB_OUTPUT"
 
             - name: Restore WordPress and test library
-              uses: actions/cache/restore@v6
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               id: wp-cache
               with:
                   path: |
@@ -99,7 +104,7 @@ jobs:
             # Saved before the tests run, so test uploads don't end up in the cache.
             - name: Save WordPress and test library
               if: steps.wp-cache.outputs.cache-hit != 'true'
-              uses: actions/cache/save@v6
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: |
                       ${{ env.WP_CORE_DIR }}
