@@ -61,6 +61,13 @@ To run a specific test file:
 npm test -- --filter Test_Uploads_Unleashed_TUS_Controller
 ```
 
+CI skips wp-env and runs PHPUnit directly against a MySQL server. To do the same locally, install WordPress and the test library once (defaults to `$TMPDIR/wordpress` and `$TMPDIR/wordpress-tests-lib`), then run PHPUnit:
+
+```bash
+bin/install-wp-tests.sh wordpress_test <db-user> <db-pass> [db-host] [wp-version]
+WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib" vendor/bin/phpunit
+```
+
 ### JavaScript Tests
 
 Vitest tests run locally:
