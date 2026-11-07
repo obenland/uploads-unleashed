@@ -4,7 +4,7 @@
  *
  * Removes all plugin data on deletion:
  * - Chunk files and storage directory from uploads.
- * - Upload session transients from the options table.
+ * - Upload session transients, from the options table or a persistent object cache.
  * - Scheduled cleanup cron events.
  *
  * On multisite, iterates all sites in the network.
@@ -34,15 +34,15 @@ if ( is_multisite() ) {
 		switch_to_blog( $site_id );
 
 		try {
-			Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
 			Uploads_Unleashed_TUS_Upload_Session::delete_all();
+			Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
 			wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
 		} finally {
 			restore_current_blog();
 		}
 	}
 } else {
-	Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
 	Uploads_Unleashed_TUS_Upload_Session::delete_all();
+	Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
 	wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
 }

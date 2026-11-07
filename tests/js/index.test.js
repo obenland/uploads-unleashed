@@ -38,11 +38,37 @@ vi.mock( 'tus-js-client', () => {
 	};
 } );
 
+/**
+ * Spies that make localStorage throw, restored after each test.
+ */
+const storageBlockers = [];
+
+/**
+ * Makes every localStorage call throw, like storage blocked by the browser.
+ */
+function blockStorage() {
+	storageBlockers.push(
+		...[ 'getItem', 'setItem', 'removeItem', 'key' ].map( ( method ) =>
+			vi.spyOn( localStorage, method ).mockImplementation( () => {
+				throw new DOMException( 'Blocked', 'SecurityError' );
+			} )
+		)
+	);
+}
+
+afterEach( () => {
+	storageBlockers.splice( 0 ).forEach( ( spy ) => spy.mockRestore() );
+} );
+
 // Setup window.uploadsUnleashed
 beforeEach( () => {
 	window.uploadsUnleashed = {
 		endpoint: '/wp-json/wp/v2/media',
 		nonce: 'test-nonce',
+		blogId: '1',
+		userId: '7',
+		// Many tests never finish their uploads, so don't let the parallel limit queue later ones.
+		maxConcurrentUploads: Number.MAX_SAFE_INTEGER,
 	};
 	capturedCallbacks = {};
 	vi.clearAllMocks();
@@ -60,7 +86,6 @@ describe( 'upload', () => {
 			file,
 			expect.objectContaining( {
 				endpoint: '/wp-json/wp/v2/media',
-				headers: { 'X-WP-Nonce': 'test-nonce' },
 				metadata: {
 					filename: 'test.txt',
 					filetype: 'text/plain',
@@ -110,17 +135,17 @@ describe( 'upload', () => {
 		);
 	} );
 
-	it( 'sets retry delays', () => {
+	it( 'keeps retrying for minutes with a capped backoff', () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
 		upload( file );
 
-		expect( tus.Upload ).toHaveBeenCalledWith(
-			file,
-			expect.objectContaining( {
-				retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
-			} )
-		);
+		const { retryDelays } = tus.Upload.mock.calls[ 0 ][ 1 ];
+		const total = retryDelays.reduce( ( sum, delay ) => sum + delay, 0 );
+
+		expect( retryDelays[ 0 ] ).toBe( 0 );
+		expect( Math.max( ...retryDelays ) ).toBe( 60000 );
+		expect( total ).toBeGreaterThanOrEqual( 3 * 60 * 1000 );
 	} );
 
 	it( 'sets removeFingerprintOnSuccess to true', () => {
@@ -136,7 +161,7 @@ describe( 'upload', () => {
 		);
 	} );
 
-	it( 'generates fingerprint from file metadata and endpoint', async () => {
+	it( 'generates fingerprint from file metadata, endpoint, blog and user', async () => {
 		const file = new File( [ 'test' ], 'my file.txt', {
 			type: 'text/plain',
 		} );
@@ -151,7 +176,7 @@ describe( 'upload', () => {
 		} );
 
 		expect( result ).toBe(
-			'tus-br|my%20file.txt|2048|99999|/wp-json/wp/v2/media'
+			'tus-br|my%20file.txt|2048|99999|/wp-json/wp/v2/media|1|7'
 		);
 	} );
 
@@ -173,17 +198,21 @@ describe( 'upload', () => {
 		);
 	} );
 
-	it( 'uses default endpoint when window.uploadsUnleashed is not set', () => {
+	it( 'uses default endpoint when window.uploadsUnleashed is not set', async () => {
 		window.uploadsUnleashed = undefined;
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		upload( file );
+		// A fresh module, so the unfinished uploads of earlier tests don't hold every slot.
+		vi.resetModules();
+		const freshTus = await import( 'tus-js-client' );
+		const { upload: freshUpload } = await import( '../../src/tus-client' );
 
-		expect( tus.Upload ).toHaveBeenCalledWith(
+		freshUpload( file );
+
+		expect( freshTus.Upload ).toHaveBeenCalledWith(
 			file,
 			expect.objectContaining( {
 				endpoint: '/wp-json/wp/v2/media',
-				headers: { 'X-WP-Nonce': '' },
 			} )
 		);
 	} );
@@ -578,6 +607,26 @@ describe( 'upload', () => {
 			);
 		} );
 
+		it( 'keeps the TUS error as the cause', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			const detailedError = {
+				message: 'tus: failed to create upload',
+				originalRequest: { getMethod: () => 'POST' },
+				originalResponse: null,
+			};
+
+			capturedCallbacks.onError( detailedError );
+
+			await expect( promise ).rejects.toMatchObject( {
+				cause: detailedError,
+			} );
+		} );
+
 		it( 'handles missing originalResponse body', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
 
@@ -774,6 +823,346 @@ describe( 'upload', () => {
 	} );
 } );
 
+describe( 'connection drops', () => {
+	const setOnline = ( online ) =>
+		Object.defineProperty( window.navigator, 'onLine', {
+			configurable: true,
+			get: () => online,
+		} );
+	const flush = () => new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+	const requestError = ( status ) => ( {
+		originalRequest: {},
+		originalResponse: status ? { getStatus: () => status } : null,
+	} );
+	const request = ( method ) => ( {
+		getMethod: () => method,
+		setHeader: vi.fn(),
+	} );
+	const getOptions = () => {
+		upload( new File( [ 'test' ], 'test.txt' ) );
+		return tus.Upload.mock.calls[ 0 ][ 1 ];
+	};
+
+	afterEach( () => {
+		setOnline( true );
+		tus.Upload.mock.results[ 0 ].value._aborted = false;
+	} );
+
+	it( 'retries a failed request while the browser is offline', () => {
+		setOnline( false );
+
+		const { onShouldRetry } = getOptions();
+
+		expect( onShouldRetry( requestError( 0 ), 0 ) ).toBe( true );
+	} );
+
+	it.each( [ 500, 502, 503, 409, 423 ] )(
+		'retries a %i response',
+		( status ) => {
+			const { onShouldRetry } = getOptions();
+
+			expect( onShouldRetry( requestError( status ), 0 ) ).toBe( true );
+		}
+	);
+
+	it.each( [ 400, 404, 410, 415 ] )(
+		'does not retry a %i response',
+		( status ) => {
+			const { onShouldRetry } = getOptions();
+
+			expect( onShouldRetry( requestError( status ), 0 ) ).toBe( false );
+		}
+	);
+
+	it( 'sends requests right away while online', async () => {
+		const { onBeforeRequest } = getOptions();
+
+		await expect(
+			onBeforeRequest( request( 'PATCH' ) )
+		).resolves.toBeUndefined();
+	} );
+
+	it( 'holds requests until the browser is back online', async () => {
+		setOnline( false );
+		const { onBeforeRequest } = getOptions();
+		const sent = vi.fn();
+
+		onBeforeRequest( request( 'PATCH' ) ).then( sent );
+		await flush();
+		expect( sent ).not.toHaveBeenCalled();
+
+		setOnline( true );
+		window.dispatchEvent( new Event( 'online' ) );
+		await flush();
+		expect( sent ).toHaveBeenCalled();
+	} );
+
+	it( 'drops a held request when the upload was aborted meanwhile', async () => {
+		setOnline( false );
+		const { onBeforeRequest } = getOptions();
+
+		const held = onBeforeRequest( request( 'PATCH' ) );
+		tus.Upload.mock.results[ 0 ].value._aborted = true;
+		setOnline( true );
+		window.dispatchEvent( new Event( 'online' ) );
+
+		await expect( held ).rejects.toThrow( 'Upload aborted' );
+	} );
+
+	it( 'still sends the termination request of an aborted upload', async () => {
+		setOnline( false );
+		const { onBeforeRequest } = getOptions();
+
+		const held = onBeforeRequest( request( 'DELETE' ) );
+		tus.Upload.mock.results[ 0 ].value._aborted = true;
+		setOnline( true );
+		window.dispatchEvent( new Event( 'online' ) );
+
+		await expect( held ).resolves.toBeUndefined();
+	} );
+} );
+
+describe( 'REST nonce', () => {
+	const nonceEndpoint = '/wp-admin/admin-ajax.php?action=rest-nonce';
+	const flush = () => new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+	const request = ( method, nonce = 'test-nonce' ) => {
+		const headers = { 'X-WP-Nonce': nonce };
+		return {
+			getMethod: () => method,
+			getHeader: ( name ) => headers[ name ],
+			setHeader: vi.fn( ( name, value ) => {
+				headers[ name ] = value;
+			} ),
+		};
+	};
+	const response = ( status, body = '' ) => ( {
+		getStatus: () => status,
+		getBody: () => body,
+	} );
+	const invalidNonce = JSON.stringify( {
+		code: 'rest_cookie_invalid_nonce',
+		message: 'Cookie check failed',
+	} );
+	const getOptions = () => {
+		upload( new File( [ 'test' ], 'test.txt' ) );
+		return tus.Upload.mock.calls[ 0 ][ 1 ];
+	};
+	const mockNonceEndpoint = ( nonce, ok = true ) =>
+		vi.fn( async ( url ) => {
+			if ( url === nonceEndpoint ) {
+				return { ok, status: ok ? 200 : 400, text: async () => nonce };
+			}
+			throw new Error( `Unexpected request to ${ url }` );
+		} );
+
+	beforeEach( () => {
+		window.uploadsUnleashed.nonceEndpoint = nonceEndpoint;
+	} );
+
+	afterEach( () => {
+		delete global.fetch;
+		delete window.wp;
+	} );
+
+	it( 'sets the nonce on every request', async () => {
+		const { onBeforeRequest } = getOptions();
+		const req = request( 'PATCH', undefined );
+
+		await onBeforeRequest( req );
+
+		expect( req.setHeader ).toHaveBeenCalledWith(
+			'X-WP-Nonce',
+			'test-nonce'
+		);
+	} );
+
+	it( 'prefers the nonce kept fresh by apiFetch', async () => {
+		window.wp = { apiFetch: { nonceMiddleware: { nonce: 'heartbeat' } } };
+		const { onBeforeRequest } = getOptions();
+		const req = request( 'PATCH', undefined );
+
+		await onBeforeRequest( req );
+
+		expect( req.setHeader ).toHaveBeenCalledWith(
+			'X-WP-Nonce',
+			'heartbeat'
+		);
+	} );
+
+	it( 'refreshes an invalid nonce and retries the request', async () => {
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse, onBeforeRequest, onShouldRetry } =
+			getOptions();
+		const req = request( 'PATCH' );
+
+		const result = onAfterResponse( req, response( 403, invalidNonce ) );
+		await expect( result ).rejects.toThrow();
+		const error = await result.catch( ( causingError ) => causingError );
+
+		expect( global.fetch ).toHaveBeenCalledWith(
+			nonceEndpoint,
+			expect.anything()
+		);
+		expect(
+			onShouldRetry(
+				{
+					originalRequest: req,
+					originalResponse: null,
+					causingError: error,
+				},
+				0
+			)
+		).toBe( true );
+
+		const retry = request( 'PATCH', undefined );
+		await onBeforeRequest( retry );
+		expect( retry.setHeader ).toHaveBeenCalledWith(
+			'X-WP-Nonce',
+			'abcdef1234'
+		);
+	} );
+
+	it( 'updates the apiFetch nonce after a refresh', async () => {
+		window.wp = { apiFetch: { nonceMiddleware: { nonce: 'test-nonce' } } };
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse } = getOptions();
+
+		await onAfterResponse(
+			request( 'PATCH' ),
+			response( 403, invalidNonce )
+		).catch( () => {} );
+
+		expect( window.wp.apiFetch.nonceMiddleware.nonce ).toBe( 'abcdef1234' );
+	} );
+
+	it( 'refreshes on a bodiless 403 to a HEAD request', async () => {
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse( request( 'HEAD' ), response( 403 ) )
+		).rejects.toThrow();
+	} );
+
+	it( 'does not retry when the refreshed nonce is the same', async () => {
+		global.fetch = mockNonceEndpoint( 'test-nonce' );
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse( request( 'HEAD' ), response( 403 ) )
+		).resolves.toBeUndefined();
+	} );
+
+	it( 'does not retry when the refresh fails, e.g. after logging out', async () => {
+		global.fetch = mockNonceEndpoint( '0', false );
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse( request( 'PATCH' ), response( 403, invalidNonce ) )
+		).resolves.toBeUndefined();
+	} );
+
+	it( 'leaves other 403 responses alone', async () => {
+		global.fetch = vi.fn();
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse(
+				request( 'PATCH' ),
+				response(
+					403,
+					JSON.stringify( { code: 'rest_cannot_view_upload' } )
+				)
+			)
+		).resolves.toBeUndefined();
+		expect( global.fetch ).not.toHaveBeenCalled();
+	} );
+
+	it( 'shares one refresh between concurrent requests', async () => {
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse } = getOptions();
+
+		await Promise.allSettled( [
+			onAfterResponse(
+				request( 'PATCH' ),
+				response( 403, invalidNonce )
+			),
+			onAfterResponse(
+				request( 'PATCH' ),
+				response( 403, invalidNonce )
+			),
+		] );
+
+		expect( global.fetch ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'discards a pending upload with a refreshed nonce', async () => {
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		global.fetch = vi.fn( async ( url, options = {} ) => {
+			if ( url === nonceEndpoint ) {
+				return {
+					ok: true,
+					status: 200,
+					text: async () => 'abcdef1234',
+				};
+			}
+			return 'abcdef1234' === options.headers[ 'X-WP-Nonce' ]
+				? { ok: true, status: 204 }
+				: { ok: false, status: 403, text: async () => invalidNonce };
+		} );
+
+		await discardPendingUpload( { key: 'test-key', uploadUrl } );
+
+		expect( global.fetch ).toHaveBeenLastCalledWith( uploadUrl, {
+			method: 'DELETE',
+			headers: { 'X-WP-Nonce': 'abcdef1234' },
+		} );
+	} );
+
+	it( 'forgets a deleted session even when the nonce went stale', async () => {
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		const storageKey = 'tus::tus-br|test.txt::9999999999999::1';
+		localStorage.clear();
+		localStorage.setItem( storageKey, '{}' );
+		global.fetch = vi.fn( async ( url, options = {} ) => {
+			if ( url === nonceEndpoint ) {
+				return {
+					ok: true,
+					status: 200,
+					text: async () => 'abcdef1234',
+				};
+			}
+			return {
+				status:
+					'abcdef1234' === options.headers[ 'X-WP-Nonce' ]
+						? 404
+						: 403,
+			};
+		} );
+
+		const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+		await flush();
+		const mockUpload = tus.Upload.mock.results[ 0 ].value;
+		mockUpload.url = uploadUrl;
+		mockUpload.findPreviousUploads.mockResolvedValueOnce( [
+			{ uploadUrl, urlStorageKey: storageKey },
+		] );
+
+		capturedCallbacks.onError( {
+			message: 'TUS error',
+			originalResponse: { getBody: () => '' },
+		} );
+		await expect( promise ).rejects.toThrow();
+		await flush();
+		await flush();
+
+		expect( localStorage.getItem( storageKey ) ).toBeNull();
+		mockUpload.url = null;
+		mockUpload.findPreviousUploads.mockReset();
+		mockUpload.findPreviousUploads.mockResolvedValue( [] );
+	} );
+} );
+
 describe( 'abort', () => {
 	it( 'calls abort with cleanup flag', async () => {
 		const mockTusUpload = {
@@ -853,7 +1242,7 @@ describe( 'getPendingUploads', () => {
 	it( 'returns entries matching current endpoint', () => {
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
-		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }|1|7`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
 
 		localStorage.setItem(
@@ -871,7 +1260,7 @@ describe( 'getPendingUploads', () => {
 
 	it( 'filters out entries for different endpoints', () => {
 		const futureExpiry = Date.now() + 86400000;
-		const fp = `tus-br|test.txt|1024|12345|/other-endpoint`;
+		const fp = `tus-br|test.txt|1024|12345|/other-endpoint|1|7`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
 
 		localStorage.setItem(
@@ -885,7 +1274,7 @@ describe( 'getPendingUploads', () => {
 	it( 'cleans up expired entries', () => {
 		const pastExpiry = Date.now() - 1000;
 		const endpoint = '/wp-json/wp/v2/media';
-		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }|1|7`;
 		const key = `tus::${ fp }::${ pastExpiry }::abc`;
 
 		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
@@ -909,7 +1298,7 @@ describe( 'getPendingUploads', () => {
 	it( 'cleans up entries with invalid JSON', () => {
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
-		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }|1|7`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
 
 		localStorage.setItem( key, 'not valid json{' );
@@ -922,7 +1311,7 @@ describe( 'getPendingUploads', () => {
 	it( 'cleans up entries with wrong fingerprint part count', () => {
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
-		// Fingerprint with only 3 parts instead of 5.
+		// Fingerprint with only 3 parts instead of 7.
 		const fp = `tus-br|test.txt|${ endpoint }`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
 
@@ -936,7 +1325,7 @@ describe( 'getPendingUploads', () => {
 	it( 'returns bytesUploaded from progress storage', () => {
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
-		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }|1|7`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
 		const uploadUrl = '/wp-json/wp/v2/media/abc';
 
@@ -951,7 +1340,7 @@ describe( 'getPendingUploads', () => {
 	it( 'returns 0 when no progress entry exists', () => {
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
-		const fp = `tus-br|test.txt|1024|12345|${ endpoint }`;
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }|1|7`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
 
 		localStorage.setItem(
@@ -967,13 +1356,72 @@ describe( 'getPendingUploads', () => {
 	it( 'URL-decodes filenames', () => {
 		const futureExpiry = Date.now() + 86400000;
 		const endpoint = '/wp-json/wp/v2/media';
-		const fp = `tus-br|my%20file%20(1).txt|1024|12345|${ endpoint }`;
+		const fp = `tus-br|my%20file%20(1).txt|1024|12345|${ endpoint }|1|7`;
 		const key = `tus::${ fp }::${ futureExpiry }::abc`;
 
 		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
 
 		const result = getPendingUploads();
 		expect( result[ 0 ].filename ).toBe( 'my file (1).txt' );
+	} );
+
+	it( 'returns the last modified time of the file', () => {
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }|1|7`;
+		localStorage.setItem(
+			`tus::${ fp }::${ futureExpiry }::abc`,
+			JSON.stringify( { uploadUrl: '/test' } )
+		);
+
+		expect( getPendingUploads()[ 0 ].lastModified ).toBe( 12345 );
+	} );
+
+	it.each( [
+		[ 'another user', '1|8' ],
+		[ 'another site', '2|7' ],
+	] )( 'hides and keeps uploads of %s', ( label, owner ) => {
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const key = `tus::tus-br|secret.txt|1024|12345|${ endpoint }|${ owner }::${ futureExpiry }::abc`;
+		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+
+		expect( getPendingUploads() ).toEqual( [] );
+		expect( localStorage.getItem( key ) ).not.toBeNull();
+	} );
+
+	it( 'cleans up entries from before fingerprints carried the user', () => {
+		const futureExpiry = Date.now() + 86400000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const key = `tus::tus-br|test.txt|1024|12345|${ endpoint }::${ futureExpiry }::abc`;
+		localStorage.setItem( key, JSON.stringify( { uploadUrl: '/test' } ) );
+
+		expect( getPendingUploads() ).toEqual( [] );
+		expect( localStorage.getItem( key ) ).toBeNull();
+	} );
+
+	it( 'removes the progress of expired entries', () => {
+		const pastExpiry = Date.now() - 1000;
+		const endpoint = '/wp-json/wp/v2/media';
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		const fp = `tus-br|test.txt|1024|12345|${ endpoint }|1|7`;
+		localStorage.setItem(
+			`tus::${ fp }::${ pastExpiry }::abc`,
+			JSON.stringify( { uploadUrl } )
+		);
+		localStorage.setItem( `tus-progress::${ uploadUrl }`, '512' );
+
+		getPendingUploads();
+
+		expect(
+			localStorage.getItem( `tus-progress::${ uploadUrl }` )
+		).toBeNull();
+	} );
+
+	it( 'returns nothing when storage is blocked', () => {
+		blockStorage();
+
+		expect( getPendingUploads() ).toEqual( [] );
 	} );
 
 	it( 'skips non-tus localStorage entries', () => {
@@ -1122,6 +1570,60 @@ describe( 'ExpiringUrlStorage', () => {
 		} );
 	} );
 
+	describe( 'storage failures', () => {
+		const getUrlStorage = () => {
+			upload( new File( [ 'test' ], 'test.txt' ) );
+			return tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+		};
+
+		it( 'continues without resuming when storage is full', async () => {
+			const urlStorage = getUrlStorage();
+			storageBlockers.push(
+				vi.spyOn( localStorage, 'setItem' ).mockImplementation( () => {
+					throw new DOMException( 'Full', 'QuotaExceededError' );
+				} )
+			);
+
+			await expect(
+				urlStorage.addUpload( 'tus-br|test.txt|4|1|/endpoint|1|7', {
+					uploadUrl: '/test',
+				} )
+			).resolves.toBeNull();
+		} );
+
+		it( 'finds no previous uploads when storage is blocked', async () => {
+			const urlStorage = getUrlStorage();
+			blockStorage();
+
+			await expect(
+				urlStorage.findUploadsByFingerprint( 'tus-br|test.txt' )
+			).resolves.toEqual( [] );
+			await expect( urlStorage.findAllUploads() ).resolves.toEqual( [] );
+			await expect(
+				urlStorage.removeUpload( 'tus::key' )
+			).resolves.toBeUndefined();
+		} );
+
+		it( 'finishes an upload when storage is blocked', async () => {
+			blockStorage();
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			const mockUpload = tus.Upload.mock.results[ 0 ].value;
+			mockUpload.url = '/wp-json/wp/v2/media/abc';
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			capturedCallbacks.onProgress( 2, 4 );
+			capturedCallbacks.onSuccess( {
+				lastResponse: {
+					getStatus: () => 200,
+					getBody: () => JSON.stringify( { id: 1 } ),
+				},
+			} );
+
+			await expect( promise ).resolves.toEqual( { id: 1 } );
+			mockUpload.url = null;
+		} );
+	} );
+
 	describe( 'findUploadsByFingerprint', () => {
 		it( 'returns non-expired entries matching fingerprint', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
@@ -1266,6 +1768,43 @@ describe( 'ExpiringUrlStorage', () => {
 	} );
 
 	describe( 'removeUpload', () => {
+		it( 'removes the progress of the entry', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			upload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const uploadUrl = '/wp-json/wp/v2/media/abc';
+			const key = 'tus::tus-br|test.txt::9999999999999::1';
+			localStorage.setItem( key, JSON.stringify( { uploadUrl } ) );
+			localStorage.setItem( `tus-progress::${ uploadUrl }`, '512' );
+
+			await urlStorage.removeUpload( key );
+
+			expect(
+				localStorage.getItem( `tus-progress::${ uploadUrl }` )
+			).toBeNull();
+		} );
+
+		it( 'removes the progress of expired entries it finds', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			upload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const uploadUrl = '/wp-json/wp/v2/media/abc';
+			const fp = 'tus-br|test.txt|100|12345|/endpoint|1|7';
+			localStorage.setItem(
+				`tus::${ fp }::${ Date.now() - 1000 }::1`,
+				JSON.stringify( { uploadUrl } )
+			);
+			localStorage.setItem( `tus-progress::${ uploadUrl }`, '512' );
+
+			await urlStorage.findUploadsByFingerprint( fp );
+
+			expect(
+				localStorage.getItem( `tus-progress::${ uploadUrl }` )
+			).toBeNull();
+		} );
+
 		it( 'removes entry from localStorage', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
 			upload( file );

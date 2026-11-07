@@ -178,10 +178,21 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	/**
 	 * Deletes all upload session transients.
 	 *
+	 * Must run before Uploads_Unleashed_TUS_Chunk_Storage::delete_all(), which
+	 * removes the chunk files that sessions are found through.
+	 *
 	 * @since 1.0.0
+	 * @since 1.2.0 Also deletes sessions kept in a persistent object cache.
 	 */
 	public static function delete_all(): void {
 		global $wpdb;
+
+		// A persistent object cache keeps transients out of the options table, so delete them by ID.
+		foreach ( Uploads_Unleashed_TUS_Chunk_Storage::get_upload_ids() as $upload_id ) {
+			delete_transient( self::TRANSIENT_PREFIX . $upload_id );
+		}
+
+		// Catches sessions in the options table whose chunk file is already gone.
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->query(
