@@ -53,7 +53,7 @@ add_filter( 'uploads_unleashed_max_chunk_size', function( $max_chunk_size, $requ
 
 Override the directory that holds in-progress upload chunks until the upload completes.
 
-The default is `.tus-chunks` in the uploads directory. When the uploads directory is a stream wrapper, such as S3-Uploads (`s3://`) or WordPress VIP (`vip://`), the default is a per-site directory in `get_temp_dir()` instead, because chunks are written with `flock()` and listed with `glob()`, which don't work on stream wrappers.
+The default is `.tus-chunks` in the uploads directory. When the uploads directory is a stream wrapper, such as S3-Uploads (`s3://`) or WordPress VIP (`vip://`), the default is a per-site directory in `get_temp_dir()` instead, because chunks are written with `flock()` and listed with `glob()`, which don't work on stream wrappers. Other users on the server can write to the temp directory, so its name is derived from the site's salts, it's created with `0700` permissions, and uploads fail with `tus_chunk_dir_unsafe` if it's a symlink, belongs to another user, or is accessible to the group or others.
 
 The directory must:
 

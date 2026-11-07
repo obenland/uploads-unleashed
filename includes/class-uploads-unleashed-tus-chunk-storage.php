@@ -29,6 +29,14 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	protected static ?string $base_dir = null;
 
 	/**
+	 * Why the chunk directory can't be used, or null if it can.
+	 *
+	 * @since 1.2.0
+	 * @var ?WP_Error
+	 */
+	protected static ?WP_Error $base_dir_error = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 0.1.0
@@ -61,8 +69,12 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$basedir = wp_upload_dir( null, false )['basedir'];
 
 		if ( wp_is_stream( $basedir ) ) {
-			// One directory per uploads dir, so sites sharing the temp dir don't clean up each other's chunks.
-			$chunk_dir = trailingslashit( get_temp_dir() ) . 'uploads-unleashed-' . md5( $basedir );
+			/*
+			 * One directory per uploads dir, so sites sharing the temp dir don't clean up
+			 * each other's chunks. Keyed with the install's salts, so other users on the
+			 * server can't predict the name and create the directory first.
+			 */
+			$chunk_dir = trailingslashit( get_temp_dir() ) . 'uploads-unleashed-' . wp_hash( $basedir );
 		} else {
 			$chunk_dir = trailingslashit( $basedir ) . '.tus-chunks';
 		}
@@ -89,35 +101,112 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 * Creates the chunk storage directory and its protection files if they don't exist.
 	 *
 	 * @since 0.1.0
-	 * @since 1.2.0 Writes Apache 2.4 rules, and replaces an .htaccess that lacks them.
+	 * @since 1.2.0 Writes Apache 2.4 rules, replaces an .htaccess that lacks them, and
+	 *              refuses a chunk directory in the temp dir that isn't private.
 	 */
 	protected function maybe_create_directory(): void {
-		if ( ! file_exists( self::$base_dir ) ) {
-			wp_mkdir_p( self::$base_dir );
+		self::$base_dir_error = null;
 
-			// Every user on the server can read the temp dir, so keep chunks private to the PHP user.
-			if ( 0 === strpos( self::$base_dir, trailingslashit( get_temp_dir() ) ) ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod -- WP_Filesystem requires credentials, impractical for runtime.
-				chmod( self::$base_dir, 0700 );
+		if ( self::is_in_shared_temp_dir( self::$base_dir ) ) {
+			$dir = untrailingslashit( self::$base_dir );
+
+			/*
+			 * Every user on the server can write to the temp dir. Create the directory
+			 * atomically with private permissions, and if it already exists, make sure
+			 * nobody else planted or can access it.
+			 */
+			if ( ! file_exists( $dir ) && ! is_link( $dir ) ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir, WordPress.PHP.NoSilencedErrors.Discouraged -- wp_mkdir_p() can't create the directory atomically with private permissions. Silenced because another process may have created it first; the check below handles that.
+				@mkdir( $dir, 0700 );
 			}
+
+			if ( ! self::is_private_dir( $dir ) ) {
+				self::$base_dir_error = new WP_Error(
+					'tus_chunk_dir_unsafe',
+					__( 'The upload storage directory is not private to WordPress. Use the uploads_unleashed_chunk_dir filter to choose another directory.', 'uploads-unleashed' ),
+					array( 'status' => 500 )
+				);
+
+				return;
+			}
+		} elseif ( ! file_exists( self::$base_dir ) ) {
+			wp_mkdir_p( self::$base_dir );
 		}
 
 		/*
 		 * Protect the directory from direct access. Older versions wrote only the
 		 * Apache 2.2 rule, which Apache 2.4 rejects without mod_access_compat.
+		 * Never write through a symlink someone else planted.
 		 */
 		$htaccess_file = self::$base_dir . '.htaccess';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local file.
-		if ( ! file_exists( $htaccess_file ) || false === strpos( (string) file_get_contents( $htaccess_file ), 'Require all denied' ) ) {
+		if ( ! is_link( $htaccess_file ) && ( ! file_exists( $htaccess_file ) || false === strpos( (string) file_get_contents( $htaccess_file ), 'Require all denied' ) ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
 			file_put_contents( $htaccess_file, self::HTACCESS_RULES );
 		}
 
 		$index_file = self::$base_dir . 'index.php';
-		if ( ! file_exists( $index_file ) ) {
+		if ( ! is_link( $index_file ) && ! file_exists( $index_file ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
 			file_put_contents( $index_file, "<?php\n// Silence is golden.\n" );
 		}
+	}
+
+	/**
+	 * Whether a path is inside the temp directory, which other users on the server can write to.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $path The path.
+	 * @return bool True if the path is in the temp directory.
+	 */
+	private static function is_in_shared_temp_dir( string $path ): bool {
+		return 0 === strpos( $path, trailingslashit( get_temp_dir() ) );
+	}
+
+	/**
+	 * Whether a directory is a real directory that only the PHP user owns and can access.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $dir The directory, without a trailing slash.
+	 * @return bool True if the directory is private.
+	 */
+	private static function is_private_dir( string $dir ): bool {
+		clearstatcache( true, $dir );
+
+		if ( is_link( $dir ) || ! is_dir( $dir ) ) {
+			return false;
+		}
+
+		if ( function_exists( 'posix_geteuid' ) && fileowner( $dir ) !== posix_geteuid() ) {
+			return false;
+		}
+
+		// Windows doesn't have POSIX permissions.
+		if ( '\\' === DIRECTORY_SEPARATOR ) {
+			return true;
+		}
+
+		// No group or world permissions.
+		return 0 === ( fileperms( $dir ) & 0077 );
+	}
+
+	/**
+	 * Lists the chunk files in the chunk directory.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return string[] Chunk file paths, or an empty array if the directory can't be used.
+	 */
+	private static function list_chunk_files(): array {
+		if ( self::$base_dir_error ) {
+			return array();
+		}
+
+		$files = glob( self::$base_dir . '*.part' );
+
+		return is_array( $files ) ? $files : array();
 	}
 
 	/**
@@ -146,7 +235,16 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 * @return int|WP_Error New offset on success, WP_Error on failure.
 	 */
 	public function append( string $upload_id, string $data, int $offset ) {
+		if ( self::$base_dir_error ) {
+			return self::$base_dir_error;
+		}
+
 		$path = $this->get_path( $upload_id );
+
+		// Never write through a symlink someone else planted.
+		if ( is_link( $path ) ) {
+			return new WP_Error( 'tus_chunk_unsafe_path', __( 'The chunk file is a symbolic link.', 'uploads-unleashed' ), array( 'status' => 500 ) );
+		}
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem lacks append mode and flock support needed for TUS concurrency.
 		$handle = fopen( $path, 'ab' );
@@ -257,7 +355,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 * @return int Total pending upload size in bytes.
 	 */
 	public function get_total_pending_size(): int {
-		$files = glob( self::$base_dir . '*.part' );
+		$files = self::list_chunk_files();
 
 		if ( ! $files ) {
 			return 0;
@@ -293,7 +391,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$storage = new self();
 		$session = new Uploads_Unleashed_TUS_Upload_Session();
 
-		$files = glob( self::$base_dir . '*.part' );
+		$files = self::list_chunk_files();
 
 		if ( ! $files ) {
 			return array();
@@ -325,7 +423,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$storage = new self();
 		$session = new Uploads_Unleashed_TUS_Upload_Session();
 
-		$files = glob( self::$base_dir . '*.part' );
+		$files = self::list_chunk_files();
 
 		if ( ! $files ) {
 			return;
@@ -358,6 +456,11 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			return;
 		}
 
+		// Leave a temp directory alone that someone else planted or can access.
+		if ( self::is_in_shared_temp_dir( $chunks_dir ) && ! self::is_private_dir( untrailingslashit( $chunks_dir ) ) ) {
+			return;
+		}
+
 		// Delete all files, including hidden files like .htaccess.
 		$patterns = array( $chunks_dir . '*', $chunks_dir . '.*' );
 		foreach ( $patterns as $pattern ) {
@@ -367,7 +470,8 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			}
 
 			foreach ( $files as $file ) {
-				if ( is_file( $file ) ) {
+				// Symlinks are deleted, not followed.
+				if ( is_file( $file ) || is_link( $file ) ) {
 					wp_delete_file( $file );
 				}
 			}
@@ -377,6 +481,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		@rmdir( $chunks_dir );
 
 		// Reset cached path so the class does not reference a removed directory.
-		self::$base_dir = null;
+		self::$base_dir       = null;
+		self::$base_dir_error = null;
 	}
 }

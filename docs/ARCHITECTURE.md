@@ -156,7 +156,7 @@ Manages upload session metadata using WordPress transients:
 
 Manages physical chunk files on disk:
 
-- Base directory: `wp-content/uploads/.tus-chunks/`. When the uploads directory is a stream wrapper (S3-Uploads `s3://`, VIP `vip://`), which can't lock or list files, chunks go to a per-site directory in `get_temp_dir()` instead, and finalization copies the finished file into the uploads directory. The `uploads_unleashed_chunk_dir` filter overrides both.
+- Base directory: `wp-content/uploads/.tus-chunks/`. When the uploads directory is a stream wrapper (S3-Uploads `s3://`, VIP `vip://`), which can't lock or list files, chunks go to a private (`0700`, owner-checked, not a symlink) per-site directory in `get_temp_dir()` with an unguessable name instead, and finalization copies the finished file into the uploads directory. The `uploads_unleashed_chunk_dir` filter overrides both.
 - Protected with `.htaccess` (Apache 2.2 and 2.4 rules) and `index.php`; nginx ignores `.htaccess`, so on nginx prefer a chunk directory outside the web root
 - File-level locking for concurrent access
 - Cleanup via WP-Cron (daily)
