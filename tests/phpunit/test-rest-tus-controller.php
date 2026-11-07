@@ -1026,14 +1026,80 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
-	 * Test metadata parsing handles empty header.
+	 * Test creation without Upload-Metadata is rejected, because there is no filename.
 	 */
-	public function test_create_handles_empty_metadata() {
+	public function test_create_rejects_missing_metadata() {
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		// No Upload-Metadata header.
 
 		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_upload_filename_required', $response, 400 );
+	}
+
+	/**
+	 * Test creation with metadata but no filename is rejected.
+	 */
+	public function test_create_rejects_missing_filename() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filetype ' . base64_encode( 'text/plain' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_upload_filename_required', $response, 400 );
+	}
+
+	/**
+	 * Test creation rejects a file type that isn't allowed, before any bytes are uploaded.
+	 */
+	public function test_create_rejects_disallowed_file_type() {
+		$size_callback = function () {
+			return 2 * GB_IN_BYTES;
+		};
+		add_filter( 'uploads_unleashed_max_upload_size', $size_callback );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', (string) GB_IN_BYTES );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'setup.exe' ) . ',filetype ' . base64_encode( 'application/x-msdownload' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'uploads_unleashed_max_upload_size', $size_callback );
+
+		$this->assertErrorResponse( 'rest_invalid_file_type', $response, 400 );
+	}
+
+	/**
+	 * Test creation rejects a filename without an extension.
+	 */
+	public function test_create_rejects_filename_without_extension() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'README' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_file_type', $response, 400 );
+	}
+
+	/**
+	 * Test creation allows any file type for users with the unfiltered_upload capability.
+	 */
+	public function test_create_allows_disallowed_file_type_with_unfiltered_upload() {
+		$cap_callback = function ( $caps, $cap ) {
+			return 'unfiltered_upload' === $cap ? array( 'upload_files' ) : $caps;
+		};
+		add_filter( 'map_meta_cap', $cap_callback, 10, 2 );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'setup.exe' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'map_meta_cap', $cap_callback, 10 );
 
 		$this->assertSame( 201, $response->get_status() );
 	}
