@@ -42,25 +42,6 @@ function isMediaUpload( options ) {
 }
 
 /**
- * Checks if an upload asks for processing the TUS endpoint can't honor yet.
- *
- * With client-side media processing, the editor uploads images it resizes
- * itself with `generate_sub_sizes=false`, and some derivatives with
- * `convert_format=false`. The TUS endpoint ignores both, so such uploads go
- * to core until it supports them.
- *
- * @since 1.2.0
- *
- * @param {FormData} formData The upload's form data.
- * @return {boolean} True if the upload needs core's upload handling.
- */
-function needsCoreProcessingFlags( formData ) {
-	return [ 'generate_sub_sizes', 'convert_format' ].some(
-		( field ) => formData.get( field ) === 'false'
-	);
-}
-
-/**
  * Extracts the File from FormData.
  *
  * @param {FormData} formData The form data containing the file.
@@ -119,7 +100,7 @@ const tusMiddleware = async ( options, next ) => {
 	}
 
 	const file = extractFile( options.body );
-	if ( ! file || needsCoreProcessingFlags( options.body ) ) {
+	if ( ! file ) {
 		return next( options );
 	}
 
