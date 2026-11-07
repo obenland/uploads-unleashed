@@ -49,6 +49,22 @@ class Test_Uploads_Unleashed_TUS_Upload_Context extends WP_Test_REST_TestCase {
 	}
 
 	/**
+	 * Skips the test when core's attachments endpoint lacks a creation flag.
+	 *
+	 * Core honors generate_sub_sizes and convert_format since WordPress 7.1,
+	 * and TUS uploads get them through core.
+	 *
+	 * @param string $flag The flag.
+	 */
+	protected function require_core_flag( string $flag ): void {
+		$args = ( new WP_REST_Attachments_Controller( 'attachment' ) )->get_endpoint_args_for_item_schema( WP_REST_Server::CREATABLE );
+
+		if ( ! isset( $args[ $flag ] ) ) {
+			$this->markTestSkipped( "This WordPress version doesn't support the $flag parameter." );
+		}
+	}
+
+	/**
 	 * Logs in the administrator.
 	 */
 	public function set_up(): void {
@@ -220,6 +236,8 @@ class Test_Uploads_Unleashed_TUS_Upload_Context extends WP_Test_REST_TestCase {
 	 * Tests that generate_sub_sizes false skips sub-sizes and returns what the client needs to sideload them.
 	 */
 	public function test_generate_sub_sizes_false_skips_sub_sizes(): void {
+		$this->require_core_flag( 'generate_sub_sizes' );
+
 		$response = $this->upload_image( 'canola.jpg', array( 'generate_sub_sizes' => 'false' ) );
 		$data     = $response->get_data();
 
@@ -233,6 +251,8 @@ class Test_Uploads_Unleashed_TUS_Upload_Context extends WP_Test_REST_TestCase {
 	 * Tests that convert_format false keeps the original format for sub-sizes.
 	 */
 	public function test_convert_format_false_keeps_original_format(): void {
+		$this->require_core_flag( 'convert_format' );
+
 		if ( ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) {
 			$this->markTestSkipped( 'The image editor does not support WebP.' );
 		}
