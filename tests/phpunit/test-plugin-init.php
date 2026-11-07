@@ -218,6 +218,37 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that network deactivation clears cron on every site.
+	 *
+	 * @group ms-required
+	 */
+	public function test_network_deactivation_clears_cron_on_all_sites() {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Multisite only.' );
+		}
+
+		$site_ids = array( get_current_blog_id(), self::factory()->blog->create(), self::factory()->blog->create() );
+
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			if ( ! wp_next_scheduled( 'uploads_unleashed_cleanup' ) ) {
+				wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'uploads_unleashed_cleanup' );
+			}
+			restore_current_blog();
+		}
+
+		uploads_unleashed_deactivate( true );
+
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			$next = wp_next_scheduled( 'uploads_unleashed_cleanup' );
+			restore_current_blog();
+
+			$this->assertFalse( $next, "Cleanup is still scheduled on site {$site_id}." );
+		}
+	}
+
+	/**
 	 * Test that deactivation handles no scheduled event gracefully.
 	 */
 	public function test_deactivation_handles_no_scheduled_event() {
@@ -357,6 +388,21 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that the client gets the blog and user to scope stored uploads to.
+	 */
+	public function test_register_scripts_localizes_blog_and_user() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		wp_deregister_script( 'uploads-unleashed' );
+		uploads_unleashed_register_scripts();
+		$data = wp_scripts()->get_data( 'uploads-unleashed', 'data' );
+
+		$this->assertStringContainsString( '"blogId":"' . get_current_blog_id() . '"', $data );
+		$this->assertStringContainsString( '"userId":"' . $user_id . '"', $data );
+	}
+
+	/**
 	 * Test that style is registered after register_scripts runs.
 	 */
 	public function test_register_scripts_registers_style() {
@@ -390,6 +436,25 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 			'plupload'     => array( 'uploads-unleashed-plupload' ),
 			'block editor' => array( 'uploads-unleashed-block-editor' ),
 		);
+	}
+
+	/**
+	 * Test that the pending uploads stylesheet is swapped for its RTL build in RTL locales.
+	 */
+	public function test_pending_ui_style_uses_rtl_build_in_rtl_locales() {
+		$styles                 = wp_styles();
+		$original_direction     = $styles->text_direction;
+		$styles->text_direction = 'rtl';
+
+		ob_start();
+		$styles->do_item( 'uploads-unleashed-ui' );
+		$output = ob_get_clean();
+
+		$styles->text_direction = $original_direction;
+
+		$this->assertStringContainsString( 'build/resume-ui-rtl.css', $output );
+		$this->assertStringNotContainsString( 'build/resume-ui.css', $output );
+		$this->assertFileExists( UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/resume-ui-rtl.css' );
 	}
 
 	/**
