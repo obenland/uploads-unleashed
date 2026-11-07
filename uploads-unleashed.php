@@ -348,7 +348,7 @@ function uploads_unleashed_filter_upload_size_limit( int $size ): int {
 		 */
 		$max_file_size = KB_IN_BYTES * (int) get_site_option( 'fileupload_maxk', 1500 );
 
-		return max( 0, min( $max_file_size, get_upload_space_available() - $pending_size ) );
+		return max( 0, min( $max_file_size, (int) get_upload_space_available() - $pending_size ) );
 	}
 
 	// On single-site, use available disk space.
