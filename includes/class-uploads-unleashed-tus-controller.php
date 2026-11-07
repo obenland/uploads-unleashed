@@ -34,6 +34,14 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	const TUS_EXTENSIONS = 'creation,expiration,termination,checksum';
 
 	/**
+	 * Supported checksum algorithms, in order of preference.
+	 *
+	 * @since 1.2.0
+	 * @var string[]
+	 */
+	const CHECKSUM_ALGORITHMS = array( 'sha256', 'sha1', 'md5' );
+
+	/**
 	 * Default maximum chunk size in bytes (10 MB).
 	 *
 	 * @since 1.0.0
@@ -138,6 +146,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$response->header( 'Tus-Version', self::TUS_VERSION );
 		$response->header( 'Tus-Extension', self::TUS_EXTENSIONS );
 		$response->header( 'Tus-Max-Size', $max_size );
+		$response->header( 'Tus-Checksum-Algorithm', implode( ',', self::CHECKSUM_ALGORITHMS ) );
 
 		return $response;
 	}
@@ -884,7 +893,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$expected_encoded = $parts[1];
 
 		// Validate algorithm is supported.
-		$supported_algorithms = array( 'sha256', 'sha1', 'md5' );
+		$supported_algorithms = self::CHECKSUM_ALGORITHMS;
 		if ( ! in_array( $algorithm, $supported_algorithms, true ) ) {
 			return new WP_Error(
 				'rest_unsupported_checksum_algorithm',
@@ -916,7 +925,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error(
 				'rest_checksum_mismatch',
 				__( 'Checksum mismatch. The uploaded data does not match the provided checksum.', 'uploads-unleashed' ),
-				array( 'status' => 460 ) // TUS-specific status code for checksum mismatch.
+				array( 'status' => 460 ) // TUS-specific status code for checksum mismatch, sent by uploads_unleashed_send_checksum_mismatch_status().
 			);
 		}
 

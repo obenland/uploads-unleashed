@@ -118,7 +118,7 @@ The main REST API controller implementing TUS 1.0.0:
 **TUS Features Supported:**
 - Creation
 - Termination
-- Checksum verification (SHA256, SHA1, MD5)
+- Checksum verification (SHA256, SHA1, MD5, advertised in `Tus-Checksum-Algorithm`; a mismatch returns `460 Checksum Mismatch`)
 - Expiration (24 hours)
 
 **Security:**

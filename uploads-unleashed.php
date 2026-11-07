@@ -225,6 +225,29 @@ function uploads_unleashed_add_options_headers( WP_REST_Response $response, WP_R
 add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_options_headers', 10, 3 );
 
 /**
+ * Sends the TUS 460 Checksum Mismatch status line.
+ *
+ * WP_REST_Server sets the status through status_header(), which silently
+ * drops codes WordPress has no description for, so a checksum mismatch
+ * went out as 200 OK.
+ *
+ * @since 1.2.0
+ *
+ * @param bool             $served  Whether the request has already been served.
+ * @param WP_HTTP_Response $result  Result to send to the client.
+ * @param WP_REST_Request  $request Request used to generate the response.
+ * @return bool The unchanged `$served` value.
+ */
+function uploads_unleashed_send_checksum_mismatch_status( $served, WP_HTTP_Response $result, WP_REST_Request $request ) {
+	if ( 460 === $result->get_status() && 0 === strpos( $request->get_route(), '/wp/v2/media/' ) && ! headers_sent() ) {
+		header( sprintf( '%s 460 Checksum Mismatch', wp_get_server_protocol() ), true, 460 );
+	}
+
+	return $served;
+}
+add_filter( 'rest_pre_serve_request', 'uploads_unleashed_send_checksum_mismatch_status', 10, 3 );
+
+/**
  * Adds TUS headers to the CORS allowed headers list.
  *
  * These are request headers that the server accepts from cross-origin clients.
@@ -271,6 +294,7 @@ function uploads_unleashed_cors_exposed_headers( array $headers ): array {
 			'Tus-Version',
 			'Tus-Extension',
 			'Tus-Max-Size',
+			'Tus-Checksum-Algorithm',
 			'Location',
 		)
 	);
