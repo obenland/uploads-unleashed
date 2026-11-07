@@ -619,6 +619,23 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test the client gets the server's upload expiration, so both expire stored uploads alike.
+	 */
+	public function test_register_scripts_localizes_upload_expiration() {
+		$filter_callback = function () {
+			return HOUR_IN_SECONDS;
+		};
+		add_filter( 'uploads_unleashed_upload_expiration', $filter_callback );
+
+		wp_deregister_script( 'uploads-unleashed' );
+		uploads_unleashed_register_scripts();
+
+		remove_filter( 'uploads_unleashed_upload_expiration', $filter_callback );
+
+		$this->assertStringContainsString( '"uploadExpiration":"3600"', wp_scripts()->get_data( 'uploads-unleashed', 'data' ) );
+	}
+
+	/**
 	 * Test upload_size_limit filter returns original size when disk_free_space fails.
 	 *
 	 * When disk_free_space() returns false (disabled function or inaccessible path),

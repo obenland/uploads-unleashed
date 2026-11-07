@@ -86,6 +86,7 @@ function uploads_unleashed_register_scripts() {
 			'blogId'               => get_current_blog_id(),
 			'userId'               => get_current_user_id(),
 			'maxConcurrentUploads' => $max_concurrent_uploads,
+			'uploadExpiration'     => Uploads_Unleashed_TUS_Upload_Session::get_expiration(),
 		)
 	);
 
@@ -248,6 +249,33 @@ function uploads_unleashed_add_options_headers( WP_REST_Response $response, WP_R
 	return $controller->add_options_headers( $response, $request );
 }
 add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_options_headers', 10, 3 );
+
+/**
+ * Adds the Tus-Resumable header to every TUS response, including errors.
+ *
+ * The TUS protocol requires it on every response except OPTIONS. Successful
+ * responses already set it; this covers errors, such as those from
+ * permission checks or the REST server itself.
+ *
+ * @since 1.2.0
+ *
+ * @param WP_HTTP_Response $response The response object.
+ * @param WP_REST_Server   $server   The REST server instance.
+ * @param WP_REST_Request  $request  The request object.
+ * @return WP_HTTP_Response The response, with Tus-Resumable on TUS requests.
+ */
+function uploads_unleashed_add_tus_resumable_header( WP_HTTP_Response $response, WP_REST_Server $server, WP_REST_Request $request ): WP_HTTP_Response {
+	$route      = $request->get_route();
+	$is_upload  = (bool) preg_match( '#^/wp/v2/media/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$#', $route );
+	$is_tus_new = '/wp/v2/media' === $route && 'POST' === $request->get_method() && null !== $request->get_header( 'upload_length' );
+
+	if ( ( $is_upload || $is_tus_new ) && ! isset( $response->get_headers()['Tus-Resumable'] ) ) {
+		$response->header( 'Tus-Resumable', Uploads_Unleashed_TUS_Controller::TUS_VERSION );
+	}
+
+	return $response;
+}
+add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_tus_resumable_header', 10, 3 );
 
 /**
  * Adds TUS headers to the CORS allowed headers list.
@@ -426,7 +454,7 @@ add_action( 'uploads_unleashed_cleanup', 'uploads_unleashed_cleanup' );
  * @return int Adjusted upload size limit in bytes.
  */
 function uploads_unleashed_filter_upload_size_limit( int $size ): int {
-	$pending_size = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_total_pending_size();
+	$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 
 	if ( is_multisite() ) {
 		/*
@@ -440,7 +468,12 @@ function uploads_unleashed_filter_upload_size_limit( int $size ): int {
 			return $max_file_size;
 		}
 
-		return max( 0, min( $max_file_size, (int) get_upload_space_available() - $pending_size ) );
+		/*
+		 * Chunk files don't count toward space used (see
+		 * Uploads_Unleashed_TUS_Chunk_Storage::exclude_from_dirsize()), so
+		 * pending uploads reserve their full length.
+		 */
+		return max( 0, min( $max_file_size, (int) get_upload_space_available() - $storage->get_total_pending_size() ) );
 	}
 
 	// On single-site, use available disk space.
@@ -453,9 +486,14 @@ function uploads_unleashed_filter_upload_size_limit( int $size ): int {
 		return $size;
 	}
 
-	return max( 0, (int) $available - $pending_size );
+	// Free disk space already reflects bytes written to chunk files.
+	return max( 0, (int) $available - $storage->get_total_remaining_size() );
 }
 add_filter( 'upload_size_limit', 'uploads_unleashed_filter_upload_size_limit', 20 );
+
+// Keep chunk files out of the multisite space used.
+add_filter( 'pre_recurse_dirsize', array( 'Uploads_Unleashed_TUS_Chunk_Storage', 'exclude_from_dirsize' ), 10, 2 );
+add_filter( 'transient_dirsize_cache', array( 'Uploads_Unleashed_TUS_Chunk_Storage', 'drop_stale_dirsize' ) );
 
 /**
  * Clears the scheduled cleanup event on plugin deactivation.

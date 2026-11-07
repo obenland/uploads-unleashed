@@ -11,10 +11,10 @@ import { addFilter } from '@wordpress/hooks';
 import { __ } from '@wordpress/i18n';
 
 /**
- * Upload expiration time in milliseconds (24 hours).
- * Matches DAY_IN_SECONDS on the server side.
+ * Default upload expiration in seconds (24 hours), used if the server
+ * doesn't send one. Matches Uploads_Unleashed_TUS_Upload_Session::EXPIRATION.
  */
-const UPLOAD_EXPIRATION_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_UPLOAD_EXPIRATION = 24 * 60 * 60;
 
 /**
  * Get the TUS endpoint URL.
@@ -23,6 +23,19 @@ const UPLOAD_EXPIRATION_MS = 24 * 60 * 60 * 1000;
  */
 function getEndpoint() {
 	return window.uploadsUnleashed?.endpoint || '/wp-json/wp/v2/media';
+}
+
+/**
+ * Get the upload expiration in milliseconds.
+ *
+ * Localized from the server's `uploads_unleashed_upload_expiration` filter.
+ *
+ * @return {number} Upload expiration in milliseconds.
+ */
+function getUploadExpirationMs() {
+	const seconds = Number( window.uploadsUnleashed?.uploadExpiration );
+
+	return ( seconds > 0 ? seconds : DEFAULT_UPLOAD_EXPIRATION ) * 1000;
 }
 
 /**
@@ -306,7 +319,7 @@ class ExpiringUrlStorage {
 	 */
 	addUpload( uploadFingerprint, previousUpload ) {
 		const id = Math.round( Math.random() * 1e12 );
-		const expiresAt = Date.now() + UPLOAD_EXPIRATION_MS;
+		const expiresAt = Date.now() + getUploadExpirationMs();
 		const key = `tus::${ uploadFingerprint }::${ expiresAt }::${ id }`;
 
 		// Without storage, tus uploads the file without remembering it for resuming.

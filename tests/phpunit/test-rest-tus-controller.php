@@ -316,6 +316,66 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Test PATCH responses carry the (moved) expiration in Upload-Expires.
+	 */
+	public function test_patch_returns_upload_expires() {
+		$upload_id = $this->create_upload_session();
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( str_repeat( 'a', 512 ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$upload  = ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id );
+		$headers = $response->get_headers();
+
+		$this->assertSame( 204, $response->get_status() );
+		$this->assertArrayHasKey( 'Upload-Expires', $headers );
+		$this->assertSame( gmdate( 'D, d M Y H:i:s', $upload['expires_at'] ) . ' GMT', $headers['Upload-Expires'] );
+	}
+
+	/**
+	 * Test error responses on the TUS routes carry Tus-Resumable.
+	 */
+	public function test_error_responses_include_tus_resumable() {
+		$requests = array(
+			new WP_REST_Request( 'PATCH', '/wp/v2/media/' . wp_generate_uuid4() ),
+			new WP_REST_Request( 'GET', '/wp/v2/media/' . wp_generate_uuid4() ),
+			new WP_REST_Request( 'POST', '/wp/v2/media' ),
+		);
+		$requests[2]->set_header( 'Upload-Length', 'invalid' );
+
+		foreach ( $requests as $request ) {
+			$response = rest_get_server()->dispatch( $request );
+
+			// The rest_post_dispatch filter isn't applied in tests, so apply it manually.
+			$response = uploads_unleashed_add_tus_resumable_header( $response, rest_get_server(), $request );
+
+			$this->assertGreaterThanOrEqual( 400, $response->get_status() );
+			$this->assertSame( '1.0.0', $response->get_headers()['Tus-Resumable'] ?? null, $request->get_method() . ' ' . $request->get_route() );
+		}
+	}
+
+	/**
+	 * Test responses outside the TUS routes are left alone.
+	 */
+	public function test_non_tus_responses_have_no_tus_resumable() {
+		$requests = array(
+			new WP_REST_Request( 'GET', '/wp/v2/media' ),
+			new WP_REST_Request( 'POST', '/wp/v2/media' ),
+			new WP_REST_Request( 'GET', '/wp/v2/posts' ),
+		);
+
+		foreach ( $requests as $request ) {
+			$response = uploads_unleashed_add_tus_resumable_header( new WP_REST_Response( null, 400 ), rest_get_server(), $request );
+
+			$this->assertArrayNotHasKey( 'Tus-Resumable', $response->get_headers(), $request->get_method() . ' ' . $request->get_route() );
+		}
+	}
+
+	/**
 	 * Test user cannot access another user's upload.
 	 */
 	public function test_user_cannot_access_others_upload() {

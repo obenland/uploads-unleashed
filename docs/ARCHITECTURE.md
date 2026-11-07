@@ -121,7 +121,7 @@ The main REST API controller implementing TUS 1.0.0:
 - Creation
 - Termination
 - Checksum verification (SHA256, SHA1, MD5)
-- Expiration (24 hours)
+- Expiration (24 hours after creation or the last chunk, filterable with `uploads_unleashed_upload_expiration`)
 
 **Upload context:** `Upload-Metadata` also carries the params of core's `POST /wp/v2/media` that the block editor and media library send: `post`, `title`, `caption`, `description`, `alt_text`, `generate_sub_sizes` and `convert_format`. Creation requires `edit_post` on `post`, as core does. Finalization creates the attachment with `Uploads_Unleashed_TUS_Attachments_Controller`, a subclass of core's attachments controller that runs core's `create_item()` on the moved file, so the params, EXIF/IPTC defaults and insert hooks behave exactly as in core.
 
@@ -181,6 +181,8 @@ Manages physical chunk files on disk:
 - `delete()` - Remove chunk file and lock file
 - `lock()` / `unlock()` - Exclusive, non-blocking finalization lock (`{id}.lock`, released by the OS if PHP dies)
 - `get_total_pending_size()` - Bytes held by in-progress uploads (multisite quota)
+- `get_total_remaining_size()` - Bytes in-progress uploads have yet to receive (single-site disk space)
+- `exclude_from_dirsize()`, `drop_stale_dirsize()` - Keep chunk files out of the multisite space used (`pre_recurse_dirsize`, `transient_dirsize_cache`), since pending uploads already reserve their full length
 - `list_active_sessions()` - Active uploads (used by `wp tus list`)
 - `get_upload_ids()` - IDs of all uploads with a chunk file (uninstall)
 - `cleanup_expired()` - Cron job for old files
@@ -204,7 +206,7 @@ Manages physical chunk files on disk:
    - Creates an empty chunk file, which reserves the upload's length
 
 3. Response: 201 Created
-   Headers: Location, Upload-Offset: 0
+   Headers: Location, Upload-Expires
 ```
 
 ### Chunk Upload
@@ -228,7 +230,8 @@ Manages physical chunk files on disk:
 
 3. If offset < length:
    Response: 204 No Content
-   Headers: Upload-Offset: {new_offset}
+   Headers: Upload-Offset: {new_offset}, Upload-Expires
+   (each chunk moves the expiration forward)
 
 4. If offset == length (complete):
    - finalize_upload() called under the upload's lock (423 if held)
@@ -270,6 +273,7 @@ Manages physical chunk files on disk:
 |--------|---------|
 | `uploads_unleashed_max_upload_size` | Modify max file size |
 | `uploads_unleashed_max_chunk_size` | Modify max chunk size per PATCH |
+| `uploads_unleashed_upload_expiration` | Modify how long an idle upload lives |
 | `uploads_unleashed_chunk_dir` | Move the chunk directory (required for S3/VIP uploads) |
 | `uploads_unleashed_session_data` | Add custom session data |
 | `uploads_unleashed_pre_finalize` | Validate before finalizing |

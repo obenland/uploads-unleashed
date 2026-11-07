@@ -148,16 +148,14 @@ class Test_CLI_Command extends WP_UnitTestCase {
 	 */
 	public function test_list_formats_active_sessions(): void {
 		// Away from an hour boundary, so a second passing can't change the rounded time.
-		$expires_at       = time() + 3 * HOUR_IN_SECONDS + 10 * MINUTE_IN_SECONDS;
-		$expires_callback = function ( array $session_data ) use ( $expires_at ): array {
-			$session_data['expires_at'] = $expires_at;
-			return $session_data;
+		$expires_callback = function (): int {
+			return 3 * HOUR_IN_SECONDS + 10 * MINUTE_IN_SECONDS;
 		};
-		add_filter( 'uploads_unleashed_session_data', $expires_callback );
+		add_filter( 'uploads_unleashed_upload_expiration', $expires_callback );
 
 		$upload_id = $this->create_upload( 'movie.mp4', 4 * KB_IN_BYTES, KB_IN_BYTES );
 
-		remove_filter( 'uploads_unleashed_session_data', $expires_callback );
+		remove_filter( 'uploads_unleashed_upload_expiration', $expires_callback );
 
 		$this->command->list_( array(), array( 'format' => 'json' ) );
 
@@ -175,7 +173,7 @@ class Test_CLI_Command extends WP_UnitTestCase {
 					'size'      => size_format( 4 * KB_IN_BYTES ),
 					'progress'  => '25%',
 					'user'      => 'tus_cli_admin',
-					'expires'   => human_time_diff( time(), $expires_at ),
+					'expires'   => '3 hours',
 				),
 			),
 			$data['items']

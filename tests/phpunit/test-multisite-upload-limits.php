@@ -198,6 +198,98 @@ class Test_Uploads_Unleashed_Multisite_Upload_Limits extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Chunk files don't count toward the site's space used.
+	 *
+	 * Pending uploads already reserve their full length, so counting the
+	 * chunks as well would make an upload need twice its size.
+	 */
+	public function test_chunk_files_do_not_count_toward_space_used(): void {
+		update_site_option( 'fileupload_maxk', 1024 * 1024 );
+
+		delete_transient( 'dirsize_cache' );
+		$space_used = get_space_used();
+
+		$upload_id = $this->get_upload_id( $this->create_upload( 2 * MB_IN_BYTES ) );
+		$this->patch_upload( $upload_id, str_repeat( 'a', MB_IN_BYTES ) );
+
+		delete_transient( 'dirsize_cache' );
+
+		$this->assertEqualsWithDelta( $space_used, get_space_used(), 0.0001 );
+	}
+
+	/**
+	 * A chunk directory size cached before it was excluded is ignored.
+	 *
+	 * Core never invalidates the cached size of the chunk directory, and
+	 * with a persistent object cache the cache never expires.
+	 */
+	public function test_stale_cached_chunk_directory_size_is_ignored(): void {
+		$basedir    = untrailingslashit( wp_upload_dir()['basedir'] );
+		$chunks_dir = dirname( ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( 'id' ) );
+
+		delete_transient( 'dirsize_cache' );
+		$size = get_dirsize( $basedir );
+
+		set_transient(
+			'dirsize_cache',
+			array(
+				$chunks_dir => 50 * MB_IN_BYTES,
+				$basedir    => $size + 50 * MB_IN_BYTES,
+			)
+		);
+
+		$this->assertSame( $size, get_dirsize( $basedir ) );
+	}
+
+	/**
+	 * The size limit subtracts each pending upload once.
+	 */
+	public function test_upload_size_limit_counts_pending_upload_once(): void {
+		update_site_option( 'fileupload_maxk', 1024 * 1024 );
+		$space_allowed = static function (): int {
+			return 1000;
+		};
+		add_filter( 'get_space_allowed', $space_allowed );
+
+		delete_transient( 'dirsize_cache' );
+		$available = (int) get_upload_space_available();
+
+		$upload_id = $this->get_upload_id( $this->create_upload( 4 * MB_IN_BYTES ) );
+		$this->patch_upload( $upload_id, str_repeat( 'a', 2 * MB_IN_BYTES ) );
+
+		delete_transient( 'dirsize_cache' );
+		$limit = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
+
+		remove_filter( 'get_space_allowed', $space_allowed );
+
+		$this->assertSame( $available - 4 * MB_IN_BYTES, $limit );
+	}
+
+	/**
+	 * Finalizing counts the upload once against the quota.
+	 */
+	public function test_finalize_counts_upload_once_against_quota(): void {
+		update_site_option( 'fileupload_maxk', 1024 * 1024 );
+
+		delete_transient( 'dirsize_cache' );
+		$space_used    = get_space_used();
+		$space_allowed = static function () use ( $space_used ): float {
+			return $space_used + 1.5;
+		};
+		add_filter( 'get_space_allowed', $space_allowed );
+
+		$upload_id = $this->get_upload_id( $this->create_upload( MB_IN_BYTES ) );
+
+		delete_transient( 'dirsize_cache' );
+		$response = $this->patch_upload( $upload_id, str_repeat( 'a', MB_IN_BYTES ) );
+		$this->track_attachment( $response );
+
+		remove_filter( 'get_space_allowed', $space_allowed );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
 	 * Dispatches a TUS creation request.
 	 *
 	 * @param int    $length   Upload-Length in bytes.
