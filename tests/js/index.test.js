@@ -435,6 +435,26 @@ describe( 'upload', () => {
 			);
 		} );
 
+		it( 'keeps the TUS error as the cause', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			const detailedError = {
+				message: 'tus: failed to create upload',
+				originalRequest: { getMethod: () => 'POST' },
+				originalResponse: null,
+			};
+
+			capturedCallbacks.onError( detailedError );
+
+			await expect( promise ).rejects.toMatchObject( {
+				cause: detailedError,
+			} );
+		} );
+
 		it( 'handles missing originalResponse body', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
 
