@@ -13,6 +13,10 @@ vi.mock( '@wordpress/hooks', () => ( {
 	applyFilters: vi.fn( ( hookName, defaultValue ) => defaultValue ),
 } ) );
 
+vi.mock( '@wordpress/i18n', () => ( {
+	__: ( text, domain ) => `[${ domain }] ${ text }`,
+} ) );
+
 import { applyFilters } from '@wordpress/hooks';
 import { upload } from '../../src/tus-client';
 
@@ -369,6 +373,33 @@ describe( 'handleBeforeUpload', () => {
 					response: JSON.stringify( {
 						success: false,
 						data: { message: 'Network error', filename: file.name },
+					} ),
+				}
+			);
+		} );
+
+		it( 'reports a translated fallback when the error has no message', async () => {
+			const nativeFile = new File( [ 'test' ], 'test.txt', {
+				type: 'text/plain',
+			} );
+			const file = createMockFile( nativeFile );
+
+			upload.mockRejectedValue( new Error( '' ) );
+
+			beforeUploadHandler( uploader, file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			expect( uploader.trigger ).toHaveBeenCalledWith(
+				'FileUploaded',
+				file,
+				{
+					response: JSON.stringify( {
+						success: false,
+						data: {
+							message: '[uploads-unleashed] Upload failed',
+							filename: file.name,
+						},
 					} ),
 				}
 			);
