@@ -16,6 +16,28 @@ import {
 import './resume-ui.css';
 
 /**
+ * Percentage steps in which resumed upload progress is announced.
+ */
+const PROGRESS_STEP = 10;
+
+/**
+ * Minimum time between two progress announcements, in milliseconds.
+ */
+const PROGRESS_INTERVAL_MS = 5000;
+
+/**
+ * Announcement state of resumed uploads, keyed by getUploadKey().
+ *
+ * @type {Map<string, {step: number, announcedAt: number}>}
+ */
+const resumedUploads = new Map();
+
+/**
+ * Counter for unique discard confirmation IDs.
+ */
+let confirmationCount = 0;
+
+/**
  * Formats file size for display.
  *
  * @param {number} bytes File size in bytes.
@@ -205,6 +227,186 @@ function createPendingUploadItem( item ) {
 }
 
 /**
+ * Builds the key that identifies an upload by filename and size.
+ *
+ * @param {string} filename File name.
+ * @param {number} size     File size in bytes.
+ * @return {string} Upload key.
+ */
+function getUploadKey( filename, size ) {
+	return `${ size }:${ filename }`;
+}
+
+/**
+ * Starts announcing progress for a resumed upload.
+ *
+ * The first announcement waits PROGRESS_INTERVAL_MS, so it doesn't cut off
+ * the "Resuming upload" message.
+ *
+ * @param {string} filename File name.
+ * @param {number} size     File size in bytes.
+ */
+function trackResumedUpload( filename, size ) {
+	const key = getUploadKey( filename, size );
+	if ( ! resumedUploads.has( key ) ) {
+		resumedUploads.set( key, { step: 0, announcedAt: Date.now() } );
+	}
+}
+
+/**
+ * Announces the progress of a resumed upload to screen readers.
+ *
+ * Announces each PROGRESS_STEP percent at most every PROGRESS_INTERVAL_MS.
+ *
+ * @param {Object} file         Plupload file object.
+ * @param {string} file.name    File name.
+ * @param {number} file.size    File size in bytes.
+ * @param {number} file.percent Upload progress percentage.
+ */
+function announceProgress( file ) {
+	const key = getUploadKey( file.name, file.size );
+	const state = resumedUploads.get( key );
+	if ( ! state ) {
+		return;
+	}
+
+	if ( file.percent >= 100 ) {
+		resumedUploads.delete( key );
+		return;
+	}
+
+	const step = Math.floor( file.percent / PROGRESS_STEP ) * PROGRESS_STEP;
+	const now = Date.now();
+	if (
+		step <= state.step ||
+		now - state.announcedAt < PROGRESS_INTERVAL_MS
+	) {
+		return;
+	}
+
+	state.step = step;
+	state.announcedAt = now;
+	speak(
+		sprintf(
+			/* translators: 1: filename, 2: upload percentage */
+			__( 'Uploading %1$s: %2$s%%', 'uploads-unleashed' ),
+			file.name,
+			step
+		),
+		'polite'
+	);
+}
+
+/**
+ * Removes a pending upload list item and hides the list once it's empty.
+ *
+ * @param {HTMLLIElement} li        The list item to remove.
+ * @param {boolean}       moveFocus Whether to move focus to the next item, or the uploader if none is left.
+ */
+function removeListItem( li, moveFocus ) {
+	const container = document.getElementById( 'uploads-unleashed-pending' );
+	const list = li.parentElement;
+	const sibling = li.nextElementSibling || li.previousElementSibling;
+
+	li.remove();
+
+	if ( list && list.children.length === 0 && container ) {
+		container.style.display = 'none';
+	}
+
+	if ( ! moveFocus ) {
+		return;
+	}
+
+	if ( sibling ) {
+		// A sibling waiting for discard confirmation has its Resume button hidden.
+		(
+			sibling.querySelector( '.cancel-discard' ) ||
+			sibling.querySelector( '.resume-upload' )
+		)?.focus();
+	} else {
+		document.getElementById( 'plupload-browse-button' )?.focus();
+	}
+}
+
+/**
+ * Replaces the Resume and Discard buttons with an inline discard confirmation.
+ *
+ * Focus moves to Cancel, so pressing Enter twice doesn't discard by accident.
+ * Cancel and Escape restore the buttons and return focus to Discard.
+ *
+ * @param {HTMLLIElement}       li        The pending upload list item.
+ * @param {Object}              item      Pending upload item from getPendingUploads().
+ * @param {() => Promise<void>} onConfirm Called when the user confirms.
+ */
+function confirmDiscard( li, item, onConfirm ) {
+	const resumeBtn = li.querySelector( '.resume-upload' );
+	const discardBtn = li.querySelector( '.discard-upload' );
+	const questionId = `uploads-unleashed-confirm-${ ++confirmationCount }`;
+
+	const group = document.createElement( 'span' );
+	group.className = 'uploads-unleashed-confirm';
+	group.setAttribute( 'role', 'group' );
+	group.setAttribute( 'aria-labelledby', questionId );
+
+	const question = document.createElement( 'span' );
+	question.id = questionId;
+	question.className = 'uploads-unleashed-confirm-text';
+	question.textContent = sprintf(
+		/* translators: 1: filename */
+		__(
+			'Discard the interrupted upload of %1$s? This cannot be undone.',
+			'uploads-unleashed'
+		),
+		item.filename
+	);
+
+	const confirmBtn = document.createElement( 'button' );
+	confirmBtn.type = 'button';
+	confirmBtn.className = 'button confirm-discard';
+	confirmBtn.textContent = __( 'Discard', 'uploads-unleashed' );
+	confirmBtn.setAttribute(
+		'aria-label',
+		sprintf(
+			/* translators: 1: filename */
+			__( 'Discard upload of %1$s', 'uploads-unleashed' ),
+			item.filename
+		)
+	);
+
+	const cancelBtn = document.createElement( 'button' );
+	cancelBtn.type = 'button';
+	cancelBtn.className = 'button cancel-discard';
+	cancelBtn.textContent = __( 'Cancel', 'uploads-unleashed' );
+
+	const cancel = () => {
+		group.remove();
+		resumeBtn.style.display = '';
+		discardBtn.style.display = '';
+		discardBtn.focus();
+	};
+
+	cancelBtn.addEventListener( 'click', cancel );
+	group.addEventListener( 'keydown', ( event ) => {
+		if ( event.key === 'Escape' ) {
+			event.preventDefault();
+			cancel();
+		}
+	} );
+	confirmBtn.addEventListener( 'click', () => {
+		confirmBtn.disabled = true;
+		cancelBtn.disabled = true;
+		onConfirm();
+	} );
+
+	group.append( question, confirmBtn, cancelBtn );
+	resumeBtn.style.display = 'none';
+	discardBtn.style.display = 'none';
+	discardBtn.after( group );
+	cancelBtn.focus();
+}
+
+/**
  * Renders the pending uploads list and binds resume/discard handlers.
  */
 function renderPendingUploads() {
@@ -246,9 +448,11 @@ function renderPendingUploads() {
 								errorEl.textContent = message;
 								errorEl.style.display = 'block';
 							}
+							speak( message, 'assertive' );
 						},
 					} );
 					if ( resumed ) {
+						trackResumedUpload( item.filename, item.size );
 						speak(
 							sprintf(
 								/* translators: 1: filename */
@@ -260,9 +464,10 @@ function renderPendingUploads() {
 							),
 							'polite'
 						);
-						li.remove();
-						if ( list.children.length === 0 ) {
-							container.style.display = 'none';
+
+						// Plupload may have removed the item already.
+						if ( li.isConnected ) {
+							removeListItem( li, true );
 						}
 					}
 				}
@@ -270,34 +475,22 @@ function renderPendingUploads() {
 
 			li.querySelector( '.discard-upload' ).addEventListener(
 				'click',
-				async () => {
-					await discardPendingUpload( item );
-					const nextLi = li.nextElementSibling;
-					li.remove();
-					speak(
-						sprintf(
-							/* translators: 1: filename */
-							__(
-								'Upload of %1$s discarded',
-								'uploads-unleashed'
+				() =>
+					confirmDiscard( li, item, async () => {
+						await discardPendingUpload( item );
+						removeListItem( li, true );
+						speak(
+							sprintf(
+								/* translators: 1: filename */
+								__(
+									'Upload of %1$s discarded',
+									'uploads-unleashed'
+								),
+								item.filename
 							),
-							item.filename
-						),
-						'polite'
-					);
-					if ( list.children.length === 0 ) {
-						container.style.display = 'none';
-						document
-							.getElementById( 'plupload-browse-button' )
-							?.focus();
-					} else if ( nextLi ) {
-						nextLi.querySelector( '.resume-upload' )?.focus();
-					} else {
-						list.lastElementChild
-							?.querySelector( '.resume-upload' )
-							?.focus();
-					}
-				}
+							'polite'
+						);
+					} )
 			);
 
 			return li;
@@ -310,28 +503,31 @@ function renderPendingUploads() {
 /**
  * Removes a pending upload entry from the UI by filename and size.
  *
+ * Moves focus on if the removed entry had it.
+ *
  * @param {string} filename File name to match.
  * @param {number} size     File size to match.
+ * @return {boolean} Whether a pending entry matched.
  */
 function removePendingEntry( filename, size ) {
 	const container = document.getElementById( 'uploads-unleashed-pending' );
 	const list = container?.querySelector( '.uploads-unleashed-list' );
 	if ( ! container || ! list ) {
-		return;
+		return false;
 	}
 
+	let matched = false;
 	list.querySelectorAll( 'li' ).forEach( ( li ) => {
 		if (
 			li.dataset.filename === filename &&
 			parseInt( li.dataset.size, 10 ) === size
 		) {
-			li.remove();
+			matched = true;
+			removeListItem( li, li.contains( li.ownerDocument.activeElement ) );
 		}
 	} );
 
-	if ( list.children.length === 0 ) {
-		container.style.display = 'none';
-	}
+	return matched;
 }
 
 /**
@@ -346,8 +542,14 @@ function hookPlupload() {
 	uploader.bind( 'FilesAdded', ( ...args ) => {
 		const files = args[ 1 ];
 		files.forEach( ( file ) => {
-			removePendingEntry( file.name, file.size );
+			if ( removePendingEntry( file.name, file.size ) ) {
+				trackResumedUpload( file.name, file.size );
+			}
 		} );
+	} );
+
+	uploader.bind( 'UploadProgress', ( ...args ) => {
+		announceProgress( args[ 1 ] );
 	} );
 }
 

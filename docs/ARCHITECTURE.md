@@ -94,9 +94,10 @@ Integrates with the Block Editor's `wp.apiFetch` middleware:
 Displays interrupted uploads that can be resumed:
 
 - Parses localStorage for TUS fingerprints
-- Shows Resume/Discard buttons
+- Shows Resume/Discard buttons; Discard asks for an inline confirmation
 - Uses File System Access API when available
 - Validates file matches before resuming
+- Announces mismatches and resumed upload progress (every 10%, at most every 5 seconds) via `wp.a11y.speak()`, and moves focus to the next item when one is removed
 
 ## Backend Components
 
