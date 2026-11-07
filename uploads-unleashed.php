@@ -429,9 +429,14 @@ function uploads_unleashed_filter_upload_size_limit( int $size ): int {
 	if ( is_multisite() ) {
 		/*
 		 * On multisite, use quota-based available space, capped at the network's
-		 * per-file maximum like core's upload_size_limit_filter().
+		 * per-file maximum like core's upload_size_limit_filter(). Networks that
+		 * disable the space check only have the per-file maximum.
 		 */
 		$max_file_size = KB_IN_BYTES * (int) get_site_option( 'fileupload_maxk', 1500 );
+
+		if ( get_site_option( 'upload_space_check_disabled' ) ) {
+			return $max_file_size;
+		}
 
 		return max( 0, min( $max_file_size, (int) get_upload_space_available() - $pending_size ) );
 	}

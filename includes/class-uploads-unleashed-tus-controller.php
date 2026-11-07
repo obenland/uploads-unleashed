@@ -356,7 +356,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Pre-flight multisite quota check before accepting the upload.
-		if ( is_multisite() && $upload_length > get_upload_space_available() ) {
+		if ( is_multisite() && ! get_site_option( 'upload_space_check_disabled' ) && $upload_length > get_upload_space_available() ) {
 			return new WP_Error(
 				'rest_quota_exceeded',
 				__( 'This file would exceed your space quota.', 'uploads-unleashed' ),
@@ -780,6 +780,10 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$file_size_check = $this->check_network_max_file_size( $file_size );
 		if ( is_wp_error( $file_size_check ) ) {
 			return $file_size_check;
+		}
+
+		if ( get_site_option( 'upload_space_check_disabled' ) ) {
+			return true;
 		}
 
 		$space_used    = get_space_used();
