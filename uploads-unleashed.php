@@ -65,9 +65,10 @@ function uploads_unleashed_register_scripts() {
 		'uploads-unleashed',
 		'uploadsUnleashed',
 		array(
-			'endpoint'    => rest_url( 'wp/v2/media' ),
-			'nonce'       => wp_create_nonce( 'wp_rest' ),
-			'mediaNewUrl' => admin_url( 'media-new.php' ),
+			'endpoint'      => rest_url( 'wp/v2/media' ),
+			'nonce'         => wp_create_nonce( 'wp_rest' ),
+			'nonceEndpoint' => admin_url( 'admin-ajax.php?action=rest-nonce' ),
+			'mediaNewUrl'   => admin_url( 'media-new.php' ),
 		)
 	);
 

@@ -27,10 +27,143 @@ function getEndpoint() {
 /**
  * Get the WordPress nonce for authentication.
  *
+ * Prefers the apiFetch nonce, which the Heartbeat API keeps fresh.
+ *
  * @return {string} WordPress REST nonce.
  */
 function getNonce() {
-	return window.uploadsUnleashed?.nonce || '';
+	return (
+		window.wp?.apiFetch?.nonceMiddleware?.nonce ||
+		window.uploadsUnleashed?.nonce ||
+		''
+	);
+}
+
+/**
+ * Error thrown from a response hook to make tus send the request again.
+ *
+ * @since 1.2.0
+ */
+class RetryRequestError extends Error {}
+
+/**
+ * The nonce refresh in flight, shared by all requests that need it.
+ *
+ * @since 1.2.0
+ * @type {Promise<void>|null}
+ */
+let nonceRefresh = null;
+
+/**
+ * Fetches a fresh REST nonce and stores it where getNonce() finds it.
+ *
+ * Fails quietly, e.g. when the user is logged out.
+ *
+ * @since 1.2.0
+ *
+ * @return {Promise<void>} Resolves once the refresh is done.
+ */
+function refreshNonce() {
+	const nonceEndpoint =
+		window.uploadsUnleashed?.nonceEndpoint ||
+		window.wp?.apiFetch?.nonceEndpoint;
+
+	if ( ! nonceEndpoint ) {
+		return Promise.resolve();
+	}
+
+	nonceRefresh ??= fetch( nonceEndpoint, { credentials: 'same-origin' } )
+		.then( ( response ) => ( response.ok ? response.text() : '' ) )
+		.then( ( nonce ) => {
+			nonce = nonce.trim();
+
+			// admin-ajax.php answers "0" or "-1" when the user is logged out.
+			if ( ! /^[0-9a-f]+$/i.test( nonce ) || '0' === nonce ) {
+				return;
+			}
+
+			if ( window.uploadsUnleashed ) {
+				window.uploadsUnleashed.nonce = nonce;
+			}
+			if ( window.wp?.apiFetch?.nonceMiddleware ) {
+				window.wp.apiFetch.nonceMiddleware.nonce = nonce;
+			}
+		} )
+		.catch( () => {} )
+		.finally( () => {
+			nonceRefresh = null;
+		} );
+
+	return nonceRefresh;
+}
+
+/**
+ * Refreshes the nonce if a response rejected the one that was sent.
+ *
+ * @since 1.2.0
+ *
+ * @param {number} status    Response status.
+ * @param {string} body      Response body.
+ * @param {string} sentNonce The nonce the request was sent with.
+ * @return {Promise<boolean>} Whether a different nonce is now available to retry with.
+ */
+async function renewRejectedNonce( status, body, sentNonce ) {
+	if ( 403 !== status ) {
+		return false;
+	}
+
+	// HEAD responses have no body that would tell a stale nonce apart from other 403s.
+	if ( body && 'rest_cookie_invalid_nonce' !== parseErrorCode( body ) ) {
+		return false;
+	}
+
+	if ( getNonce() === sentNonce ) {
+		await refreshNonce();
+	}
+
+	return getNonce() !== sentNonce;
+}
+
+/**
+ * Reads the error code from a REST API error response.
+ *
+ * @since 1.2.0
+ *
+ * @param {string} body Response body.
+ * @return {string} The error code, or an empty string.
+ */
+function parseErrorCode( body ) {
+	try {
+		return JSON.parse( body )?.code || '';
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Sends a request for an upload outside of tus, retrying once with a refreshed nonce.
+ *
+ * @since 1.2.0
+ *
+ * @param {string} url    The upload URL.
+ * @param {string} method HTTP method.
+ * @return {Promise<Response>} The response.
+ */
+async function requestUpload( url, method ) {
+	const send = ( nonce ) =>
+		fetch( url, { method, headers: { 'X-WP-Nonce': nonce } } );
+	const sentNonce = getNonce();
+	const response = await send( sentNonce );
+	const body =
+		403 === response.status && 'HEAD' !== method
+			? await response.text()
+			: '';
+
+	if ( await renewRejectedNonce( response.status, body, sentNonce ) ) {
+		return send( getNonce() );
+	}
+
+	return response;
 }
 
 // ============================================================================
@@ -234,6 +367,10 @@ function waitForOnline() {
  * @return {boolean} Whether to retry.
  */
 function shouldRetry( error ) {
+	if ( error.causingError instanceof RetryRequestError ) {
+		return true;
+	}
+
 	const status = error.originalResponse?.getStatus() || 0;
 
 	// Everything but client errors, except offset conflicts and locked uploads.
@@ -272,9 +409,6 @@ function createTusUpload( file, callbacks ) {
 	const tusUpload = new tus.Upload( file, {
 		...DEFAULT_TUS_OPTIONS,
 		endpoint: getEndpoint(),
-		headers: {
-			'X-WP-Nonce': getNonce(),
-		},
 		metadata: {
 			filename: file.name,
 			filetype: file.type || 'application/octet-stream',
@@ -288,6 +422,22 @@ function createTusUpload( file, callbacks ) {
 			 */
 			if ( tusUpload._aborted && 'DELETE' !== req.getMethod() ) {
 				throw new Error( 'Upload aborted' );
+			}
+
+			// Read per request, so a refreshed nonce takes effect.
+			req.setHeader( 'X-WP-Nonce', getNonce() );
+		},
+		onAfterResponse: async ( req, res ) => {
+			const nonceRenewed = await renewRejectedNonce(
+				res.getStatus(),
+				res.getBody(),
+				req.getHeader( 'X-WP-Nonce' )
+			);
+
+			if ( nonceRenewed ) {
+				throw new RetryRequestError(
+					'The REST nonce expired and was refreshed.'
+				);
 			}
 		},
 		onProgress: ( bytesUploaded, bytesTotal ) => {
@@ -372,10 +522,7 @@ async function forgetUploadIfGone( tusUpload ) {
 	const uploadUrl = tusUpload.url;
 
 	try {
-		const response = await fetch( uploadUrl, {
-			method: 'HEAD',
-			headers: { 'X-WP-Nonce': getNonce() },
-		} );
+		const response = await requestUpload( uploadUrl, 'HEAD' );
 
 		// 404: session deleted, 410: session expired.
 		if ( 404 !== response.status && 410 !== response.status ) {
@@ -573,10 +720,7 @@ export function getPendingUploads() {
 export async function discardPendingUpload( pendingUpload ) {
 	// Cancel server-side session
 	try {
-		await fetch( pendingUpload.uploadUrl, {
-			method: 'DELETE',
-			headers: { 'X-WP-Nonce': getNonce() },
-		} );
+		await requestUpload( pendingUpload.uploadUrl, 'DELETE' );
 	} catch {
 		// Ignore errors - session may already be expired
 	}
