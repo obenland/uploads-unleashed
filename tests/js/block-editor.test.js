@@ -217,6 +217,90 @@ describe( 'tusMiddleware', () => {
 
 			expect( upload ).toHaveBeenCalled();
 		} );
+
+		it( 'intercepts the block editor upload path with _embed', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			await tusMiddleware(
+				{
+					path: '/wp/v2/media?_embed=wp:featuredmedia',
+					method: 'POST',
+					body: formData,
+				},
+				next
+			);
+
+			expect( upload ).toHaveBeenCalled();
+			expect( next ).not.toHaveBeenCalled();
+		} );
+
+		it.each( [
+			'/wp/v2/media/123/sideload',
+			'/wp/v2/media/123/sideload?_locale=user',
+			'/wp/v2/media/123/finalize',
+			'/wp/v2/media/123/edit',
+			'/wp/v2/media/123',
+			'/wp/v2/media-library',
+			'/my-plugin/v1/wp/v2/media',
+		] )( 'passes through %s', async ( path ) => {
+			const formData = new FormData();
+			formData.append(
+				'file',
+				new File( [ 'test' ], 'image-150x150.png' )
+			);
+
+			const options = { path, method: 'POST', body: formData };
+
+			await tusMiddleware( options, next );
+
+			expect( next ).toHaveBeenCalledWith( options );
+			expect( upload ).not.toHaveBeenCalled();
+		} );
+
+		it.each( [ 'generate_sub_sizes', 'convert_format' ] )(
+			'passes through uploads with %s=false, which TUS cannot honor',
+			async ( field ) => {
+				const formData = new FormData();
+				formData.append( 'file', new File( [ 'test' ], 'image.png' ) );
+				formData.append( field, 'false' );
+
+				const options = {
+					path: '/wp/v2/media?_embed=wp:featuredmedia',
+					method: 'POST',
+					body: formData,
+				};
+
+				await tusMiddleware( options, next );
+
+				expect( next ).toHaveBeenCalledWith( options );
+				expect( upload ).not.toHaveBeenCalled();
+			}
+		);
+
+		it( 'intercepts uploads with generate_sub_sizes=true and convert_format=true', async () => {
+			const formData = new FormData();
+			formData.append( 'file', new File( [ 'video' ], 'movie.mp4' ) );
+			formData.append( 'generate_sub_sizes', 'true' );
+			formData.append( 'convert_format', 'true' );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			await tusMiddleware(
+				{
+					path: '/wp/v2/media?_embed=wp:featuredmedia',
+					method: 'POST',
+					body: formData,
+				},
+				next
+			);
+
+			expect( upload ).toHaveBeenCalled();
+			expect( next ).not.toHaveBeenCalled();
+		} );
 	} );
 
 	describe( 'TUS upload', () => {
