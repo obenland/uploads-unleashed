@@ -12,8 +12,16 @@ permissions:
     pull-requests: read
 
 jobs:
+    # Nothing ships if Plugin Check fails on the tagged code.
+    plugin-check:
+        name: Plugin Check
+        uses: ./.github/workflows/plugin-check.yml # zizmor: ignore[self-repository] -- actionlint rejects the `$/` syntax.
+        permissions:
+            contents: read
+
     deploy:
         name: Release and deploy to WordPress.org
+        needs: plugin-check
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
