@@ -132,6 +132,72 @@ class Test_Uploads_Unleashed_Multisite_Upload_Limits extends WP_UnitTestCase {
 	}
 
 	/**
+	 * With the space check disabled, the size limit is the per-file maximum alone.
+	 *
+	 * Neither the site quota nor pending uploads cap it, as in core's
+	 * upload_size_limit_filter().
+	 */
+	public function test_upload_size_limit_ignores_quota_when_space_check_disabled(): void {
+		update_site_option( 'upload_space_check_disabled', 1 );
+		update_site_option( 'fileupload_maxk', 1024 * 1024 );
+		$space_allowed = static function (): int {
+			return 10;
+		};
+		add_filter( 'get_space_allowed', $space_allowed );
+
+		$upload_id = $this->get_upload_id( $this->create_upload( 5 * MB_IN_BYTES ) );
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, '', 0 );
+
+		$limit = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
+
+		remove_filter( 'get_space_allowed', $space_allowed );
+
+		$this->assertSame( GB_IN_BYTES, $limit );
+	}
+
+	/**
+	 * With the space check disabled, uploads larger than the site quota can be created.
+	 */
+	public function test_create_ignores_quota_when_space_check_disabled(): void {
+		update_site_option( 'upload_space_check_disabled', 1 );
+		update_site_option( 'fileupload_maxk', 1024 * 1024 );
+		$space_allowed = static function (): int {
+			return 10;
+		};
+		add_filter( 'get_space_allowed', $space_allowed );
+
+		$response = $this->create_upload( 50 * MB_IN_BYTES );
+
+		remove_filter( 'get_space_allowed', $space_allowed );
+
+		$this->assertSame( 201, $response->get_status() );
+	}
+
+	/**
+	 * With the space check disabled, finalizing ignores space already used.
+	 */
+	public function test_finalize_ignores_quota_when_space_check_disabled(): void {
+		update_site_option( 'upload_space_check_disabled', 1 );
+		$space_allowed = static function (): int {
+			return 10;
+		};
+		$space_used    = static function (): int {
+			return 100;
+		};
+		add_filter( 'get_space_allowed', $space_allowed );
+		add_filter( 'pre_get_space_used', $space_used );
+
+		$upload_id = $this->get_upload_id( $this->create_upload( 9 ) );
+		$response  = $this->patch_upload( $upload_id, 'test data' );
+		$this->track_attachment( $response );
+
+		remove_filter( 'get_space_allowed', $space_allowed );
+		remove_filter( 'pre_get_space_used', $space_used );
+
+		$this->assertSame( 200, $response->get_status() );
+	}
+
+	/**
 	 * Dispatches a TUS creation request.
 	 *
 	 * @param int    $length   Upload-Length in bytes.
