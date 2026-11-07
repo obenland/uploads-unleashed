@@ -45,10 +45,11 @@ if ( typeof global.DataTransfer === 'undefined' ) {
 }
 
 const ENDPOINT = '/wp-json/wp/v2/media';
+const LAST_MODIFIED = 1234567890;
 
 function createPendingUploadEntry( filename, size ) {
 	const encodedName = encodeURIComponent( filename );
-	const fingerprint = `tus-br|${ encodedName }|${ size }|1234567890|${ ENDPOINT }`;
+	const fingerprint = `tus-br|${ encodedName }|${ size }|${ LAST_MODIFIED }|${ ENDPOINT }|1|1`;
 	const expiresAt = Date.now() + 86400000;
 	const key = `tus::${ fingerprint }::${ expiresAt }::upload-${ Math.random() }`;
 
@@ -57,6 +58,7 @@ function createPendingUploadEntry( filename, size ) {
 		uploadUrl: `${ ENDPOINT }/upload-id`,
 		filename,
 		size,
+		lastModified: LAST_MODIFIED,
 		bytesUploaded: 0,
 	};
 }
@@ -77,6 +79,16 @@ function setupDOM() {
 	document.body.appendChild( container );
 
 	return { container, list, notice };
+}
+
+/**
+ * Discards a pending upload through the inline confirmation.
+ *
+ * @param {HTMLLIElement} li The pending upload list item.
+ */
+function discardItem( li ) {
+	li.querySelector( '.discard-upload' ).click();
+	li.querySelector( '.confirm-discard' ).click();
 }
 
 async function importModule( pendingUploads = [] ) {
@@ -354,8 +366,7 @@ describe( 'discard button', () => {
 		const { discardPendingUpload } = await importModule( [ pending ] );
 		discardPendingUpload.mockResolvedValue();
 
-		const discard = document.querySelector( '.discard-upload' );
-		discard.click();
+		discardItem( document.querySelector( '.uploads-unleashed-list li' ) );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -373,7 +384,7 @@ describe( 'discard button', () => {
 		] );
 		discardPendingUpload.mockResolvedValue();
 
-		document.querySelector( '.discard-upload' ).click();
+		discardItem( document.querySelector( '.uploads-unleashed-list li' ) );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -392,10 +403,9 @@ describe( 'discard button', () => {
 		discardPendingUpload.mockResolvedValue();
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
-		const discardButtons = list.querySelectorAll( '.discard-upload' );
 
 		// Discard the first item
-		discardButtons[ 0 ].click();
+		discardItem( list.children[ 0 ] );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -451,6 +461,7 @@ describe( 'resume button', () => {
 
 		const file = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
 			type: 'image/jpeg',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( file );
 
@@ -512,6 +523,7 @@ describe( 'resume button', () => {
 				el.click = () => {
 					const file = new File( [ 'x'.repeat( size ) ], 'doc.txt', {
 						type: 'text/plain',
+						lastModified: LAST_MODIFIED,
 					} );
 					Object.defineProperty( el, 'files', {
 						value: [ file ],
@@ -543,6 +555,7 @@ describe( 'resume button', () => {
 		// Wrong file (different name).
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
@@ -566,6 +579,34 @@ describe( 'resume button', () => {
 		alertSpy.mockRestore();
 	} );
 
+	it( 'shows inline error for a modified file and keeps item', async () => {
+		setupDOM();
+		const input = setupMoxieShim();
+
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'photo.jpg', size );
+		await importModule( [ pending ] );
+
+		// Same name and size, but edited since the upload started.
+		const modifiedFile = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
+			type: 'image/jpeg',
+			lastModified: LAST_MODIFIED + 1000,
+		} );
+		mockShowOpenFilePicker( modifiedFile );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const errorEl = document.querySelector( '.uploads-unleashed-error' );
+		expect( errorEl.style.display ).toBe( 'block' );
+		expect( errorEl.textContent ).toContain( 'photo.jpg' );
+		expect( input.files ).toBeNull();
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 1 );
+	} );
+
 	it( 'keeps item when no moxie-shim input exists', async () => {
 		setupDOM();
 		// No setupMoxieShim — no .moxie-shim input.
@@ -576,6 +617,7 @@ describe( 'resume button', () => {
 
 		const file = new File( [ 'x'.repeat( size ) ], 'test.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( file );
 
@@ -677,6 +719,7 @@ describe( 'resume file selection UX', () => {
 
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
@@ -708,6 +751,7 @@ describe( 'resume file selection UX', () => {
 		// First attempt: wrong file
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
@@ -720,6 +764,7 @@ describe( 'resume file selection UX', () => {
 		// Second attempt: right file
 		const rightFile = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
 			type: 'image/jpeg',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( rightFile );
 
@@ -920,7 +965,7 @@ describe( 'accessibility', () => {
 		const { speak } = await import( '@wordpress/a11y' );
 		discardPendingUpload.mockResolvedValue();
 
-		document.querySelector( '.discard-upload' ).click();
+		discardItem( document.querySelector( '.uploads-unleashed-list li' ) );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -955,6 +1000,7 @@ describe( 'accessibility', () => {
 
 		const file = new File( [ 'x'.repeat( size ) ], 'video.mp4', {
 			type: 'video/mp4',
+			lastModified: LAST_MODIFIED,
 		} );
 		window.showOpenFilePicker = vi.fn( () =>
 			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
@@ -996,10 +1042,9 @@ describe( 'accessibility', () => {
 		discardPendingUpload.mockResolvedValue();
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
-		const discardButtons = list.querySelectorAll( '.discard-upload' );
 
 		// Discard the first item.
-		discardButtons[ 0 ].click();
+		discardItem( list.children[ 0 ] );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -1018,10 +1063,9 @@ describe( 'accessibility', () => {
 		discardPendingUpload.mockResolvedValue();
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
-		const discardButtons = list.querySelectorAll( '.discard-upload' );
 
 		// Discard the last item.
-		discardButtons[ 1 ].click();
+		discardItem( list.children[ 1 ] );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -1042,7 +1086,7 @@ describe( 'accessibility', () => {
 		const { discardPendingUpload } = await importModule( [ pending ] );
 		discardPendingUpload.mockResolvedValue();
 
-		document.querySelector( '.discard-upload' ).click();
+		discardItem( document.querySelector( '.uploads-unleashed-list li' ) );
 
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
@@ -1077,5 +1121,388 @@ describe( 'upload.php pending notice', () => {
 
 		// init() exits early when no pending, so container remains hidden
 		expect( notice.style.display ).toBe( 'none' );
+	} );
+} );
+
+/**
+ * Adds the plupload file input that resumed files are dispatched to.
+ */
+function setupMoxieInput() {
+	const shim = document.createElement( 'div' );
+	shim.className = 'moxie-shim';
+	const input = document.createElement( 'input' );
+	input.type = 'file';
+
+	// JSDOM rejects non-FileList values on input.files; allow plain arrays.
+	let storedFiles = null;
+	Object.defineProperty( input, 'files', {
+		get: () => storedFiles,
+		set: ( val ) => {
+			storedFiles = val;
+		},
+	} );
+
+	shim.appendChild( input );
+	document.body.appendChild( shim );
+}
+
+/**
+ * Makes the file picker return the given file.
+ *
+ * @param {File} file The file the user picks.
+ */
+function pickFile( file ) {
+	window.showOpenFilePicker = vi.fn( () =>
+		Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
+	);
+}
+
+/**
+ * Installs a mock plupload instance and returns its bound handlers.
+ *
+ * @return {Object} Handlers keyed by event name.
+ */
+function setupUploader() {
+	const handlers = {};
+	window.uploader = {
+		bind: vi.fn( ( event, handler ) => {
+			handlers[ event ] = handler;
+		} ),
+	};
+	window.jQuery = vi.fn( ( fn ) => fn() );
+	return handlers;
+}
+
+describe( 'discard confirmation', () => {
+	it( 'asks for confirmation instead of discarding right away', async () => {
+		setupDOM();
+
+		const { discardPendingUpload } = await importModule( [
+			createPendingUploadEntry( 'movie.mp4', 1024 ),
+		] );
+
+		const li = document.querySelector( '.uploads-unleashed-list li' );
+		li.querySelector( '.discard-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( discardPendingUpload ).not.toHaveBeenCalled();
+
+		const group = li.querySelector( '.uploads-unleashed-confirm' );
+		expect( group ).not.toBeNull();
+		expect( group.getAttribute( 'role' ) ).toBe( 'group' );
+
+		const label = document.getElementById(
+			group.getAttribute( 'aria-labelledby' )
+		);
+		expect( label.textContent ).toContain( 'movie.mp4' );
+
+		expect( li.querySelector( '.resume-upload' ).style.display ).toBe(
+			'none'
+		);
+		expect( li.querySelector( '.discard-upload' ).style.display ).toBe(
+			'none'
+		);
+		expect( li.querySelector( '.confirm-discard' ) ).not.toBeNull();
+	} );
+
+	it( 'moves focus to Cancel when asking for confirmation', async () => {
+		setupDOM();
+
+		await importModule( [ createPendingUploadEntry( 'movie.mp4', 1024 ) ] );
+
+		const li = document.querySelector( '.uploads-unleashed-list li' );
+		li.querySelector( '.discard-upload' ).click();
+
+		expect( document.activeElement ).toBe(
+			li.querySelector( '.cancel-discard' )
+		);
+	} );
+
+	it( 'restores the buttons and focuses Discard on Cancel', async () => {
+		setupDOM();
+
+		const { discardPendingUpload } = await importModule( [
+			createPendingUploadEntry( 'movie.mp4', 1024 ),
+		] );
+
+		const li = document.querySelector( '.uploads-unleashed-list li' );
+		const discardBtn = li.querySelector( '.discard-upload' );
+		discardBtn.click();
+		li.querySelector( '.cancel-discard' ).click();
+
+		expect( li.querySelector( '.uploads-unleashed-confirm' ) ).toBeNull();
+		expect( li.querySelector( '.resume-upload' ).style.display ).toBe( '' );
+		expect( discardBtn.style.display ).toBe( '' );
+		expect( document.activeElement ).toBe( discardBtn );
+		expect( discardPendingUpload ).not.toHaveBeenCalled();
+	} );
+
+	it( 'cancels on Escape', async () => {
+		setupDOM();
+
+		const { discardPendingUpload } = await importModule( [
+			createPendingUploadEntry( 'movie.mp4', 1024 ),
+		] );
+
+		const li = document.querySelector( '.uploads-unleashed-list li' );
+		const discardBtn = li.querySelector( '.discard-upload' );
+		discardBtn.click();
+
+		li.querySelector( '.cancel-discard' ).dispatchEvent(
+			new window.KeyboardEvent( 'keydown', {
+				key: 'Escape',
+				bubbles: true,
+			} )
+		);
+
+		expect( li.querySelector( '.uploads-unleashed-confirm' ) ).toBeNull();
+		expect( document.activeElement ).toBe( discardBtn );
+		expect( discardPendingUpload ).not.toHaveBeenCalled();
+	} );
+
+	it( 'labels the confirm button with the filename', async () => {
+		setupDOM();
+
+		await importModule( [ createPendingUploadEntry( 'movie.mp4', 1024 ) ] );
+
+		const li = document.querySelector( '.uploads-unleashed-list li' );
+		li.querySelector( '.discard-upload' ).click();
+
+		expect(
+			li.querySelector( '.confirm-discard' ).getAttribute( 'aria-label' )
+		).toBe( 'Discard upload of movie.mp4' );
+	} );
+} );
+
+describe( 'resume focus management', () => {
+	afterEach( () => {
+		delete window.showOpenFilePicker;
+	} );
+
+	it( 'moves focus to the next item after resuming', async () => {
+		setupDOM();
+		setupMoxieInput();
+
+		await importModule( [
+			createPendingUploadEntry( 'a.mp4', 100 ),
+			createPendingUploadEntry( 'b.mp4', 200 ),
+		] );
+		pickFile( new File( [ 'x'.repeat( 100 ) ], 'a.mp4' ) );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		const resumeBtn = list.children[ 0 ].querySelector( '.resume-upload' );
+		resumeBtn.focus();
+		resumeBtn.click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( list.children.length ).toBe( 1 );
+		expect( document.activeElement ).toBe(
+			list.children[ 0 ].querySelector( '.resume-upload' )
+		);
+	} );
+
+	it( 'moves focus to the browse button after resuming the last item', async () => {
+		setupDOM();
+		setupMoxieInput();
+
+		const browseBtn = document.createElement( 'button' );
+		browseBtn.id = 'plupload-browse-button';
+		document.body.appendChild( browseBtn );
+
+		await importModule( [ createPendingUploadEntry( 'a.mp4', 100 ) ] );
+		pickFile( new File( [ 'x'.repeat( 100 ) ], 'a.mp4' ) );
+
+		const resumeBtn = document.querySelector( '.resume-upload' );
+		resumeBtn.focus();
+		resumeBtn.click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		expect( document.activeElement ).toBe( browseBtn );
+	} );
+
+	it( 'moves focus when plupload removes the focused item', async () => {
+		setupDOM();
+		const handlers = setupUploader();
+
+		await importModule( [
+			createPendingUploadEntry( 'a.mp4', 100 ),
+			createPendingUploadEntry( 'b.mp4', 200 ),
+		] );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		list.children[ 0 ].querySelector( '.discard-upload' ).focus();
+
+		handlers.FilesAdded( {}, [ { name: 'a.mp4', size: 100 } ] );
+
+		expect( document.activeElement ).toBe(
+			list.children[ 0 ].querySelector( '.resume-upload' )
+		);
+	} );
+
+	it( 'leaves focus alone when plupload removes another item', async () => {
+		setupDOM();
+		const handlers = setupUploader();
+
+		await importModule( [
+			createPendingUploadEntry( 'a.mp4', 100 ),
+			createPendingUploadEntry( 'b.mp4', 200 ),
+		] );
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		const focused = list.children[ 1 ].querySelector( '.discard-upload' );
+		focused.focus();
+
+		handlers.FilesAdded( {}, [ { name: 'a.mp4', size: 100 } ] );
+
+		expect( document.activeElement ).toBe( focused );
+	} );
+} );
+
+describe( 'file mismatch announcement', () => {
+	afterEach( () => {
+		delete window.showOpenFilePicker;
+	} );
+
+	it( 'announces the mismatch error assertively', async () => {
+		setupDOM();
+		setupMoxieInput();
+
+		await importModule( [ createPendingUploadEntry( 'photo.jpg', 1024 ) ] );
+		const { speak } = await import( '@wordpress/a11y' );
+		pickFile( new File( [ 'x' ], 'wrong.jpg' ) );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const errorEl = document.querySelector( '.uploads-unleashed-error' );
+		expect( errorEl.textContent ).toContain( 'photo.jpg' );
+		expect( speak ).toHaveBeenCalledWith(
+			errorEl.textContent,
+			'assertive'
+		);
+	} );
+} );
+
+describe( 'resumed upload progress announcements', () => {
+	let now;
+
+	beforeEach( () => {
+		now = Date.now();
+		vi.spyOn( Date, 'now' ).mockImplementation( () => now );
+	} );
+
+	afterEach( () => {
+		vi.restoreAllMocks();
+		delete window.showOpenFilePicker;
+	} );
+
+	/**
+	 * Sets up a page with a pending upload that plupload then picks up.
+	 *
+	 * @return {Promise<Object>} The plupload handlers and the speak mock.
+	 */
+	async function setupResumedUpload() {
+		setupDOM();
+		const handlers = setupUploader();
+
+		await importModule( [ createPendingUploadEntry( 'movie.mp4', 1000 ) ] );
+		const { speak } = await import( '@wordpress/a11y' );
+
+		handlers.FilesAdded( {}, [ { name: 'movie.mp4', size: 1000 } ] );
+		speak.mockClear();
+
+		return { handlers, speak };
+	}
+
+	it( 'announces progress in 10% steps at most every few seconds', async () => {
+		const { handlers, speak } = await setupResumedUpload();
+		const start = now;
+		const file = { name: 'movie.mp4', size: 1000, percent: 0 };
+		const progress = ( percent, elapsed ) => {
+			now = start + elapsed;
+			file.percent = percent;
+			handlers.UploadProgress( {}, file );
+		};
+
+		// Too soon after "Resuming upload of …".
+		progress( 42.5, 1000 );
+		expect( speak ).not.toHaveBeenCalled();
+
+		progress( 43, 6000 );
+		expect( speak ).toHaveBeenCalledTimes( 1 );
+		expect( speak ).toHaveBeenLastCalledWith(
+			'Uploading movie.mp4: 40%',
+			'polite'
+		);
+
+		// New step, but too soon after the last announcement.
+		progress( 55, 7000 );
+		expect( speak ).toHaveBeenCalledTimes( 1 );
+
+		progress( 56, 12000 );
+		expect( speak ).toHaveBeenCalledTimes( 2 );
+		expect( speak ).toHaveBeenLastCalledWith(
+			'Uploading movie.mp4: 50%',
+			'polite'
+		);
+
+		// Same step, long after the last announcement.
+		progress( 59, 30000 );
+		expect( speak ).toHaveBeenCalledTimes( 2 );
+	} );
+
+	it( 'does not announce progress for uploads that were not resumed', async () => {
+		const { handlers, speak } = await setupResumedUpload();
+
+		now += 60000;
+		handlers.UploadProgress(
+			{},
+			{ name: 'other.mp4', size: 1000, percent: 50 }
+		);
+
+		expect( speak ).not.toHaveBeenCalled();
+	} );
+
+	it( 'announces progress for uploads resumed with the Resume button', async () => {
+		setupDOM();
+		setupMoxieInput();
+		const handlers = setupUploader();
+
+		await importModule( [ createPendingUploadEntry( 'movie.mp4', 100 ) ] );
+		const { speak } = await import( '@wordpress/a11y' );
+		pickFile( new File( [ 'x'.repeat( 100 ) ], 'movie.mp4' ) );
+
+		document.querySelector( '.resume-upload' ).click();
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+		speak.mockClear();
+
+		now += 60000;
+		handlers.UploadProgress(
+			{},
+			{ name: 'movie.mp4', size: 100, percent: 71 }
+		);
+
+		expect( speak ).toHaveBeenCalledWith(
+			'Uploading movie.mp4: 70%',
+			'polite'
+		);
+	} );
+
+	it( 'stops announcing once the upload reaches 100%', async () => {
+		const { handlers, speak } = await setupResumedUpload();
+		const file = { name: 'movie.mp4', size: 1000, percent: 100 };
+
+		now += 60000;
+		handlers.UploadProgress( {}, file );
+
+		file.percent = 95;
+		now += 60000;
+		handlers.UploadProgress( {}, file );
+
+		expect( speak ).not.toHaveBeenCalled();
 	} );
 } );
