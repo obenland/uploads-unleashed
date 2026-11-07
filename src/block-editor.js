@@ -16,6 +16,11 @@ import { upload, getPendingUploads } from '@uploads-unleashed/tus-client';
 /**
  * Checks if a request is a media upload that should use TUS.
  *
+ * Only uploads to the collection route qualify. Sub-routes such as
+ * `/wp/v2/media/{id}/sideload`, which client-side media processing uses for
+ * the sub-sizes it generates, add files to an existing attachment and must
+ * reach core unchanged.
+ *
  * @param {Object} options apiFetch options.
  * @return {boolean} True if this is a media upload request.
  */
@@ -27,13 +32,32 @@ function isMediaUpload( options ) {
 		return false;
 	}
 
-	// Must be to the media endpoint
-	if ( ! path?.includes( '/wp/v2/media' ) ) {
+	// Must be to the media collection, with or without a query string.
+	if ( ! /^\/?wp\/v2\/media$/.test( path?.split( '?' )[ 0 ] ?? '' ) ) {
 		return false;
 	}
 
 	// Must have FormData with a file
 	return body instanceof FormData ? body.has( 'file' ) : false;
+}
+
+/**
+ * Checks if an upload asks for processing the TUS endpoint can't honor yet.
+ *
+ * With client-side media processing, the editor uploads images it resizes
+ * itself with `generate_sub_sizes=false`, and some derivatives with
+ * `convert_format=false`. The TUS endpoint ignores both, so such uploads go
+ * to core until it supports them.
+ *
+ * @since 1.2.0
+ *
+ * @param {FormData} formData The upload's form data.
+ * @return {boolean} True if the upload needs core's upload handling.
+ */
+function needsCoreProcessingFlags( formData ) {
+	return [ 'generate_sub_sizes', 'convert_format' ].some(
+		( field ) => formData.get( field ) === 'false'
+	);
 }
 
 /**
@@ -95,7 +119,7 @@ const tusMiddleware = async ( options, next ) => {
 	}
 
 	const file = extractFile( options.body );
-	if ( ! file ) {
+	if ( ! file || needsCoreProcessingFlags( options.body ) ) {
 		return next( options );
 	}
 
