@@ -363,7 +363,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 */
 	public function get_item_offset( WP_REST_Request $request ): WP_REST_Response {
 		$response = new WP_REST_Response( null, 200 );
-		$response->header( 'Upload-Offset', $this->current_upload['offset'] );
+		$response->header( 'Upload-Offset', $this->get_upload_offset( $request->get_param( 'id' ) ) );
 		$response->header( 'Upload-Length', $this->current_upload['length'] );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
 		// CRITICAL: Prevent proxy caching of offset.
@@ -396,7 +396,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$client_offset = (int) $client_offset;
-		$server_offset = (int) $this->current_upload['offset'];
+		$server_offset = $this->get_upload_offset( $upload_id );
 
 		// 409 Conflict: Do NOT store any data on offset mismatch.
 		if ( $client_offset !== $server_offset ) {
@@ -457,8 +457,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return $new_offset;
 		}
 
-		// Update session.
+		/*
+		 * Update the session. The chunk file is the source of truth for the
+		 * offset, so a failed update is corrected on the next request.
+		 */
 		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $new_offset );
+		$this->current_upload['offset'] = $new_offset;
 
 		/**
 		 * Fires after a chunk is received and stored.
@@ -998,6 +1002,30 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$this->current_upload = $upload;
 
 		return true;
+	}
+
+	/**
+	 * Returns the number of bytes received for an upload.
+	 *
+	 * The chunk file is the source of truth: the session offset is saved
+	 * after the chunk is written, so it lags behind when PHP is killed in
+	 * between or the session fails to save. Reconciles the session from the
+	 * file when they differ.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return int The upload offset in bytes.
+	 */
+	private function get_upload_offset( string $upload_id ): int {
+		$offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_size( $upload_id );
+
+		if ( (int) $this->current_upload['offset'] !== $offset ) {
+			( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $offset );
+			$this->current_upload['offset'] = $offset;
+		}
+
+		return $offset;
 	}
 
 	/**

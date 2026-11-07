@@ -199,10 +199,10 @@ Manages physical chunk files on disk:
 
 2. Uploads_Unleashed_TUS_Controller::upload_chunk()
    - Validates session exists
-   - Verifies offset matches
+   - Verifies offset matches the chunk file's size (the source of truth)
    - Optional checksum verification
    - Appends to Uploads_Unleashed_TUS_Chunk_Storage
-   - Updates session offset
+   - Updates session offset (reconciled from the file size if it falls behind)
 
 3. If offset < length:
    Response: 204 No Content
@@ -223,7 +223,7 @@ Manages physical chunk files on disk:
    - Searches localStorage by fingerprint
 
 2. Client sends HEAD /wp/v2/media/{id}
-   - Gets current server offset
+   - Gets current server offset (the chunk file's size)
 
 3. Client resumes from offset
    - Sends remaining chunks

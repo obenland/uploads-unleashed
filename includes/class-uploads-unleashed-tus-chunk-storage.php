@@ -169,7 +169,11 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	/**
 	 * Returns the current size of a chunk file.
 	 *
+	 * Reads the size under a shared lock, so a chunk that append() is still
+	 * writing is never reported half-written.
+	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Reads the size under a shared lock.
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return int File size in bytes, or 0 if file doesn't exist.
@@ -181,10 +185,19 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			return 0;
 		}
 
-		clearstatcache( true, $path );
-		$size = filesize( $path );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem lacks flock support needed for TUS concurrency.
+		$handle = fopen( $path, 'rb' );
+		if ( ! $handle ) {
+			return 0;
+		}
 
-		return false === $size ? 0 : $size;
+		flock( $handle, LOCK_SH );
+		$stat = fstat( $handle );
+		flock( $handle, LOCK_UN );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
+		fclose( $handle );
+
+		return false === $stat ? 0 : (int) $stat['size'];
 	}
 
 	/**
