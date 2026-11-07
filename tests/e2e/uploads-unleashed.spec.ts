@@ -1,4 +1,4 @@
-import { test, expect, type Request } from '@playwright/test';
+import { test, expect, type Page, type Request } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { findAttachments, loginAsAdmin } from './utils';
@@ -359,5 +359,110 @@ test.describe( 'Uploads Unleashed', () => {
 			} )
 			.toBe( 1 );
 		await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
+	} );
+	test.describe( 'restrictive servers', () => {
+		const MB = 1024 * 1024;
+		const uploadRoute = ( url: URL ) =>
+			/wp\/v2\/media\/[0-9a-f-]{36}/.test(
+				decodeURIComponent( url.href )
+			);
+
+		/**
+		 * Uploads a padded PNG through the media grid and expects one attachment.
+		 *
+		 * @param page  Playwright `page` fixture, logged in.
+		 * @param bytes File size to pad the PNG to.
+		 */
+		async function expectUploadInGrid( page: Page, bytes: number ) {
+			await page.goto( '/wp-admin/upload.php?mode=grid' );
+			await page.locator( '.page-title-action' ).click();
+
+			const name = `limits-${ Date.now() }`;
+			const image = await fs.readFile(
+				path.resolve( __dirname, 'fixtures/test-image.png' )
+			);
+			await page
+				.locator( '.moxie-shim input[type="file"]' )
+				.first()
+				.setInputFiles( {
+					name: `${ name }.png`,
+					mimeType: 'image/png',
+					buffer: Buffer.concat( [
+						image,
+						Buffer.alloc( bytes - image.length ),
+					] ),
+				} );
+
+			// The grid may not show the upload yet, so wait for the attachment itself.
+			await expect
+				.poll(
+					async () => ( await findAttachments( page, name ) ).length,
+					{ timeout: 60000 }
+				)
+				.toBe( 1 );
+			await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
+		}
+
+		test( 'shrinks chunks when a proxy rejects large request bodies', async ( {
+			page,
+		} ) => {
+			await loginAsAdmin( page );
+
+			// Like nginx's default client_max_body_size of 1 MB.
+			await page.route( uploadRoute, async ( route ) => {
+				if ( ( route.request().postDataBuffer()?.length ?? 0 ) > MB ) {
+					await route.fulfill( {
+						status: 413,
+						contentType: 'text/html',
+						body: '<html><body>413 Request Entity Too Large</body></html>',
+					} );
+					return;
+				}
+				await route.fallback();
+			} );
+
+			await expectUploadInGrid( page, 3 * MB );
+		} );
+
+		test( 'falls back to a method override when a firewall blocks PATCH and HEAD', async ( {
+			page,
+		} ) => {
+			await loginAsAdmin( page );
+
+			await page.route( uploadRoute, async ( route ) => {
+				if (
+					[ 'PATCH', 'HEAD', 'DELETE' ].includes(
+						route.request().method()
+					)
+				) {
+					await route.fulfill( {
+						status: 405,
+						contentType: 'text/html',
+						body: '<html><body>405 Not Allowed</body></html>',
+					} );
+					return;
+				}
+				await route.fallback();
+			} );
+
+			await expectUploadInGrid( page, 6 * MB );
+		} );
+
+		test( 'falls back to a method override when PATCH bodies get dropped', async ( {
+			page,
+		} ) => {
+			await loginAsAdmin( page );
+
+			// Like WordPress Playground, which loses the body of PATCH requests.
+			await page.route( uploadRoute, async ( route ) => {
+				if ( 'PATCH' === route.request().method() ) {
+					await route.continue( { postData: Buffer.alloc( 0 ) } );
+					return;
+				}
+				await route.fallback();
+			} );
+
+			await expectUploadInGrid( page, 6 * MB );
+		} );
 	} );
 } );

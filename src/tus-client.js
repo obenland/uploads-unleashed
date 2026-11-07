@@ -155,7 +155,9 @@ function parseErrorCode( body ) {
 }
 
 /**
- * Sends a request for an upload outside of tus, retrying once with a refreshed nonce.
+ * Sends a request for an upload outside of tus.
+ *
+ * Retries once with a refreshed nonce or with a method override, like tus requests.
  *
  * @since 1.2.0
  *
@@ -164,16 +166,30 @@ function parseErrorCode( body ) {
  * @return {Promise<Response>} The response.
  */
 async function requestUpload( url, method ) {
-	const send = ( nonce ) =>
-		fetch( url, { method, headers: { 'X-WP-Nonce': nonce } } );
+	const send = ( nonce ) => {
+		const headers = { 'X-WP-Nonce': nonce };
+
+		if ( usesMethodOverride() ) {
+			headers[ 'X-HTTP-Method-Override' ] = method;
+		}
+
+		return fetch( url, {
+			method: usesMethodOverride() ? 'POST' : method,
+			headers,
+		} );
+	};
 	const sentNonce = getNonce();
+	const sentMethod = usesMethodOverride() ? 'POST' : method;
 	const response = await send( sentNonce );
 	const body =
 		403 === response.status && 'HEAD' !== method
 			? await response.text()
 			: '';
 
-	if ( await renewRejectedNonce( response.status, body, sentNonce ) ) {
+	if (
+		( await renewRejectedNonce( response.status, body, sentNonce ) ) ||
+		overrideBlockedMethod( sentMethod, response.status, body )
+	) {
 		return send( getNonce() );
 	}
 
@@ -200,6 +216,177 @@ function getBlogId() {
  */
 function getUserId() {
 	return String( window.uploadsUnleashed?.userId ?? '' );
+}
+
+// ============================================================================
+// Server Limits
+// ============================================================================
+
+/**
+ * Largest chunk size the client sends, 5 MB.
+ *
+ * @since 1.2.0
+ */
+const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024;
+
+/**
+ * Smallest chunk size to fall back to after 413 responses, 256 KB.
+ *
+ * @since 1.2.0
+ */
+const MIN_CHUNK_SIZE = 256 * 1024;
+
+/**
+ * Methods the server also accepts as POST with an X-HTTP-Method-Override header.
+ *
+ * @since 1.2.0
+ */
+const OVERRIDABLE_METHODS = [ 'HEAD', 'PATCH', 'DELETE' ];
+
+/**
+ * Returns the chunk size for new uploads.
+ *
+ * @since 1.2.0
+ *
+ * @return {number} Chunk size in bytes.
+ */
+function getChunkSize() {
+	const serverLimit =
+		parseInt( window.uploadsUnleashed?.maxChunkSize, 10 ) || Infinity;
+
+	return Math.min( DEFAULT_CHUNK_SIZE, serverLimit );
+}
+
+/**
+ * Whether HEAD, PATCH and DELETE go out as POST with an X-HTTP-Method-Override header.
+ *
+ * @since 1.2.0
+ *
+ * @return {boolean} Whether to override methods.
+ */
+function usesMethodOverride() {
+	return !! window.uploadsUnleashed?.methodOverride;
+}
+
+/**
+ * Remembers a limit learned from the server for later requests and uploads on the page.
+ *
+ * @since 1.2.0
+ *
+ * @param {string}         key   Config key, `maxChunkSize` or `methodOverride`.
+ * @param {number|boolean} value The value.
+ */
+function rememberLimit( key, value ) {
+	window.uploadsUnleashed ??= {};
+	window.uploadsUnleashed[ key ] = value;
+}
+
+/**
+ * Returns the method a request stands for, following a method override.
+ *
+ * @since 1.2.0
+ *
+ * @param {Object} req tus HTTP request.
+ * @return {string} HTTP method.
+ */
+function getRequestMethod( req ) {
+	return req.getHeader( 'X-HTTP-Method-Override' ) || req.getMethod();
+}
+
+/**
+ * Switches to method overrides if a response shows that the host blocked the request method.
+ *
+ * @since 1.2.0
+ *
+ * @param {string} method HTTP method the request was sent with.
+ * @param {number} status Response status.
+ * @param {string} body   Response body.
+ * @return {boolean} Whether to retry the request with a method override.
+ */
+function overrideBlockedMethod( method, status, body ) {
+	if ( usesMethodOverride() || ! OVERRIDABLE_METHODS.includes( method ) ) {
+		return false;
+	}
+
+	const code = parseErrorCode( body );
+	const blocked =
+		405 === status ||
+		// A firewall's 403 rather than one from WordPress.
+		( 403 === status && ! code ) ||
+		// Hosts like WordPress Playground drop PATCH bodies.
+		( 400 === status && 'PATCH' === method && 'rest_empty_chunk' === code );
+
+	if ( blocked ) {
+		rememberLimit( 'methodOverride', true );
+	}
+
+	return blocked;
+}
+
+/**
+ * Halves the chunk size of an upload, for this and later uploads on the page.
+ *
+ * @since 1.2.0
+ *
+ * @param {tus.Upload} tusUpload The TUS upload instance.
+ * @return {boolean} Whether the chunk size could still be reduced.
+ */
+function shrinkChunkSize( tusUpload ) {
+	if ( tusUpload.options.chunkSize <= MIN_CHUNK_SIZE ) {
+		return false;
+	}
+
+	tusUpload.options.chunkSize = Math.max(
+		MIN_CHUNK_SIZE,
+		Math.floor( tusUpload.options.chunkSize / 2 )
+	);
+	rememberLimit( 'maxChunkSize', tusUpload.options.chunkSize );
+
+	return true;
+}
+
+/**
+ * tus HTTP stack that applies method overrides once a host blocked a method.
+ *
+ * @since 1.2.0
+ */
+class MethodOverrideHttpStack {
+	/**
+	 * Creates a request, as POST with X-HTTP-Method-Override if needed.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param {string} method HTTP method.
+	 * @param {string} url    Request URL.
+	 * @return {Object} tus HTTP request.
+	 */
+	createRequest( method, url ) {
+		// Created on first use, after tus-js-client has loaded.
+		this.defaultStack ??= new tus.DefaultHttpStack();
+
+		if (
+			! usesMethodOverride() ||
+			! OVERRIDABLE_METHODS.includes( method )
+		) {
+			return this.defaultStack.createRequest( method, url );
+		}
+
+		const req = this.defaultStack.createRequest( 'POST', url );
+		req.setHeader( 'X-HTTP-Method-Override', method );
+
+		return req;
+	}
+
+	/**
+	 * Returns the name of the HTTP stack.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return {string} Name.
+	 */
+	getName() {
+		return 'MethodOverrideHttpStack';
+	}
 }
 
 // ============================================================================
@@ -512,7 +699,7 @@ function shouldRetry( error ) {
  * capped at a minute, only run out after about four minutes without progress.
  */
 const DEFAULT_TUS_OPTIONS = {
-	chunkSize: 5 * 1024 * 1024, // 5MB chunks
+	httpStack: new MethodOverrideHttpStack(),
 	retryDelays: [
 		0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000, 60000,
 	],
@@ -551,6 +738,7 @@ function createTusUpload( file, callbacks ) {
 	const params = callbacks.params || {};
 	const tusUpload = new tus.Upload( file, {
 		...DEFAULT_TUS_OPTIONS,
+		chunkSize: getChunkSize(),
 		endpoint: getEndpoint(),
 		metadata: {
 			// Scalars only, so File entries and empty fields are skipped.
@@ -572,7 +760,7 @@ function createTusUpload( file, callbacks ) {
 			 * tus can't cancel a request that is still waiting here, so drop it if the
 			 * upload was aborted meanwhile. The termination request still goes out.
 			 */
-			if ( tusUpload._aborted && 'DELETE' !== req.getMethod() ) {
+			if ( tusUpload._aborted && 'DELETE' !== getRequestMethod( req ) ) {
 				throw new Error( __( 'Upload aborted', 'uploads-unleashed' ) );
 			}
 
@@ -580,15 +768,22 @@ function createTusUpload( file, callbacks ) {
 			req.setHeader( 'X-WP-Nonce', getNonce() );
 		},
 		onAfterResponse: async ( req, res ) => {
-			const nonceRenewed = await renewRejectedNonce(
-				res.getStatus(),
-				res.getBody(),
-				req.getHeader( 'X-WP-Nonce' )
-			);
+			const status = res.getStatus();
+			const body = res.getBody();
+			const retry =
+				( await renewRejectedNonce(
+					status,
+					body,
+					req.getHeader( 'X-WP-Nonce' )
+				) ) ||
+				overrideBlockedMethod( req.getMethod(), status, body ) ||
+				( 413 === status &&
+					'PATCH' === getRequestMethod( req ) &&
+					shrinkChunkSize( tusUpload ) );
 
-			if ( nonceRenewed ) {
+			if ( retry ) {
 				throw new RetryRequestError(
-					'The REST nonce expired and was refreshed.'
+					'tus: retrying the request after adapting to the server.'
 				);
 			}
 		},
@@ -660,6 +855,24 @@ function createTusUpload( file, callbacks ) {
 			} );
 		},
 		onError: ( error ) => {
+			// Even the smallest chunks were too large, so resuming can't help.
+			if ( 413 === error.originalResponse?.getStatus() ) {
+				if ( tusUpload.url ) {
+					forgetUpload( tusUpload, true );
+				}
+
+				callbacks.onError(
+					new Error(
+						__(
+							'The server rejected the upload because its requests are too large. Ask your host to raise the request size limit.',
+							'uploads-unleashed'
+						),
+						{ cause: error }
+					)
+				);
+				return;
+			}
+
 			// Extract a clean error message from TUS errors
 			let cleanMessage =
 				error.message || __( 'Upload failed', 'uploads-unleashed' );
@@ -770,6 +983,25 @@ async function forgetUploadIfGone( tusUpload ) {
 	} catch {
 		// Status unknown, keep the upload resumable.
 		return;
+	}
+
+	await forgetUpload( tusUpload );
+}
+
+/**
+ * Removes an upload from localStorage, so it no longer shows as resumable.
+ *
+ * @since 1.2.0
+ *
+ * @param {tus.Upload} tusUpload       The TUS upload instance.
+ * @param {boolean}    [deleteSession] Whether to also delete the session on the server.
+ * @return {Promise<void>}
+ */
+async function forgetUpload( tusUpload, deleteSession = false ) {
+	const uploadUrl = tusUpload.url;
+
+	if ( deleteSession ) {
+		requestUpload( uploadUrl, 'DELETE' ).catch( () => {} );
 	}
 
 	removeUploadProgress( uploadUrl );

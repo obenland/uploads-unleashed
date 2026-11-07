@@ -416,6 +416,60 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that the client gets the server's maximum chunk size.
+	 */
+	public function test_register_scripts_localizes_max_chunk_size() {
+		$this->assertStringContainsString(
+			'"maxChunkSize":"' . ( 10 * MB_IN_BYTES ) . '"',
+			$this->get_localized_config()
+		);
+	}
+
+	/**
+	 * Test that the localized chunk size follows the filter.
+	 */
+	public function test_register_scripts_localizes_filtered_max_chunk_size() {
+		$filter = static function () {
+			return 2 * MB_IN_BYTES;
+		};
+		add_filter( 'uploads_unleashed_max_chunk_size', $filter );
+
+		$config = $this->get_localized_config();
+
+		remove_filter( 'uploads_unleashed_max_chunk_size', $filter );
+
+		$this->assertStringContainsString( '"maxChunkSize":"' . ( 2 * MB_IN_BYTES ) . '"', $config );
+	}
+
+	/**
+	 * Test that the localized chunk size is clamped like the server's limit.
+	 */
+	public function test_register_scripts_clamps_localized_max_chunk_size() {
+		$filter = static function () {
+			return KB_IN_BYTES;
+		};
+		add_filter( 'uploads_unleashed_max_chunk_size', $filter );
+
+		$config = $this->get_localized_config();
+
+		remove_filter( 'uploads_unleashed_max_chunk_size', $filter );
+
+		$this->assertStringContainsString( '"maxChunkSize":"' . MB_IN_BYTES . '"', $config );
+	}
+
+	/**
+	 * Registers the scripts again and returns the localized client config.
+	 *
+	 * @return string The inline script defining `uploadsUnleashed`.
+	 */
+	private function get_localized_config() {
+		wp_deregister_script( 'uploads-unleashed' );
+		uploads_unleashed_register_scripts();
+
+		return wp_scripts()->get_data( 'uploads-unleashed', 'data' );
+	}
+
+	/**
 	 * Test that style is registered after register_scripts runs.
 	 */
 	public function test_register_scripts_registers_style() {

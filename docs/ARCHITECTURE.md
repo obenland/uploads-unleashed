@@ -64,7 +64,8 @@ The main TUS client wrapper built on `tus-js-client`, exposed to other scripts a
 - `discardPendingUpload(pendingUpload)` - Deletes a pending upload on the server and locally
 
 **Key Features:**
-- 5MB default chunk size
+- 5 MB chunks, or the server's `uploads_unleashed_max_chunk_size` if lower; halved after a 413 from a proxy, down to 256 KB
+- Sends HEAD, PATCH and DELETE as POST with `X-HTTP-Method-Override` once a host blocks them (405, a non-WordPress 403, or PATCH bodies dropped)
 - Retries with a backoff capped at one minute; while the browser is offline, requests wait for the connection to come back
 - Fingerprint-based resume (stored in localStorage, scoped to the site and user; uploads still work without storage)
 - Automatic cleanup on success
