@@ -1444,6 +1444,47 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Test a failed attachment creation removes the already-moved file.
+	 */
+	public function test_failed_attachment_creation_removes_moved_file() {
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
+
+		$controller = new class() extends Uploads_Unleashed_TUS_Controller {
+			/**
+			 * Fails like a database error would.
+			 *
+			 * @param array $upload_result The upload result.
+			 * @return WP_Error Always.
+			 */
+			protected function create_attachment( array $upload_result ) {
+				return new WP_Error( 'db_insert_error', 'Could not insert post into the database.', array( 'status' => 500 ) );
+			}
+		};
+
+		$moved_file = '';
+		$capture    = static function ( array $upload ) use ( &$moved_file ): array {
+			$moved_file = $upload['file'];
+			return $upload;
+		};
+		add_filter( 'wp_handle_upload', $capture );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_url_params( array( 'id' => $upload_id ) );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( 'test data 123' );
+
+		$this->assertTrue( $controller->get_item_permissions_check( $request ) );
+		$response = $controller->upload_chunk( $request );
+
+		remove_filter( 'wp_handle_upload', $capture );
+
+		$this->assertWPError( $response );
+		$this->assertNotEmpty( $moved_file );
+		$this->assertFileDoesNotExist( $moved_file );
+	}
+
+	/**
 	 * Test DELETE after completion removes the tombstone but keeps the attachment.
 	 */
 	public function test_delete_after_completion_keeps_attachment() {

@@ -378,6 +378,23 @@ describe( 'upload', () => {
 				'Upload completed but no attachment data received'
 			);
 		} );
+
+		it( 'rejects when both the upload URL and the header lookup fail', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValueOnce( jsonResponse( {}, false ) )
+				.mockRejectedValueOnce( new Error( 'Network' ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse( '123' ) );
+
+			await expect( promise ).rejects.toThrow(
+				'Upload completed but no attachment data received'
+			);
+			expect( global.fetch ).toHaveBeenCalledTimes( 2 );
+		} );
 	} );
 
 	it( 'rejects when response body is invalid JSON', async () => {
