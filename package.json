@@ -29,7 +29,7 @@
 		"@wordpress/api-fetch": "^8.0.0",
 		"@wordpress/data": "^11.0.0",
 		"@wordpress/env": "^12.0.0",
-		"@wordpress/hooks": "^4.57.0",
+		"@wordpress/hooks": "^5.0.0",
 		"@wordpress/i18n": "^7.0.0",
 		"@wordpress/notices": "^6.0.0",
 		"@wordpress/scripts": "^37.0.0",
