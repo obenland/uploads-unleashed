@@ -87,7 +87,7 @@ Integrates with the Block Editor's `wp.apiFetch` middleware:
 - Extracts files from FormData
 - Routes to TUS protocol instead
 - Handles AbortSignal for cancellation
-- Falls back to a standard upload if TUS fails
+- Falls back to a standard upload if the TUS endpoint is unavailable, and passes server rejections through
 
 ### resume-ui.js - Pending Uploads UI
 
