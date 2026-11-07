@@ -174,7 +174,7 @@ describe( 'handleBeforeUpload', () => {
 		);
 	} );
 
-	it( 'removes file from plupload queue', () => {
+	it( 'keeps the file in the plupload queue as uploading', () => {
 		const nativeFile = new File( [ 'test' ], 'test.txt', {
 			type: 'text/plain',
 		} );
@@ -182,23 +182,8 @@ describe( 'handleBeforeUpload', () => {
 
 		beforeUploadHandler( uploader, file );
 
-		expect( uploader.removeFile ).toHaveBeenCalledWith( file );
-	} );
-
-	it( 'triggers next file in queue', () => {
-		vi.useFakeTimers();
-
-		const nativeFile = new File( [ 'test' ], 'test.txt', {
-			type: 'text/plain',
-		} );
-		const file = createMockFile( nativeFile );
-
-		beforeUploadHandler( uploader, file );
-
-		vi.runAllTimers();
-		expect( uploader.start ).toHaveBeenCalled();
-
-		vi.useRealTimers();
+		expect( file.status ).toBe( 2 ); // UPLOADING
+		expect( uploader.removeFile ).not.toHaveBeenCalled();
 	} );
 
 	it( 'passes native file to upload, not plupload wrapper', () => {
@@ -329,7 +314,7 @@ describe( 'handleBeforeUpload', () => {
 			);
 		} );
 
-		it( 'calls uploadSuccess on media-new.php', async () => {
+		it( 'triggers FileUploaded with the attachment ID on media-new.php', async () => {
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
@@ -346,7 +331,13 @@ describe( 'handleBeforeUpload', () => {
 
 			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-			expect( window.uploadSuccess ).toHaveBeenCalledWith( file, '789' );
+			// handlers.js passes the response on to uploadSuccess().
+			expect( uploader.trigger ).toHaveBeenCalledWith(
+				'FileUploaded',
+				file,
+				{ response: '789' }
+			);
+			expect( file.status ).toBe( 5 ); // DONE
 			// Should NOT fetch legacy data for media-new.php path
 			expect( window.wp.media.attachment ).not.toHaveBeenCalled();
 
