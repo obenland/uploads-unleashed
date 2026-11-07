@@ -297,6 +297,54 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test a created upload counts as pending before its first chunk arrives.
+	 */
+	public function test_created_upload_is_pending_before_first_chunk() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '4096' );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'reserved.txt' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame( 4096, ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_total_pending_size() );
+	}
+
+	/**
+	 * Test uploads that haven't sent a chunk yet still reserve their space.
+	 *
+	 * Without that, any number of uploads the size of the free space could be created.
+	 */
+	public function test_created_uploads_cannot_oversubscribe_disk_space() {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'Single site only; multisite uses the space quota.' );
+		}
+
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk_free_space may be disabled on some hosts.
+		$available = @disk_free_space( wp_upload_dir()['basedir'] );
+		if ( false === $available || $available < 2 * GB_IN_BYTES ) {
+			$this->markTestSkipped( 'Needs at least 2 GB of known free disk space.' );
+		}
+
+		$create = function ( int $length ): WP_REST_Response {
+			$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+			$request->set_header( 'Upload-Length', (string) $length );
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+			$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'big.zip' ) );
+
+			return rest_get_server()->dispatch( $request );
+		};
+
+		// Leaves about 100 MB, give or take what other processes write meanwhile.
+		$first = $create( (int) $available - 100 * MB_IN_BYTES );
+		$this->assertSame( 201, $first->get_status() );
+
+		$second = $create( GB_IN_BYTES );
+		$this->assertSame( 413, $second->get_status() );
+	}
+
+	/**
 	 * Test REST API rejects uploads exceeding available space.
 	 */
 	public function test_rest_api_rejects_oversized_upload() {

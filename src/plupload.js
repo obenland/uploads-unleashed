@@ -7,6 +7,7 @@
  */
 
 import { applyFilters } from '@wordpress/hooks';
+import { __ } from '@wordpress/i18n';
 import { upload } from '@uploads-unleashed/tus-client';
 
 /**
@@ -21,8 +22,37 @@ const PLUPLOAD_STATUS = {
 	DONE: 5,
 };
 
+/**
+ * Plupload uploader state constants.
+ *
+ * @since 1.2.0
+ *
+ * @see https://www.plupload.com/docs/v2/Uploader#state-property
+ */
+const PLUPLOAD_STATE = {
+	STARTED: 2,
+};
+
 // Track hooked plupload instances to prevent double-hooking
 const hookedUploaders = new WeakSet();
+
+/**
+ * Moves a running plupload queue on to its next file.
+ *
+ * Plupload only advances from its own FileUploaded and Error handlers, or
+ * from start() while stopped. Restarting the queue is what core's
+ * handlers.js does when it drops a file mid-queue, too.
+ *
+ * @since 1.2.0
+ *
+ * @param {Object} up Plupload instance.
+ */
+function continueQueue( up ) {
+	if ( up.state === PLUPLOAD_STATE.STARTED ) {
+		up.stop();
+		up.start();
+	}
+}
 
 /**
  * Handles plupload errors by updating file status and triggering error UI.
@@ -40,10 +70,16 @@ function handlePluploadError( up, file, message ) {
 		document.getElementById( 'media-items' )
 	) {
 		window.wpFileError( file, message );
+
+		// handlers.js has no failed FileUploaded response to advance the queue with.
+		continueQueue( up );
 		return;
 	}
 
-	// For upload.php: mimic a rejected async-upload.php response so core shows the server's message.
+	/*
+	 * For upload.php: mimic a rejected async-upload.php response so core shows
+	 * the server's message. Plupload moves on to the next file from there.
+	 */
 	up.trigger( 'FileUploaded', file, {
 		response: JSON.stringify( {
 			success: false,
@@ -57,6 +93,10 @@ function handlePluploadError( up, file, message ) {
  *
  * Core-ready pattern: Extends plupload behavior without replacing handlers.
  * Returns false to prevent plupload's default upload, undefined to allow it.
+ *
+ * A file handled via TUS stays in plupload's queue as uploading until its TUS
+ * upload settles, so plupload uploads one file at a time and fires
+ * UploadComplete once, after the last one.
  *
  * @param {Object} uploader Plupload instance.
  * @param {Object} file     Plupload file object.
@@ -91,6 +131,9 @@ function handleBeforeUpload( uploader, file ) {
 		return; // Let plupload's default behavior run
 	}
 
+	// Plupload skips uploading files and completes the queue only once they're done or failed.
+	file.status = PLUPLOAD_STATUS.UPLOADING;
+
 	// Use TUS for this file
 	upload( nativeFile, {
 		onProgress: ( percent, bytesUploaded ) => {
@@ -112,17 +155,29 @@ function handleBeforeUpload( uploader, file ) {
 			file.percent = 100;
 			file.status = PLUPLOAD_STATUS.DONE;
 
-			// For media-new.php (check for #media-items which only exists there)
+			/*
+			 * For media-new.php (check for #media-items which only exists there):
+			 * async-upload.php responds with the attachment ID, which handlers.js
+			 * passes on to uploadSuccess().
+			 */
 			if (
 				typeof window.uploadSuccess === 'function' &&
 				document.getElementById( 'media-items' )
 			) {
-				window.uploadSuccess( file, String( attachment.id ) );
+				uploader.trigger( 'FileUploaded', file, {
+					response: String( attachment.id ),
+				} );
 				return;
 			}
 
-			// Fetch attachment in wp_prepare_attachment_for_js() format.
-			const model = window.wp.media.attachment( attachment.id );
+			/*
+			 * Fetch attachment in wp_prepare_attachment_for_js() format.
+			 * Not via wp.media.attachment(): its memoized cache would keep this
+			 * model in place of the grid's file.attachment.
+			 */
+			const model = new window.wp.media.model.Attachment( {
+				id: attachment.id,
+			} );
 
 			return model.fetch().then( () => {
 				uploader.trigger( 'FileUploaded', file, {
@@ -137,15 +192,9 @@ function handleBeforeUpload( uploader, file ) {
 			handlePluploadError(
 				uploader,
 				file,
-				error.message || 'Upload failed'
+				error.message || __( 'Upload failed', 'uploads-unleashed' )
 			);
 		} );
-
-	// Remove file from plupload queue (we're handling it via TUS)
-	uploader.removeFile( file );
-
-	// Process next file in queue
-	setTimeout( () => uploader.start(), 0 );
 
 	// Prevent plupload's default upload behavior
 	return false;

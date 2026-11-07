@@ -61,15 +61,33 @@ function uploads_unleashed_register_scripts() {
 		$tus_client_asset['version'],
 		true
 	);
+	/**
+	 * Filters how many uploads run in parallel in the browser.
+	 *
+	 * Further files wait until an upload finishes. Each running upload keeps a
+	 * PHP worker busy with its current chunk, so hosts with few workers answer
+	 * too many parallel uploads with 503 errors. Clamped to a minimum of 1.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int $max_concurrent_uploads Maximum number of parallel uploads. Default 3.
+	 */
+	$max_concurrent_uploads = max( 1, (int) apply_filters( 'uploads_unleashed_max_concurrent_uploads', 3 ) );
+
 	wp_localize_script(
 		'uploads-unleashed',
 		'uploadsUnleashed',
 		array(
-			'endpoint'    => rest_url( 'wp/v2/media' ),
-			'nonce'       => wp_create_nonce( 'wp_rest' ),
-			'mediaNewUrl' => admin_url( 'media-new.php' ),
+			'endpoint'             => rest_url( 'wp/v2/media' ),
+			'nonce'                => wp_create_nonce( 'wp_rest' ),
+			'mediaNewUrl'          => admin_url( 'media-new.php' ),
+			'blogId'               => get_current_blog_id(),
+			'userId'               => get_current_user_id(),
+			'maxConcurrentUploads' => $max_concurrent_uploads,
 		)
 	);
+
+	wp_set_script_translations( 'uploads-unleashed', 'uploads-unleashed' );
 
 	// Register and enqueue the pending uploads UI script.
 	$ui_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/resume-ui.asset.php';
@@ -89,6 +107,7 @@ function uploads_unleashed_register_scripts() {
 		array(),
 		$ui_asset['version']
 	);
+	wp_style_add_data( 'uploads-unleashed-ui', 'rtl', 'replace' );
 
 	// Register WordPress media uploader integration (plupload-based).
 	$plupload_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/plupload.asset.php';
@@ -101,6 +120,8 @@ function uploads_unleashed_register_scripts() {
 		true
 	);
 
+	wp_set_script_translations( 'uploads-unleashed-plupload', 'uploads-unleashed' );
+
 	// Register block editor integration.
 	$block_editor_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/block-editor.asset.php';
 
@@ -111,6 +132,8 @@ function uploads_unleashed_register_scripts() {
 		$block_editor_asset['version'],
 		true
 	);
+
+	wp_set_script_translations( 'uploads-unleashed-block-editor', 'uploads-unleashed' );
 }
 add_action( 'init', 'uploads_unleashed_register_scripts' );
 
@@ -316,6 +339,68 @@ function uploads_unleashed_intercept_tus_creation( $result, $server, $request ) 
 add_filter( 'rest_pre_dispatch', 'uploads_unleashed_intercept_tus_creation', 10, 3 );
 
 /**
+ * Keeps the body of an oversized TUS chunk out of memory.
+ *
+ * WP_REST_Server::serve_request() reads the whole request body into memory
+ * before it dispatches, so a PATCH far over the chunk size limit exhausts
+ * PHP's memory before upload_chunk() can answer 413. When Content-Length
+ * already exceeds the limit, give the server an empty body instead: it
+ * never reads php://input, and upload_chunk() rejects the request based on
+ * its Content-Length header.
+ *
+ * Runs on parse_request before rest_api_loaded(), which serves REST requests.
+ *
+ * @since 1.2.0
+ *
+ * @param WP $wp Current WordPress environment instance.
+ */
+function uploads_unleashed_skip_oversized_chunk_body( WP $wp ): void {
+	if ( empty( $wp->query_vars['rest_route'] ) || empty( $_SERVER['CONTENT_LENGTH'] ) || empty( $_SERVER['REQUEST_METHOD'] ) ) {
+		return;
+	}
+
+	$route = '/' . trim( $wp->query_vars['rest_route'], '/' );
+	if ( ! preg_match( '#^/wp/v2/media/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$#', $route ) ) {
+		return;
+	}
+
+	// Resolve the method the same way WP_REST_Server::serve_request() does.
+	$method = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) );
+	if ( isset( $_GET['_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only reads the method; the REST server authenticates the request.
+		$method = sanitize_text_field( wp_unslash( $_GET['_method'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- See above.
+	} elseif ( isset( $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ) ) {
+		$method = sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ) );
+	}
+
+	if ( 'PATCH' !== strtoupper( $method ) ) {
+		return;
+	}
+
+	$content_length = sanitize_text_field( wp_unslash( $_SERVER['CONTENT_LENGTH'] ) );
+	if ( ! ctype_digit( $content_length ) ) {
+		return;
+	}
+
+	$request = new WP_REST_Request( 'PATCH', $route );
+	$request->set_headers( rest_get_server()->get_headers( wp_unslash( $_SERVER ) ) );
+
+	if ( (int) $content_length <= Uploads_Unleashed_TUS_Controller::get_max_chunk_size( $request ) ) {
+		return;
+	}
+
+	/*
+	 * Relies on a core implementation detail: WP_REST_Server::get_raw_data() returns the
+	 * $HTTP_RAW_POST_DATA global when it's set and only reads php://input otherwise
+	 * (identical in WordPress 6.4 through 7.1). Pre-setting it keeps the oversized body
+	 * out of memory. If core ever stops consulting the global, the body is buffered again
+	 * and an oversized chunk can exhaust memory; upload_chunk() still answers 413 from the
+	 * Content-Length header whenever PHP survives that.
+	 */
+	$GLOBALS['HTTP_RAW_POST_DATA'] = ''; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The REST server's cache of the request body.
+}
+add_action( 'parse_request', 'uploads_unleashed_skip_oversized_chunk_body', 9 );
+
+/**
  * Cleans up expired uploads.
  *
  * @since 0.1.0
@@ -383,12 +468,37 @@ add_filter( 'transient_dirsize_cache', array( 'Uploads_Unleashed_TUS_Chunk_Stora
 /**
  * Clears the scheduled cleanup event on plugin deactivation.
  *
+ * Each site schedules its own event, so network deactivation clears it
+ * on every site in the network.
+ *
  * @since 0.1.0
+ * @since 1.2.0 Added the `$network_wide` parameter.
+ *
+ * @param bool $network_wide Whether the plugin is being deactivated network-wide.
  */
-function uploads_unleashed_deactivate() {
-	$timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
-	if ( $timestamp ) {
-		wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
+function uploads_unleashed_deactivate( $network_wide = false ) {
+	if ( ! is_multisite() || ! $network_wide ) {
+		wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
+		return;
+	}
+
+	$sites = get_sites(
+		array(
+			'fields'                 => 'ids',
+			'number'                 => 0,
+			'update_site_cache'      => false,
+			'update_site_meta_cache' => false,
+		)
+	);
+
+	foreach ( $sites as $site_id ) {
+		switch_to_blog( $site_id );
+
+		try {
+			wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
+		} finally {
+			restore_current_blog();
+		}
 	}
 }
 register_deactivation_hook( __FILE__, 'uploads_unleashed_deactivate' );
