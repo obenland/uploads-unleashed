@@ -519,6 +519,85 @@ async function forgetUploadIfGone( tusUpload ) {
 	);
 }
 
+/**
+ * Number of uploads that run at once unless PHP localizes another limit.
+ */
+const DEFAULT_MAX_CONCURRENT_UPLOADS = 3;
+
+/**
+ * Number of uploads currently running.
+ */
+let activeUploads = 0;
+
+/**
+ * Uploads waiting for a free slot, in the order they were requested.
+ *
+ * @type {Array<() => void>}
+ */
+const uploadQueue = [];
+
+/**
+ * Returns how many uploads may run at once.
+ *
+ * Shared hosts often have only a few PHP workers, so uploading every
+ * queued file at once leads to 503s. The limit comes from the
+ * `uploads_unleashed_max_concurrent_uploads` PHP filter.
+ *
+ * @return {number} The limit, at least 1.
+ */
+function getMaxConcurrentUploads() {
+	const limit = parseInt( window.uploadsUnleashed?.maxConcurrentUploads, 10 );
+
+	return limit >= 1 ? limit : DEFAULT_MAX_CONCURRENT_UPLOADS;
+}
+
+/**
+ * Starts queued uploads while slots are free.
+ */
+function startQueuedUploads() {
+	while ( activeUploads < getMaxConcurrentUploads() && uploadQueue.length ) {
+		uploadQueue.shift()();
+	}
+}
+
+/**
+ * Runs a task once an upload slot is free, and frees the slot when it settles.
+ *
+ * Starts the task synchronously when a slot is free. A queued task whose
+ * signal aborts is rejected and never runs.
+ *
+ * @param {() => Promise<Object>} task     Starts the upload.
+ * @param {AbortSignal}           [signal] AbortSignal for cancellation.
+ * @return {Promise<Object>} Settles like the task.
+ */
+function withUploadSlot( task, signal ) {
+	return new Promise( ( resolve, reject ) => {
+		const onAbort = () => {
+			const index = uploadQueue.indexOf( run );
+			if ( -1 !== index ) {
+				uploadQueue.splice( index, 1 );
+				reject( new Error( 'Upload aborted' ) );
+			}
+		};
+
+		const run = () => {
+			signal?.removeEventListener( 'abort', onAbort );
+			activeUploads++;
+
+			task()
+				.finally( () => {
+					activeUploads--;
+					startQueuedUploads();
+				} )
+				.then( resolve, reject );
+		};
+
+		signal?.addEventListener( 'abort', onAbort );
+		uploadQueue.push( run );
+		startQueuedUploads();
+	} );
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -531,6 +610,7 @@ async function forgetUploadIfGone( tusUpload ) {
  * - Automatic resume of interrupted uploads.
  * - Progress callbacks.
  * - AbortSignal for cancellation.
+ * - A limit on parallel uploads; further uploads wait for a free slot.
  *
  * @param {File}                                                                 file                 The file to upload.
  * @param {Object}                                                               [options]            Upload options.
@@ -549,6 +629,21 @@ async function forgetUploadIfGone( tusUpload ) {
  * ```
  */
 export async function upload( file, options = {} ) {
+	if ( options.signal?.aborted ) {
+		throw new Error( 'Upload aborted' );
+	}
+
+	return withUploadSlot( () => startUpload( file, options ), options.signal );
+}
+
+/**
+ * Uploads a file once it has an upload slot.
+ *
+ * @param {File}   file    The file to upload.
+ * @param {Object} options Upload options, see upload().
+ * @return {Promise<Object>} Resolves with WordPress attachment data.
+ */
+function startUpload( file, options ) {
 	return new Promise( ( resolve, reject ) => {
 		// Handle already-aborted signal before creating upload
 		if ( options.signal?.aborted ) {

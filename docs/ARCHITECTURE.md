@@ -68,6 +68,7 @@ The main TUS client wrapper built on `tus-js-client`, exposed to other scripts a
 - Retries with a backoff capped at one minute; while the browser is offline, requests wait for the connection to come back
 - Fingerprint-based resume (stored in localStorage, scoped to the site and user; uploads still work without storage)
 - Automatic cleanup on success
+- At most 3 parallel uploads (`uploads_unleashed_max_concurrent_uploads`); further uploads wait in a queue
 
 ### plupload.js - Media Library Integration
 
@@ -254,6 +255,7 @@ Manages physical chunk files on disk:
 | `uploads_unleashed_pre_finalize` | Validate before finalizing |
 | `uploads_unleashed_finalize_upload` | Custom finalization |
 | `uploads_unleashed_attachment_data` | Modify response |
+| `uploads_unleashed_max_concurrent_uploads` | Limit parallel uploads in the browser |
 
 ### Actions
 

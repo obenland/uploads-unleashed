@@ -67,6 +67,8 @@ beforeEach( () => {
 		nonce: 'test-nonce',
 		blogId: '1',
 		userId: '7',
+		// Many tests never finish their uploads, so don't let the parallel limit queue later ones.
+		maxConcurrentUploads: Number.MAX_SAFE_INTEGER,
 	};
 	capturedCallbacks = {};
 	vi.clearAllMocks();
@@ -169,13 +171,18 @@ describe( 'upload', () => {
 		);
 	} );
 
-	it( 'uses default endpoint when window.uploadsUnleashed is not set', () => {
+	it( 'uses default endpoint when window.uploadsUnleashed is not set', async () => {
 		window.uploadsUnleashed = undefined;
 		const file = new File( [ 'test' ], 'test.txt' );
 
-		upload( file );
+		// A fresh module, so the unfinished uploads of earlier tests don't hold every slot.
+		vi.resetModules();
+		const freshTus = await import( 'tus-js-client' );
+		const { upload: freshUpload } = await import( '../../src/tus-client' );
 
-		expect( tus.Upload ).toHaveBeenCalledWith(
+		freshUpload( file );
+
+		expect( freshTus.Upload ).toHaveBeenCalledWith(
 			file,
 			expect.objectContaining( {
 				endpoint: '/wp-json/wp/v2/media',
