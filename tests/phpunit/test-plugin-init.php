@@ -364,6 +364,25 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that the pending uploads stylesheet is swapped for its RTL build in RTL locales.
+	 */
+	public function test_pending_ui_style_uses_rtl_build_in_rtl_locales() {
+		$styles                 = wp_styles();
+		$original_direction     = $styles->text_direction;
+		$styles->text_direction = 'rtl';
+
+		ob_start();
+		$styles->do_item( 'uploads-unleashed-ui' );
+		$output = ob_get_clean();
+
+		$styles->text_direction = $original_direction;
+
+		$this->assertStringContainsString( 'build/resume-ui-rtl.css', $output );
+		$this->assertStringNotContainsString( 'build/resume-ui.css', $output );
+		$this->assertFileExists( UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/resume-ui-rtl.css' );
+	}
+
+	/**
 	 * Test that enqueue_scripts enqueues plupload script.
 	 */
 	public function test_enqueue_scripts_enqueues_plupload() {
