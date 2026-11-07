@@ -65,9 +65,10 @@ function uploads_unleashed_register_scripts() {
 		'uploads-unleashed',
 		'uploadsUnleashed',
 		array(
-			'endpoint'    => rest_url( 'wp/v2/media' ),
-			'nonce'       => wp_create_nonce( 'wp_rest' ),
-			'mediaNewUrl' => admin_url( 'media-new.php' ),
+			'endpoint'         => rest_url( 'wp/v2/media' ),
+			'nonce'            => wp_create_nonce( 'wp_rest' ),
+			'mediaNewUrl'      => admin_url( 'media-new.php' ),
+			'uploadExpiration' => Uploads_Unleashed_TUS_Upload_Session::get_expiration(),
 		)
 	);
 
@@ -224,6 +225,33 @@ function uploads_unleashed_add_options_headers( WP_REST_Response $response, WP_R
 	return $controller->add_options_headers( $response, $request );
 }
 add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_options_headers', 10, 3 );
+
+/**
+ * Adds the Tus-Resumable header to every TUS response, including errors.
+ *
+ * The TUS protocol requires it on every response except OPTIONS. Successful
+ * responses already set it; this covers errors, such as those from
+ * permission checks or the REST server itself.
+ *
+ * @since 1.2.0
+ *
+ * @param WP_HTTP_Response $response The response object.
+ * @param WP_REST_Server   $server   The REST server instance.
+ * @param WP_REST_Request  $request  The request object.
+ * @return WP_HTTP_Response The response, with Tus-Resumable on TUS requests.
+ */
+function uploads_unleashed_add_tus_resumable_header( WP_HTTP_Response $response, WP_REST_Server $server, WP_REST_Request $request ): WP_HTTP_Response {
+	$route      = $request->get_route();
+	$is_upload  = (bool) preg_match( '#^/wp/v2/media/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$#', $route );
+	$is_tus_new = '/wp/v2/media' === $route && 'POST' === $request->get_method() && null !== $request->get_header( 'upload_length' );
+
+	if ( ( $is_upload || $is_tus_new ) && ! isset( $response->get_headers()['Tus-Resumable'] ) ) {
+		$response->header( 'Tus-Resumable', Uploads_Unleashed_TUS_Controller::TUS_VERSION );
+	}
+
+	return $response;
+}
+add_filter( 'rest_post_dispatch', 'uploads_unleashed_add_tus_resumable_header', 10, 3 );
 
 /**
  * Adds TUS headers to the CORS allowed headers list.

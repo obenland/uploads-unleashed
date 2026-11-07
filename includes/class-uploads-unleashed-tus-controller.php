@@ -458,7 +458,8 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Update session.
-		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $new_offset );
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$session->update_offset( $upload_id, $new_offset );
 
 		/**
 		 * Fires after a chunk is received and stored.
@@ -490,6 +491,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$response = new WP_REST_Response( null, 204 );
 		$response->header( 'Upload-Offset', $new_offset );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
+
+		// The expiration moved with this chunk.
+		$upload = $session->get( $upload_id );
+		if ( $upload ) {
+			$response->header( 'Upload-Expires', gmdate( 'D, d M Y H:i:s', $upload['expires_at'] ) . ' GMT' );
+		}
 
 		return $response;
 	}
