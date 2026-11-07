@@ -81,6 +81,8 @@ function uploads_unleashed_register_scripts() {
 			'endpoint'             => rest_url( 'wp/v2/media' ),
 			'nonce'                => wp_create_nonce( 'wp_rest' ),
 			'mediaNewUrl'          => admin_url( 'media-new.php' ),
+			'blogId'               => get_current_blog_id(),
+			'userId'               => get_current_user_id(),
 			'maxConcurrentUploads' => $max_concurrent_uploads,
 		)
 	);
@@ -377,12 +379,37 @@ add_filter( 'upload_size_limit', 'uploads_unleashed_filter_upload_size_limit', 2
 /**
  * Clears the scheduled cleanup event on plugin deactivation.
  *
+ * Each site schedules its own event, so network deactivation clears it
+ * on every site in the network.
+ *
  * @since 0.1.0
+ * @since 1.2.0 Added the `$network_wide` parameter.
+ *
+ * @param bool $network_wide Whether the plugin is being deactivated network-wide.
  */
-function uploads_unleashed_deactivate() {
-	$timestamp = wp_next_scheduled( 'uploads_unleashed_cleanup' );
-	if ( $timestamp ) {
-		wp_unschedule_event( $timestamp, 'uploads_unleashed_cleanup' );
+function uploads_unleashed_deactivate( $network_wide = false ) {
+	if ( ! is_multisite() || ! $network_wide ) {
+		wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
+		return;
+	}
+
+	$sites = get_sites(
+		array(
+			'fields'                 => 'ids',
+			'number'                 => 0,
+			'update_site_cache'      => false,
+			'update_site_meta_cache' => false,
+		)
+	);
+
+	foreach ( $sites as $site_id ) {
+		switch_to_blog( $site_id );
+
+		try {
+			wp_clear_scheduled_hook( 'uploads_unleashed_cleanup' );
+		} finally {
+			restore_current_blog();
+		}
 	}
 }
 register_deactivation_hook( __FILE__, 'uploads_unleashed_deactivate' );

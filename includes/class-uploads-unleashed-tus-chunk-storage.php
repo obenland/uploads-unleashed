@@ -88,6 +88,22 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Creates an empty chunk file for a new upload.
+	 *
+	 * Chunk files are how pending uploads are found, so creating one up front
+	 * makes the upload count against the available space before its first chunk.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return bool True on success, false on failure.
+	 */
+	public function create( string $upload_id ): bool {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Same as append(): WP_Filesystem requires credentials, impractical for runtime.
+		return touch( $this->get_path( $upload_id ) );
+	}
+
+	/**
 	 * Appends data to a chunk file.
 	 *
 	 * @since 0.1.0
@@ -159,16 +175,21 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$path = $this->get_path( $upload_id );
 
 		if ( file_exists( $path ) ) {
-			return wp_delete_file( $path );
+			// wp_delete_file() only returns a value since WordPress 6.7.
+			wp_delete_file( $path );
 		}
 
-		return true;
+		return ! file_exists( $path );
 	}
 
 	/**
 	 * Returns the current size of a chunk file.
 	 *
+	 * Reads the size under a shared lock, so a chunk that append() is still
+	 * writing is never reported half-written.
+	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Reads the size under a shared lock.
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return int File size in bytes, or 0 if file doesn't exist.
@@ -180,10 +201,19 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			return 0;
 		}
 
-		clearstatcache( true, $path );
-		$size = filesize( $path );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem lacks flock support needed for TUS concurrency.
+		$handle = fopen( $path, 'rb' );
+		if ( ! $handle ) {
+			return 0;
+		}
 
-		return false === $size ? 0 : $size;
+		flock( $handle, LOCK_SH );
+		$stat = fstat( $handle );
+		flock( $handle, LOCK_UN );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
+		fclose( $handle );
+
+		return false === $stat ? 0 : (int) $stat['size'];
 	}
 
 	/**
