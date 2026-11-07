@@ -17,13 +17,9 @@
 		},
 		{
 			"title": "## 🧰 Maintenance",
-			"labels": [ "maintenance", "dependencies" ]
+			"labels": [ "maintenance" ]
 		}
 	],
-	"ignore_labels": [ "Skip Changelog", "Release" ],
-	"sort": "ASC",
-	"exclude": {
-		"labels": [ "Skip Changelog", "Release" ],
-		"authors": [ "dependabot[bot]" ]
-	}
+	"ignore_labels": [ "Skip Changelog", "Release", "dependencies" ],
+	"sort": "ASC"
 }
