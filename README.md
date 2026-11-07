@@ -52,7 +52,7 @@ The only limit is your available disk space. On multisite, your network's upload
 
 ### Does this work on multisite?
 
-Yes. Network upload quotas are still respected.
+Yes. Network upload quotas and the network's maximum upload file size are still respected.
 
 ### Does this plugin collect any data?
 

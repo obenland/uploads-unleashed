@@ -330,7 +330,8 @@ add_action( 'uploads_unleashed_cleanup', 'uploads_unleashed_cleanup' );
  *
  * With TUS resumable uploads, PHP's upload_max_filesize is irrelevant
  * since uploads are chunked. The real limit is available disk space
- * (or quota on multisite), minus any in-progress uploads.
+ * (or quota on multisite), minus any in-progress uploads. On multisite,
+ * the network's "Max upload file size" setting still applies.
  *
  * @since 0.1.0
  *
@@ -341,18 +342,23 @@ function uploads_unleashed_filter_upload_size_limit( int $size ): int {
 	$pending_size = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_total_pending_size();
 
 	if ( is_multisite() ) {
-		// On multisite, use quota-based available space.
-		$available = get_upload_space_available();
-	} else {
-		// On single-site, use available disk space.
-		$upload_dir = wp_upload_dir();
-		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk_free_space may be disabled on some hosts.
-		$available = @disk_free_space( $upload_dir['basedir'] );
+		/*
+		 * On multisite, use quota-based available space, capped at the network's
+		 * per-file maximum like core's upload_size_limit_filter().
+		 */
+		$max_file_size = KB_IN_BYTES * (int) get_site_option( 'fileupload_maxk', 1500 );
 
-		if ( false === $available ) {
-			// If we can't determine disk space, keep the original limit.
-			return $size;
-		}
+		return max( 0, min( $max_file_size, get_upload_space_available() - $pending_size ) );
+	}
+
+	// On single-site, use available disk space.
+	$upload_dir = wp_upload_dir();
+	// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk_free_space may be disabled on some hosts.
+	$available = @disk_free_space( $upload_dir['basedir'] );
+
+	if ( false === $available ) {
+		// If we can't determine disk space, keep the original limit.
+		return $size;
 	}
 
 	return max( 0, (int) $available - $pending_size );

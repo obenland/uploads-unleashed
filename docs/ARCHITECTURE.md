@@ -126,7 +126,7 @@ The main REST API controller implementing TUS 1.0.0:
 - Ownership verification
 - File type validation
 - Image content verification
-- Multisite quota checks
+- Multisite quota and max upload file size checks
 
 ### Uploads_Unleashed_TUS_Upload_Session
 
