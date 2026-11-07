@@ -393,6 +393,32 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Returns the IDs of all uploads that have a chunk file on the current site.
+	 *
+	 * Every upload gets a chunk file when it's created, so this lists every
+	 * session, including ones a persistent object cache keeps out of the
+	 * options table. Doesn't create the storage directory.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return string[] Upload IDs.
+	 */
+	public static function get_upload_ids(): array {
+		$files = glob( self::get_chunk_dir() . '*.part' );
+
+		if ( ! $files ) {
+			return array();
+		}
+
+		return array_map(
+			static function ( string $file ): string {
+				return basename( $file, '.part' );
+			},
+			$files
+		);
+	}
+
+	/**
 	 * Deletes all chunk files, protection files, and the storage directory for the current site.
 	 *
 	 * Computes the storage path via get_chunk_dir() to avoid
