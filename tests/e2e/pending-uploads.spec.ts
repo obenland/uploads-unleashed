@@ -26,8 +26,14 @@ async function seedPendingUploads(
 	await page.goto( '/wp-admin/media-new.php' );
 	await page.evaluate(
 		( { entries, lastModified } ) => {
-			const { endpoint } = (
-				window as unknown as { uploadsUnleashed: { endpoint: string } }
+			const { endpoint, blogId, userId } = (
+				window as unknown as {
+					uploadsUnleashed: {
+						endpoint: string;
+						blogId: number;
+						userId: number;
+					};
+				}
 			 ).uploadsUnleashed;
 			const expiresAt = Date.now() + 60 * 60 * 1000;
 
@@ -42,6 +48,8 @@ async function seedPendingUploads(
 					size,
 					lastModified,
 					endpoint,
+					blogId,
+					userId,
 				].join( '|' );
 				localStorage.setItem(
 					`tus::${ fingerprint }::${ expiresAt }::${ index }`,
