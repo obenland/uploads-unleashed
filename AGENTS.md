@@ -1,0 +1,39 @@
+# Uploads Unleashed
+
+WordPress plugin that routes media uploads through a [TUS](https://tus.io/) resumable upload REST API. Start with [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together, [docs/hooks.md](docs/hooks.md) for the public hooks, and [CONTRIBUTING.md](CONTRIBUTING.md) for environment setup.
+
+## Commands
+
+```bash
+npm run build          # webpack (src/ → build/) plus the minified tus-js-client
+npm run lint           # phpcs, ESLint, package.json lint
+npm run test:js        # Vitest
+npm run start:tests && npm test   # PHPUnit in the wp-env tests environment (port 8889)
+npm run start && npm run test:e2e # Playwright against wp-env (port 8888)
+```
+
+CI doesn't use wp-env: `bin/install-wp-tests.sh` (PHPUnit) and `bin/start-e2e-wordpress.sh` (e2e) set up WordPress against a plain MySQL server, and work locally too (see CONTRIBUTING.md).
+
+## Layout
+
+- `uploads-unleashed.php`: bootstrap, script registration, and the `rest_pre_dispatch` filter that turns a `POST /wp/v2/media` with an `Upload-Length` header into a TUS upload.
+- `includes/`: REST controller (`wp/v2/media/<uuid>`), upload session (transients), chunk storage (`uploads/.tus-chunks/`), WP-CLI `wp tus` command.
+- `src/`: `tus-client.js` (upload API), `plupload.js` (media library and `media-new.php`), `block-editor.js` (`apiFetch` middleware), `resume-ui.js` (interrupted-uploads UI). Plain JS, built with `@wordpress/scripts`.
+- `webpack.config.js` externalizes both `tus-js-client` (the vendored `src/vendor/tus.js`, shipped as `build/tus.min.js` and exposed as `window.tus`) and `@uploads-unleashed/tus-client` (exposed as `window.uploadsUnleashed.tusClient`), so each is loaded once as its own registered script. Update the version in `uploads-unleashed.php` when replacing the vendored file.
+- `tests/phpunit`, `tests/js` (Vitest), `tests/e2e` (Playwright, TypeScript).
+
+## Conventions
+
+- WordPress coding standards; `phpcs` and ESLint must pass with no errors or warnings.
+- New PHP files declare `declare( strict_types = 1 );` after the file docblock and type every parameter and return. Existing files stay as they are.
+- PHP must run on 7.4 (CI tests 7.4 and 8.4).
+- Comments: `/** */` docblocks on every function, class, property and constant; `/* */` for multi-line comments in a function body; never stack `//` lines.
+- JS tests use Vitest, not Jest. WordPress packages and the TUS client are mocked through aliases in `vitest.config.mjs`; tests that need a fresh module call `vi.resetModules()` and re-`import()` it.
+- New top-level files or directories that shouldn't ship to WordPress.org go in `.distignore`.
+- The default branch is `trunk`. Releases are cut by pushing an `X.Y.Z` tag; `release.yml` bumps versions and the changelog itself, so don't edit version strings by hand.
+
+## CI
+
+- PHPUnit and Playwright E2E are required checks. Don't add `paths:` filters to their workflows: a skipped required check blocks the PR.
+- Pin third-party actions to a full commit SHA with the version in a comment, set `persist-credentials: false` on checkouts, and give each workflow least-privilege `permissions:`.
+- Dependabot PRs auto-merge through `dependabot-auto-merge.yml`; changes to workflows or the Dependabot config must keep that working.

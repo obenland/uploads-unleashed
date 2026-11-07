@@ -56,3 +56,7 @@ Thumbs.db
 
 # Dist
 .distignore
+
+# Agent instructions
+/AGENTS.md
+/CLAUDE.md

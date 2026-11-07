@@ -9,6 +9,7 @@ Thank you for your interest in contributing to Uploads Unleashed! This guide wil
 - PHP 7.4 or higher
 - Node.js 26 (see `.nvmrc`)
 - Docker (for wp-env)
+- MySQL or MariaDB (only to run the tests without wp-env, as CI does)
 - Composer
 
 ### Installation
@@ -36,23 +37,24 @@ Thank you for your interest in contributing to Uploads Unleashed! This guide wil
 
    This starts a Docker-based WordPress instance at http://localhost:8888
 
-5. Build the JavaScript/TypeScript:
+5. Build the JavaScript:
    ```bash
    npm run build
    ```
 
-   For development with hot reloading:
+   To rebuild on every change:
    ```bash
-   npm run start:js
+   npm run dev
    ```
 
 ## Running Tests
 
 ### PHP Tests
 
-PHPUnit tests run inside the wp-env Docker container:
+PHPUnit tests run inside a separate wp-env tests environment on port 8889:
 
 ```bash
+npm run start:tests
 npm test
 ```
 
@@ -102,11 +104,11 @@ The server keeps running in the background. Rerunning the script replaces it; `p
 
 ### Code Coverage Reports
 
-The coverage configuration is already set up in `phpunit.xml.dist` to analyze the code in the `includes` directory. To generate code coverage reports, you'll need to start wp-env with Xdebug enabled for coverage:
+The coverage configuration is already set up in `phpunit.xml.dist` to analyze the code in the `includes` directory. To generate code coverage reports, you'll need to start the tests environment with Xdebug enabled for coverage:
 
 ```bash
 # Start the environment with Xdebug enabled
-npm run start -- --xdebug=coverage
+npm run start:tests -- --xdebug=coverage
 ```
 
 ```bash
@@ -156,18 +158,23 @@ npm run format         # Prettier
 
 ```
 uploads-unleashed/
+├── uploads-unleashed.php   # Bootstrap, script registration, TUS creation intercept
 ├── includes/               # PHP backend classes
 │   ├── class-uploads-unleashed-tus-controller.php
 │   ├── class-uploads-unleashed-tus-upload-session.php
-│   └── class-uploads-unleashed-tus-chunk-storage.php
-├── src/                    # TypeScript frontend source
-│   ├── index.ts            # Core TUS client wrapper
-│   ├── wp-uploader.ts      # Media Library integration
-│   ├── media-utils.ts      # Block Editor integration
-│   └── resumable-ui.ts     # Pending uploads UI
+│   ├── class-uploads-unleashed-tus-chunk-storage.php
+│   └── class-uploads-unleashed-cli-command.php
+├── src/                    # JavaScript source
+│   ├── tus-client.js       # Core TUS client wrapper
+│   ├── plupload.js         # Media Library integration
+│   ├── block-editor.js     # Block Editor integration
+│   ├── resume-ui.js        # Pending uploads UI
+│   └── vendor/tus.js       # Vendored tus-js-client
 ├── tests/
 │   ├── phpunit/            # PHP unit tests
-│   └── js/                 # JavaScript unit tests
+│   ├── js/                 # JavaScript unit tests (Vitest)
+│   └── e2e/                # End-to-end tests (Playwright)
+├── bin/                    # CI scripts for running tests without wp-env
 ├── build/                  # Compiled JS (generated)
 ├── docs/                   # Documentation
 └── .github/workflows/      # CI configuration
@@ -188,6 +195,7 @@ uploads-unleashed/
    ```bash
    npm test
    npm run test:js
+   npm run test:e2e
    npm run lint
    ```
 
@@ -213,9 +221,10 @@ See [docs/hooks.md](docs/hooks.md) for the available filters and actions.
 
 ## Stopping the Development Environment
 
-To stop the WordPress environment:
+To stop the WordPress environments:
 ```bash
 npm run stop
+npm run stop:tests
 ```
 
 ## Questions?
