@@ -89,6 +89,7 @@ function uploads_unleashed_register_scripts() {
 		array(),
 		$ui_asset['version']
 	);
+	wp_style_add_data( 'uploads-unleashed-ui', 'rtl', 'replace' );
 
 	// Register WordPress media uploader integration (plupload-based).
 	$plupload_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/plupload.asset.php';
