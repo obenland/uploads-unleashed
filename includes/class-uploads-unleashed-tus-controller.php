@@ -143,6 +143,32 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Returns the maximum allowed chunk size for a PATCH request.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param WP_REST_Request $request The request object.
+	 * @return int Maximum chunk size in bytes, at least 1 MB.
+	 */
+	public static function get_max_chunk_size( WP_REST_Request $request ): int {
+		/**
+		 * Filters the maximum allowed chunk size.
+		 *
+		 * Controls how large each individual PATCH request body can be.
+		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
+		 * is clamped to a minimum of 1 MB.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
+		 * @param WP_REST_Request $request        The request object.
+		 */
+		$max_chunk_size = (int) apply_filters( 'uploads_unleashed_max_chunk_size', self::DEFAULT_MAX_CHUNK_SIZE, $request );
+
+		return max( $max_chunk_size, MB_IN_BYTES );
+	}
+
+	/**
 	 * Checks if a given request has access to create uploads.
 	 *
 	 * @since 0.1.0
@@ -153,6 +179,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	public function create_item_permissions_check( $request ) {
 		if ( ! current_user_can( 'upload_files' ) ) {
 			return new WP_Error( 'rest_cannot_create_upload', __( 'Sorry, you are not allowed to upload files.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
+		}
+
+		// Attaching media to a post requires the ability to edit it, as in core.
+		$params = $this->get_upload_params( $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) ) );
+		if ( ! empty( $params['post'] ) && ! current_user_can( 'edit_post', $params['post'] ) ) {
+			return new WP_Error( 'rest_cannot_edit', __( 'Sorry, you are not allowed to upload media to this post.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
 		return true;
@@ -292,6 +324,28 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_upload_length_invalid', __( 'Upload-Length must be a positive integer.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
+		// Enforce the network's "Max upload file size" setting.
+		$file_size_check = $this->check_network_max_file_size( $upload_length );
+		if ( is_wp_error( $file_size_check ) ) {
+			return $file_size_check;
+		}
+
+		/*
+		 * Reject file types that would fail at finalize now, before the client
+		 * sends any bytes. Mirrors the check in _wp_handle_upload().
+		 */
+		$metadata = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
+		$filename = sanitize_file_name( $metadata['filename'] ?? '' );
+
+		if ( '' === $filename ) {
+			return new WP_Error( 'rest_upload_filename_required', __( 'A filename is required in the Upload-Metadata header.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
+		$filetype = wp_check_filetype( $filename );
+		if ( ( ! $filetype['type'] || ! $filetype['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
+			return new WP_Error( 'rest_invalid_file_type', __( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
 		/** This filter is documented in includes/class-uploads-unleashed-tus-controller.php */
 		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
 
@@ -308,7 +362,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Pre-flight multisite quota check before accepting the upload.
-		if ( is_multisite() && $upload_length > get_upload_space_available() ) {
+		if ( is_multisite() && ! get_site_option( 'upload_space_check_disabled' ) && $upload_length > get_upload_space_available() ) {
 			return new WP_Error(
 				'rest_quota_exceeded',
 				__( 'This file would exceed your space quota.', 'uploads-unleashed' ),
@@ -316,20 +370,32 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// Parse metadata and create upload session.
-		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
+		// Fail now, not on the first chunk, when chunks can't be stored.
+		$chunk_dir_check = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->check_directory();
+		if ( is_wp_error( $chunk_dir_check ) ) {
+			return $chunk_dir_check;
+		}
+
 		$session   = new Uploads_Unleashed_TUS_Upload_Session();
 		$upload_id = $session->create(
 			array(
-				'filename' => $metadata['filename'] ?? 'unnamed',
+				'filename' => $filename,
 				'filetype' => $metadata['filetype'] ?? 'application/octet-stream',
 				'length'   => $upload_length,
+				'params'   => $this->get_upload_params( $metadata ),
 			),
 			$request
 		);
 
 		if ( is_wp_error( $upload_id ) ) {
 			return $upload_id;
+		}
+
+		// Reserve the upload's space right away, not only once its first chunk arrives.
+		if ( ! ( new Uploads_Unleashed_TUS_Chunk_Storage() )->create( $upload_id ) ) {
+			$session->delete( $upload_id );
+
+			return new WP_Error( 'tus_chunk_create_failed', __( 'Could not create chunk file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
 		$upload = $session->get( $upload_id );
@@ -356,14 +422,26 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Returns the current offset of an upload.
 	 *
+	 * Once every byte has arrived, finalizes the upload if that hasn't
+	 * happened yet and returns the attachment, so a client resuming after a
+	 * lost final response gets the attachment instead of starting over.
+	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Finalizes complete uploads and returns their attachment.
 	 *
 	 * @param WP_REST_Request $request Full details about the request.
-	 * @return WP_REST_Response Response object.
+	 * @return WP_REST_Response|WP_Error Response object, or WP_Error if finalization fails.
 	 */
-	public function get_item_offset( WP_REST_Request $request ): WP_REST_Response {
+	public function get_item_offset( WP_REST_Request $request ) {
+		$upload_id = $request->get_param( 'id' );
+		$offset    = $this->get_upload_offset( $upload_id );
+
+		if ( $offset >= (int) $this->current_upload['length'] ) {
+			return $this->complete_upload( $upload_id );
+		}
+
 		$response = new WP_REST_Response( null, 200 );
-		$response->header( 'Upload-Offset', $this->current_upload['offset'] );
+		$response->header( 'Upload-Offset', $offset );
 		$response->header( 'Upload-Length', $this->current_upload['length'] );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
 		// CRITICAL: Prevent proxy caching of offset.
@@ -396,30 +474,21 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$client_offset = (int) $client_offset;
-		$server_offset = (int) $this->current_upload['offset'];
+		$server_offset = $this->get_upload_offset( $upload_id );
 
 		// 409 Conflict: Do NOT store any data on offset mismatch.
 		if ( $client_offset !== $server_offset ) {
 			return new WP_Error( 'rest_offset_mismatch', __( 'Upload offset mismatch.', 'uploads-unleashed' ), array( 'status' => 409 ) );
 		}
 
+		// Every byte is stored: a replayed final chunk, or finalization was interrupted.
+		if ( $server_offset >= (int) $this->current_upload['length'] ) {
+			return $this->complete_upload( $upload_id );
+		}
+
 		// Validate chunk size against server limit.
 		$content_length = $request->get_header( 'Content-Length' );
-
-		/**
-		 * Filters the maximum allowed chunk size.
-		 *
-		 * Controls how large each individual PATCH request body can be.
-		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
-		 * is clamped to a minimum of 1 MB.
-		 *
-		 * @since 1.0.0
-		 *
-		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
-		 * @param WP_REST_Request $request        The request object.
-		 */
-		$max_chunk_size = (int) apply_filters( 'uploads_unleashed_max_chunk_size', self::DEFAULT_MAX_CHUNK_SIZE, $request );
-		$max_chunk_size = max( $max_chunk_size, MB_IN_BYTES );
+		$max_chunk_size = self::get_max_chunk_size( $request );
 
 		if ( null !== $content_length && (int) $content_length > $max_chunk_size ) {
 			return $this->chunk_too_large_error( $max_chunk_size );
@@ -444,9 +513,6 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 		// Truncate chunk so total upload cannot exceed declared Upload-Length.
 		$remaining = (int) $this->current_upload['length'] - $server_offset;
-		if ( $remaining <= 0 ) {
-			return new WP_Error( 'rest_upload_already_complete', __( 'Upload has already received all expected bytes.', 'uploads-unleashed' ), array( 'status' => 409 ) );
-		}
 		if ( strlen( $chunk_data ) > $remaining ) {
 			$chunk_data = substr( $chunk_data, 0, $remaining );
 		}
@@ -457,8 +523,13 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return $new_offset;
 		}
 
-		// Update session.
-		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $new_offset );
+		/*
+		 * Update the session. The chunk file is the source of truth for the
+		 * offset, so a failed update is corrected on the next request.
+		 */
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$session->update_offset( $upload_id, $new_offset );
+		$this->current_upload['offset'] = $new_offset;
 
 		/**
 		 * Fires after a chunk is received and stored.
@@ -474,22 +545,18 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 		// Check if upload is complete.
 		if ( $new_offset === (int) $this->current_upload['length'] ) {
-			$attachment = $this->finalize_upload( $upload_id, $this->current_upload );
-
-			if ( is_wp_error( $attachment ) ) {
-				return $attachment;
-			}
-
-			$response = new WP_REST_Response( $attachment, 200 );
-			$response->header( 'Upload-Offset', $new_offset );
-			$response->header( 'Tus-Resumable', self::TUS_VERSION );
-
-			return $response;
+			return $this->complete_upload( $upload_id );
 		}
 
 		$response = new WP_REST_Response( null, 204 );
 		$response->header( 'Upload-Offset', $new_offset );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
+
+		// The expiration moved with this chunk.
+		$upload = $session->get( $upload_id );
+		if ( $upload ) {
+			$response->header( 'Upload-Expires', gmdate( 'D, d M Y H:i:s', $upload['expires_at'] ) . ' GMT' );
+		}
 
 		return $response;
 	}
@@ -527,111 +594,242 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Finalizes an upload and creates the attachment.
 	 *
+	 * Safe to call again for the same upload: it runs under an exclusive
+	 * lock, records its progress in the session, picks up where an
+	 * interrupted run stopped, and returns the stored result once finished.
+	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Idempotent. Returns a 423 error while another request finalizes the upload.
 	 *
 	 * @param string $upload_id   The upload ID.
 	 * @param array  $upload_data The upload session data.
-	 * @return array|WP_Error Attachment data from wp_prepare_attachment_for_js() on success, WP_Error on failure.
+	 * @return array|WP_Error Attachment data in REST API format on success, WP_Error on failure.
 	 */
 	protected function finalize_upload( string $upload_id, array $upload_data ) {
-		$chunk_path = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( $upload_id );
+		$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
+		$lock    = $storage->lock( $upload_id );
 
-		/**
-		 * Filters whether to proceed with finalization.
-		 *
-		 * Allows plugins to validate or abort finalization. Return WP_Error to abort.
-		 *
-		 * @since 0.1.0
-		 *
-		 * @param true|WP_Error $proceed     Whether to proceed with finalization.
-		 * @param string        $upload_id   The upload ID.
-		 * @param array         $upload_data The upload session data.
-		 * @param string        $chunk_path  Path to the uploaded file.
-		 */
-		$proceed = apply_filters( 'uploads_unleashed_pre_finalize', true, $upload_id, $upload_data, $chunk_path );
-
-		if ( is_wp_error( $proceed ) ) {
-			$this->delete_upload( $upload_id );
-
-			return $proceed;
+		if ( ! $lock ) {
+			return new WP_Error( 'rest_upload_locked', __( 'The upload is still being processed. Try again shortly.', 'uploads-unleashed' ), array( 'status' => 423 ) );
 		}
 
-		/**
-		 * Filters the finalization result.
-		 *
-		 * Allows plugins to completely override finalization. Return an array
-		 * to use as the response data, WP_Error to abort, or null to continue
-		 * with default finalization.
-		 *
-		 * @since 0.1.0
-		 *
-		 * @param array|WP_Error|null $result      The result to return, or null to use default.
-		 * @param string              $upload_id   The upload ID.
-		 * @param array               $upload_data The upload session data.
-		 * @param string              $chunk_path  Path to the uploaded file.
-		 */
-		$custom_result = apply_filters( 'uploads_unleashed_finalize_upload', null, $upload_id, $upload_data, $chunk_path );
+		try {
+			// Re-read under the lock: another request may have advanced or canceled the upload.
+			$upload_data = ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id );
 
-		if ( is_wp_error( $custom_result ) ) {
-			$this->delete_upload( $upload_id );
+			if ( ! $upload_data ) {
+				return new WP_Error( 'rest_upload_not_found', __( 'Upload not found.', 'uploads-unleashed' ), array( 'status' => 404 ) );
+			}
 
-			return $custom_result;
+			return $this->finalize_locked_upload( $upload_id, $upload_data );
+		} finally {
+			$storage->unlock( $lock );
+		}
+	}
+
+	/**
+	 * Runs the finalization steps an upload hasn't completed yet.
+	 *
+	 * The session records each step as it completes: the move into the
+	 * uploads directory (`file`), the attachment (`attachment_id`), and
+	 * the end (`status` finalized). The finished session stays behind as
+	 * a tombstone until it expires.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id   The upload ID.
+	 * @param array  $upload_data The upload session data.
+	 * @return array|WP_Error Attachment data in REST API format on success, WP_Error on failure.
+	 */
+	private function finalize_locked_upload( string $upload_id, array $upload_data ) {
+		if ( Uploads_Unleashed_TUS_Upload_Session::STATUS_FINALIZED === ( $upload_data['status'] ?? '' ) ) {
+			return $this->get_finalized_result( $upload_id, $upload_data );
 		}
 
-		if ( is_array( $custom_result ) ) {
-			// Custom finalization provided - clean up and return.
-			$this->delete_upload( $upload_id );
+		$session = new Uploads_Unleashed_TUS_Upload_Session();
+		$session->update( $upload_id, array( 'status' => Uploads_Unleashed_TUS_Upload_Session::STATUS_FINALIZING ) );
 
-			$attachment_id = $custom_result['id'] ?? 0;
+		if ( empty( $upload_data['file'] ) && empty( $upload_data['attachment_id'] ) ) {
+			$chunk_path = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( $upload_id );
 
 			/**
-			 * Fires after an upload is finalized.
+			 * Filters whether to proceed with finalization.
+			 *
+			 * Allows plugins to validate or abort finalization. Return WP_Error to abort.
 			 *
 			 * @since 0.1.0
 			 *
-			 * @param int    $attachment_id The attachment ID (0 if custom finalization didn't create one).
-			 * @param string $upload_id     The upload ID.
-			 * @param array  $upload_data   The upload session data.
+			 * @param true|WP_Error $proceed     Whether to proceed with finalization.
+			 * @param string        $upload_id   The upload ID.
+			 * @param array         $upload_data The upload session data.
+			 * @param string        $chunk_path  Path to the uploaded file.
 			 */
-			do_action( 'uploads_unleashed_upload_complete', $attachment_id, $upload_id, $upload_data );
+			$proceed = apply_filters( 'uploads_unleashed_pre_finalize', true, $upload_id, $upload_data, $chunk_path );
 
-			return $custom_result;
+			if ( is_wp_error( $proceed ) ) {
+				$this->delete_upload( $upload_id );
+
+				return $proceed;
+			}
+
+			/**
+			 * Filters the finalization result.
+			 *
+			 * Allows plugins to completely override finalization. Return an array
+			 * to use as the response data, WP_Error to abort, or null to continue
+			 * with default finalization.
+			 *
+			 * @since 0.1.0
+			 *
+			 * @param array|WP_Error|null $result      The result to return, or null to use default.
+			 * @param string              $upload_id   The upload ID.
+			 * @param array               $upload_data The upload session data.
+			 * @param string              $chunk_path  Path to the uploaded file.
+			 */
+			$custom_result = apply_filters( 'uploads_unleashed_finalize_upload', null, $upload_id, $upload_data, $chunk_path );
+
+			if ( is_wp_error( $custom_result ) ) {
+				$this->delete_upload( $upload_id );
+
+				return $custom_result;
+			}
+
+			if ( is_array( $custom_result ) ) {
+				$attachment_id = $custom_result['id'] ?? 0;
+
+				// Custom finalization provided - keep its result for replays.
+				$this->mark_finalized(
+					$upload_id,
+					array(
+						'attachment_id' => $attachment_id,
+						'result'        => $custom_result,
+					)
+				);
+
+				/**
+				 * Fires after an upload is finalized.
+				 *
+				 * @since 0.1.0
+				 *
+				 * @param int    $attachment_id The attachment ID (0 if custom finalization didn't create one).
+				 * @param string $upload_id     The upload ID.
+				 * @param array  $upload_data   The upload session data.
+				 */
+				do_action( 'uploads_unleashed_upload_complete', $attachment_id, $upload_id, $upload_data );
+
+				return $custom_result;
+			}
+
+			// Default finalization pipeline.
+			$validated = $this->validate_file( $chunk_path, $upload_data['filename'], $upload_data['filetype'] ?? '' );
+			if ( is_wp_error( $validated ) ) {
+				$this->delete_upload( $upload_id );
+
+				return $validated;
+			}
+
+			$quota_check = $this->check_multisite_quota( $chunk_path );
+			if ( is_wp_error( $quota_check ) ) {
+				$this->delete_upload( $upload_id );
+
+				return $quota_check;
+			}
+
+			$upload_result = $this->sideload_to_uploads( $chunk_path, $validated['filename'], $validated['type'] );
+			if ( is_wp_error( $upload_result ) ) {
+				$this->delete_upload( $upload_id );
+
+				return $upload_result;
+			}
+
+			$upload_data['file'] = $upload_result;
+			$session->update( $upload_id, array( 'file' => $upload_result ) );
 		}
 
-		// Default finalization pipeline.
-		$validated = $this->validate_file( $chunk_path, $upload_data['filename'] );
-		if ( is_wp_error( $validated ) ) {
-			$this->delete_upload( $upload_id );
+		$creating = empty( $upload_data['attachment_id'] );
 
-			return $validated;
+		if ( $creating ) {
+			$attachment_id = $this->create_attachment( $upload_data['file'], $upload_id, $upload_data['params'] ?? array() );
+
+			if ( is_wp_error( $attachment_id ) ) {
+				// The file was already moved out of the chunk directory.
+				wp_delete_file( $upload_data['file']['file'] );
+				$this->delete_upload( $upload_id );
+
+				return $attachment_id;
+			}
+
+			$upload_data['attachment_id'] = $attachment_id;
 		}
 
-		$quota_check = $this->check_multisite_quota( $chunk_path );
-		if ( is_wp_error( $quota_check ) ) {
-			$this->delete_upload( $upload_id );
+		$attachment_id = (int) $upload_data['attachment_id'];
 
-			return $quota_check;
+		// Core's create_item() generated the metadata unless this resumes an interrupted run.
+		if ( ! $creating ) {
+			$this->generate_attachment_metadata( $attachment_id, $upload_data['file']['file'], $creating, $upload_data['params'] ?? array() );
 		}
 
-		$upload_result = $this->sideload_to_uploads( $chunk_path, $validated['filename'], $validated['type'] );
-		if ( is_wp_error( $upload_result ) ) {
-			$this->delete_upload( $upload_id );
-
-			return $upload_result;
-		}
-
-		// Clean up upload data (chunk may already be moved by sideload).
-		$this->delete_upload( $upload_id );
-
-		$attachment_id = $this->create_attachment( $upload_result );
-
-		if ( is_wp_error( $attachment_id ) ) {
-			return $attachment_id;
-		}
+		$this->mark_finalized( $upload_id, array( 'attachment_id' => $attachment_id ) );
 
 		/** This action is documented in includes/class-uploads-unleashed-tus-controller.php */
 		do_action( 'uploads_unleashed_upload_complete', $attachment_id, $upload_id, $upload_data );
 
+		return $this->get_attachment_result( $attachment_id, $upload_data );
+	}
+
+	/**
+	 * Returns the result of an upload that was already finalized.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id   The upload ID.
+	 * @param array  $upload_data The upload session data.
+	 * @return array|WP_Error Attachment data in REST API format, or WP_Error if the attachment is gone.
+	 */
+	private function get_finalized_result( string $upload_id, array $upload_data ) {
+		if ( isset( $upload_data['result'] ) ) {
+			return $upload_data['result'];
+		}
+
+		$attachment_id = (int) ( $upload_data['attachment_id'] ?? 0 );
+
+		if ( 'attachment' !== get_post_type( $attachment_id ) ) {
+			$this->delete_upload( $upload_id );
+
+			return new WP_Error( 'rest_upload_not_found', __( 'Upload not found.', 'uploads-unleashed' ), array( 'status' => 404 ) );
+		}
+
+		return $this->get_attachment_result( $attachment_id, $upload_data );
+	}
+
+	/**
+	 * Marks an upload as finalized and removes its chunk and lock files.
+	 *
+	 * Called with the finalization lock held, so a request waiting for the
+	 * lock finds the finished state.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @param array  $result    Session fields that describe the result.
+	 */
+	private function mark_finalized( string $upload_id, array $result ): void {
+		$result['status'] = Uploads_Unleashed_TUS_Upload_Session::STATUS_FINALIZED;
+
+		( new Uploads_Unleashed_TUS_Upload_Session() )->update( $upload_id, $result );
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->delete( $upload_id );
+	}
+
+	/**
+	 * Returns an attachment in the REST API format of the finalization response.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int   $attachment_id The attachment ID.
+	 * @param array $upload_data   The upload session data.
+	 * @return array Attachment data in REST API format.
+	 */
+	private function get_attachment_result( int $attachment_id, array $upload_data ): array {
 		// Get attachment data in REST API format.
 		$attachment_data = $this->prepare_attachment_for_response( $attachment_id );
 
@@ -656,15 +854,21 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 * to prevent PHP-in-image attacks.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Added the `$filetype` parameter. Users with the `unfiltered_upload`
+	 *              capability may upload any type, as in core.
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The original filename.
+	 * @param string $filetype  Optional. The MIME type the client declared, used when the
+	 *                          type can't be determined and the user can `unfiltered_upload`.
 	 * @return array|WP_Error Array with 'type' and 'filename' on success, WP_Error on failure.
 	 */
-	protected function validate_file( string $file_path, string $filename ) {
+	protected function validate_file( string $file_path, string $filename, string $filetype = '' ) {
 		$validated = wp_check_filetype_and_ext( $file_path, $filename );
+		$type      = $validated['type'];
 
-		if ( ! $validated['type'] ) {
+		// Same rule as _wp_handle_upload().
+		if ( ( ! $type || ! $validated['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
 			return new WP_Error(
 				'rest_invalid_file_type',
 				__( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ),
@@ -672,10 +876,17 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// For images, verify actual image data (prevents PHP-in-image attacks).
-		if ( 0 === strpos( $validated['type'], 'image/' ) ) {
+		if ( ! $type ) {
+			$type = '' !== $filetype ? $filetype : 'application/octet-stream';
+		} elseif ( 0 === strpos( $type, 'image/' ) ) {
+			/*
+			 * For images, verify actual image data (prevents PHP-in-image attacks).
+			 * wp_check_filetype_and_ext() has already checked the content; this
+			 * guards against that check being filtered. SVG is the one allowed image
+			 * type wp_get_image_mime() can't read, so it's left to that check.
+			 */
 			$actual_mime = wp_get_image_mime( $file_path );
-			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
+			if ( 'image/svg+xml' !== $type && $actual_mime !== $type ) {
 				return new WP_Error(
 					'rest_invalid_image',
 					__( 'File is not a valid image.', 'uploads-unleashed' ),
@@ -691,7 +902,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		return array(
-			'type'     => $validated['type'],
+			'type'     => $type,
 			'filename' => sanitize_file_name( $final_filename ),
 		);
 	}
@@ -714,6 +925,16 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_file_unreadable', __( 'Could not determine file size for quota check.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
+		// The setting can change while the upload is in progress.
+		$file_size_check = $this->check_network_max_file_size( $file_size );
+		if ( is_wp_error( $file_size_check ) ) {
+			return $file_size_check;
+		}
+
+		if ( get_site_option( 'upload_space_check_disabled' ) ) {
+			return true;
+		}
+
 		$space_used    = get_space_used();
 		$space_allowed = get_space_allowed();
 		$file_size_mb  = $file_size / MB_IN_BYTES;
@@ -726,12 +947,48 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Checks a file size against the network's "Max upload file size" setting.
+	 *
+	 * Mirrors the per-file check in core's check_upload_size(), which
+	 * wp_handle_sideload() does not run.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int $file_size File size in bytes.
+	 * @return true|WP_Error True if the file is within the limit or not on multisite, WP_Error otherwise.
+	 */
+	protected function check_network_max_file_size( int $file_size ) {
+		if ( ! is_multisite() ) {
+			return true;
+		}
+
+		$fileupload_maxk = (int) get_site_option( 'fileupload_maxk', 1500 );
+
+		if ( $file_size > KB_IN_BYTES * $fileupload_maxk ) {
+			return new WP_Error(
+				'rest_upload_file_too_big',
+				sprintf(
+					/* translators: %s: Maximum allowed file size in kilobytes. */
+					__( 'This file is too big. Files must be less than %s KB in size.', 'uploads-unleashed' ),
+					number_format_i18n( $fileupload_maxk )
+				),
+				array( 'status' => 413 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
 	 * Sideloads the completed upload into the WordPress uploads directory.
 	 *
 	 * Uses wp_handle_sideload() to validate, move, and apply filters,
-	 * matching how WordPress core handles REST API uploads.
+	 * matching how WordPress core handles REST API uploads. The file is
+	 * renamed into place instead of core's copy() and unlink(), which
+	 * briefly needs twice the disk space and is slow for large files.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Moves the file with rename().
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The sanitized filename.
@@ -749,7 +1006,24 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			'size'     => filesize( $file_path ),
 		);
 
+		$move_file = static function ( $move_new_file, $file, $new_file ) use ( $file_path ) {
+			if ( null !== $move_new_file || $file['tmp_name'] !== $file_path ) {
+				return $move_new_file;
+			}
+
+			/*
+			 * Atomic on the same filesystem. Across filesystems PHP copies
+			 * and unlinks itself; across stream wrappers it fails, and null
+			 * lets core copy the file instead.
+			 */
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename, WordPress.PHP.NoSilencedErrors.Discouraged -- WP_Filesystem::move() copies across filesystems too, and failure falls back to core.
+			return @rename( $file_path, $new_file ) ? true : null;
+		};
+		add_filter( 'pre_move_uploaded_file', $move_file, PHP_INT_MAX, 3 );
+
 		$result = wp_handle_sideload( $file_data, array( 'test_form' => false ) );
+
+		remove_filter( 'pre_move_uploaded_file', $move_file, PHP_INT_MAX );
 
 		if ( isset( $result['error'] ) ) {
 			return new WP_Error( 'rest_upload_error', $result['error'], array( 'status' => 400 ) );
@@ -761,36 +1035,92 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Creates the WordPress attachment post.
 	 *
-	 * @since 0.1.0
+	 * Runs core's POST /wp/v2/media handler on the moved file, so the
+	 * upload's params, EXIF/IPTC defaults, core's insert hooks and
+	 * metadata generation all work as for core's own uploads. The
+	 * attachment ID is saved in the session as soon as the post exists,
+	 * so an interrupted metadata generation can resume.
 	 *
-	 * @param array $upload_result The upload result from sideload_to_uploads().
+	 * @since 0.1.0
+	 * @since 1.2.0 Creates the attachment through core's attachments controller. Added `$upload_id` and `$params`.
+	 *
+	 * @param array  $upload_result The upload result from sideload_to_uploads().
+	 * @param string $upload_id     Optional. The upload ID. Default empty.
+	 * @param array  $params        Optional. Params of POST /wp/v2/media from Upload-Metadata. Default empty.
 	 * @return int|WP_Error Attachment ID on success, WP_Error on failure.
 	 */
-	protected function create_attachment( array $upload_result ) {
-		$filename = basename( $upload_result['file'] );
-
-		$attachment = array(
-			'post_mime_type' => $upload_result['type'],
-			'post_title'     => preg_replace( '/\.[^.]+$/', '', $filename ),
-			'post_status'    => 'inherit',
-			'guid'           => $upload_result['url'],
-		);
-
-		$attachment_id = wp_insert_attachment( $attachment, $upload_result['file'] );
-
-		if ( is_wp_error( $attachment_id ) ) {
-			wp_delete_file( $upload_result['file'] );
-
-			return $attachment_id;
+	protected function create_attachment( array $upload_result, string $upload_id = '', array $params = array() ) {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		foreach ( $params as $key => $value ) {
+			$request->set_param( $key, $value );
 		}
 
-		// Generate metadata (thumbnails, video metadata, etc.).
+		$record_attachment = static function ( WP_Post $attachment, WP_REST_Request $insert_request ) use ( $request, $upload_id ): void {
+			if ( $insert_request === $request ) {
+				( new Uploads_Unleashed_TUS_Upload_Session() )->update( $upload_id, array( 'attachment_id' => $attachment->ID ) );
+			}
+		};
+		add_action( 'rest_insert_attachment', $record_attachment, PHP_INT_MIN, 2 );
+
+		$response = ( new Uploads_Unleashed_TUS_Attachments_Controller( $upload_result ) )->create_item( $request );
+
+		remove_action( 'rest_insert_attachment', $record_attachment, PHP_INT_MIN );
+
+		if ( is_wp_error( $response ) ) {
+			wp_delete_file( $upload_result['file'] );
+
+			return $response;
+		}
+
+		return (int) $response->get_data()['id'];
+	}
+
+	/**
+	 * Generates the attachment metadata (image sub-sizes, video metadata, etc.).
+	 *
+	 * When resuming after an interrupted request, only the missing image
+	 * sub-sizes are created, like core's REST API does when it retries
+	 * post-processing.
+	 *
+	 * Honors `generate_sub_sizes` and `convert_format` with the same
+	 * filters core's create_item() uses.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int    $attachment_id The attachment ID.
+	 * @param string $file          Path to the attachment file.
+	 * @param bool   $creating      Whether the attachment was created in this request.
+	 * @param array  $params        Optional. Params of POST /wp/v2/media from Upload-Metadata. Default empty.
+	 */
+	protected function generate_attachment_metadata( int $attachment_id, string $file, bool $creating, array $params = array() ): void {
 		require_once ABSPATH . 'wp-admin/includes/image.php';
 		require_once ABSPATH . 'wp-admin/includes/media.php';
-		$metadata = wp_generate_attachment_metadata( $attachment_id, $upload_result['file'] );
-		wp_update_attachment_metadata( $attachment_id, $metadata );
 
-		return $attachment_id;
+		$filters = array();
+		if ( false === ( $params['generate_sub_sizes'] ?? null ) ) {
+			$filters = array(
+				'intermediate_image_sizes_advanced' => '__return_empty_array',
+				'fallback_intermediate_image_sizes' => '__return_empty_array',
+				'wp_image_maybe_exif_rotate'        => '__return_false',
+				'big_image_size_threshold'          => '__return_false',
+			);
+		}
+		if ( false === ( $params['convert_format'] ?? null ) ) {
+			$filters['image_editor_output_format'] = '__return_empty_array';
+		}
+		foreach ( $filters as $hook => $callback ) {
+			add_filter( $hook, $callback, 100 );
+		}
+
+		if ( ! $creating && wp_attachment_is_image( $attachment_id ) ) {
+			wp_update_image_subsizes( $attachment_id );
+		} else {
+			wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $file ) );
+		}
+
+		foreach ( $filters as $hook => $callback ) {
+			remove_filter( $hook, $callback, 100 );
+		}
 	}
 
 	/**
@@ -998,6 +1328,90 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$this->current_upload = $upload;
 
 		return true;
+	}
+
+	/**
+	 * Returns the number of bytes received for an upload.
+	 *
+	 * The chunk file is the source of truth: the session offset is saved
+	 * after the chunk is written, so it lags behind when PHP is killed in
+	 * between or the session fails to save. Reconciles the session from the
+	 * file when they differ.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return int The upload offset in bytes.
+	 */
+	private function get_upload_offset( string $upload_id ): int {
+		$status = $this->current_upload['status'] ?? Uploads_Unleashed_TUS_Upload_Session::STATUS_UPLOADING;
+
+		// All bytes arrived, and the chunk file may already be moved.
+		if ( Uploads_Unleashed_TUS_Upload_Session::STATUS_UPLOADING !== $status ) {
+			return (int) $this->current_upload['length'];
+		}
+
+		$offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_size( $upload_id );
+
+		if ( (int) $this->current_upload['offset'] !== $offset ) {
+			( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $offset );
+			$this->current_upload['offset'] = $offset;
+		}
+
+		return $offset;
+	}
+
+	/**
+	 * Finalizes a complete upload and builds the response.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return WP_REST_Response|WP_Error Response with the attachment data, or WP_Error on failure.
+	 */
+	private function complete_upload( string $upload_id ) {
+		$result = $this->finalize_upload( $upload_id, $this->current_upload );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$length   = (int) $this->current_upload['length'];
+		$response = new WP_REST_Response( $result, 200 );
+		$response->header( 'Upload-Offset', $length );
+		$response->header( 'Upload-Length', $length );
+		$response->header( 'Tus-Resumable', self::TUS_VERSION );
+		$response->header( 'Cache-Control', 'no-store' );
+
+		if ( ! empty( $result['id'] ) ) {
+			$response->header( 'X-WP-Upload-Attachment-ID', (int) $result['id'] );
+		}
+
+		return $response;
+	}
+
+	/**
+	 * Extracts the params of core's POST /wp/v2/media from Upload-Metadata.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param array $metadata Parsed Upload-Metadata.
+	 * @return array The parent `post` (int), the text fields, and the `generate_sub_sizes` and `convert_format` flags (bool).
+	 */
+	private function get_upload_params( array $metadata ): array {
+		$params = array_intersect_key( $metadata, array_flip( array( 'title', 'caption', 'description', 'alt_text' ) ) );
+
+		if ( ! empty( $metadata['post'] ) ) {
+			$params['post'] = absint( $metadata['post'] );
+		}
+
+		foreach ( array( 'generate_sub_sizes', 'convert_format' ) as $flag ) {
+			if ( isset( $metadata[ $flag ] ) ) {
+				$params[ $flag ] = rest_sanitize_boolean( $metadata[ $flag ] );
+			}
+		}
+
+		return $params;
 	}
 
 	/**

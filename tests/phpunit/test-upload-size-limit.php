@@ -149,6 +149,38 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that only the bytes a pending upload hasn't received yet are subtracted.
+	 *
+	 * Received bytes are already on disk, so disk_free_space() accounts for them.
+	 */
+	public function test_pending_uploads_subtract_only_remaining_bytes() {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'This test is for single-site only.' );
+		}
+
+		$upload_dir = wp_upload_dir();
+		if ( false === disk_free_space( $upload_dir['basedir'] ) ) {
+			$this->markTestSkipped( 'disk_free_space() not available on this system.' );
+		}
+
+		$upload_id = $this->create_upload_session(
+			array(
+				'length' => 20 * MB_IN_BYTES,
+			)
+		);
+
+		// Receive the first half of the upload.
+		$offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, str_repeat( 'a', 10 * MB_IN_BYTES ), 0 );
+		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $offset );
+
+		$expected_space = disk_free_space( $upload_dir['basedir'] );
+		$result         = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
+
+		// Allow 1 MB tolerance for disk space fluctuation.
+		$this->assertEqualsWithDelta( $expected_space - ( 10 * MB_IN_BYTES ), $result, MB_IN_BYTES );
+	}
+
+	/**
 	 * Test that multiple pending uploads are all subtracted.
 	 */
 	public function test_multiple_pending_uploads_subtracted() {
@@ -262,6 +294,54 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 		// Expired upload should not be counted.
 		// Allow 1 MB tolerance for disk space fluctuation.
 		$this->assertEqualsWithDelta( $expected_space, $result, MB_IN_BYTES );
+	}
+
+	/**
+	 * Test a created upload counts as pending before its first chunk arrives.
+	 */
+	public function test_created_upload_is_pending_before_first_chunk() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '4096' );
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'reserved.txt' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame( 4096, ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_total_pending_size() );
+	}
+
+	/**
+	 * Test uploads that haven't sent a chunk yet still reserve their space.
+	 *
+	 * Without that, any number of uploads the size of the free space could be created.
+	 */
+	public function test_created_uploads_cannot_oversubscribe_disk_space() {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'Single site only; multisite uses the space quota.' );
+		}
+
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk_free_space may be disabled on some hosts.
+		$available = @disk_free_space( wp_upload_dir()['basedir'] );
+		if ( false === $available || $available < 2 * GB_IN_BYTES ) {
+			$this->markTestSkipped( 'Needs at least 2 GB of known free disk space.' );
+		}
+
+		$create = function ( int $length ): WP_REST_Response {
+			$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+			$request->set_header( 'Upload-Length', (string) $length );
+			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS protocol requires base64.
+			$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'big.zip' ) );
+
+			return rest_get_server()->dispatch( $request );
+		};
+
+		// Leaves about 100 MB, give or take what other processes write meanwhile.
+		$first = $create( (int) $available - 100 * MB_IN_BYTES );
+		$this->assertSame( 201, $first->get_status() );
+
+		$second = $create( GB_IN_BYTES );
+		$this->assertSame( 413, $second->get_status() );
 	}
 
 	/**

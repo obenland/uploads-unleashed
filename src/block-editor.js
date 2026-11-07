@@ -16,6 +16,11 @@ import { upload, getPendingUploads } from '@uploads-unleashed/tus-client';
 /**
  * Checks if a request is a media upload that should use TUS.
  *
+ * Only uploads to the collection route qualify. Sub-routes such as
+ * `/wp/v2/media/{id}/sideload`, which client-side media processing uses for
+ * the sub-sizes it generates, add files to an existing attachment and must
+ * reach core unchanged.
+ *
  * @param {Object} options apiFetch options.
  * @return {boolean} True if this is a media upload request.
  */
@@ -27,13 +32,32 @@ function isMediaUpload( options ) {
 		return false;
 	}
 
-	// Must be to the media endpoint
-	if ( ! path?.includes( '/wp/v2/media' ) ) {
+	// Must be to the media collection, with or without a query string.
+	if ( ! /^\/?wp\/v2\/media$/.test( path?.split( '?' )[ 0 ] ?? '' ) ) {
 		return false;
 	}
 
 	// Must have FormData with a file
 	return body instanceof FormData ? body.has( 'file' ) : false;
+}
+
+/**
+ * Checks if an upload asks for processing the TUS endpoint can't honor yet.
+ *
+ * With client-side media processing, the editor uploads images it resizes
+ * itself with `generate_sub_sizes=false`, and some derivatives with
+ * `convert_format=false`. The TUS endpoint ignores both, so such uploads go
+ * to core until it supports them.
+ *
+ * @since 1.2.0
+ *
+ * @param {FormData} formData The upload's form data.
+ * @return {boolean} True if the upload needs core's upload handling.
+ */
+function needsCoreProcessingFlags( formData ) {
+	return [ 'generate_sub_sizes', 'convert_format' ].some(
+		( field ) => formData.get( field ) === 'false'
+	);
 }
 
 /**
@@ -49,10 +73,38 @@ function extractFile( formData ) {
 }
 
 /**
+ * Checks whether a TUS upload failed because the endpoint is unavailable.
+ *
+ * Only a network error or a 404, 405 or 501 response on the creation request
+ * qualifies. Any other failure is the server's answer to this upload, such as
+ * an invalid file type or a full disk, which a standard upload would get too.
+ *
+ * @since 1.2.0
+ *
+ * @param {Error} error The error `upload()` rejected with.
+ * @return {boolean} True if a standard upload might still succeed.
+ */
+function isTusUnavailable( error ) {
+	const request = error?.cause?.originalRequest;
+
+	// The creation request is the only plain POST; others override the method.
+	if (
+		request?.getMethod() !== 'POST' ||
+		request.getHeader( 'X-HTTP-Method-Override' )
+	) {
+		return false;
+	}
+
+	const response = error.cause.originalResponse;
+
+	return ! response || [ 404, 405, 501 ].includes( response.getStatus() );
+}
+
+/**
  * TUS middleware for wp.apiFetch.
  *
  * Core-ready features:
- * - Graceful fallback to standard upload on TUS failure
+ * - Graceful fallback to standard upload when TUS is unavailable
  * - Uses `wp.hooks` for extensibility
  * - No global state pollution
  *
@@ -67,7 +119,7 @@ const tusMiddleware = async ( options, next ) => {
 	}
 
 	const file = extractFile( options.body );
-	if ( ! file ) {
+	if ( ! file || needsCoreProcessingFlags( options.body ) ) {
 		return next( options );
 	}
 
@@ -96,9 +148,14 @@ const tusMiddleware = async ( options, next ) => {
 		// Try TUS upload
 		return await upload( file, {
 			signal: options.signal,
+			params: Object.fromEntries( options.body ),
 		} );
 	} catch ( error ) {
-		// Log for debugging
+		// The server answered and turned the upload down: show its message.
+		if ( ! isTusUnavailable( error ) ) {
+			throw error;
+		}
+
 		// eslint-disable-next-line no-console
 		console.warn(
 			'TUS upload failed, falling back to standard upload:',
@@ -106,10 +163,12 @@ const tusMiddleware = async ( options, next ) => {
 		);
 
 		/**
-		 * Filters whether to fall back to the standard upload after a TUS failure.
+		 * Filters whether to fall back to the standard upload when TUS is unavailable.
 		 *
 		 * Returning false causes the error to be re-thrown instead of
-		 * falling back to the default wp.apiFetch upload.
+		 * falling back to the default wp.apiFetch upload. Only consulted
+		 * when the upload couldn't be created, never after the server
+		 * rejected it.
 		 *
 		 * @since 1.0.0
 		 *

@@ -217,6 +217,90 @@ describe( 'tusMiddleware', () => {
 
 			expect( upload ).toHaveBeenCalled();
 		} );
+
+		it( 'intercepts the block editor upload path with _embed', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const formData = new FormData();
+			formData.append( 'file', file );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			await tusMiddleware(
+				{
+					path: '/wp/v2/media?_embed=wp:featuredmedia',
+					method: 'POST',
+					body: formData,
+				},
+				next
+			);
+
+			expect( upload ).toHaveBeenCalled();
+			expect( next ).not.toHaveBeenCalled();
+		} );
+
+		it.each( [
+			'/wp/v2/media/123/sideload',
+			'/wp/v2/media/123/sideload?_locale=user',
+			'/wp/v2/media/123/finalize',
+			'/wp/v2/media/123/edit',
+			'/wp/v2/media/123',
+			'/wp/v2/media-library',
+			'/my-plugin/v1/wp/v2/media',
+		] )( 'passes through %s', async ( path ) => {
+			const formData = new FormData();
+			formData.append(
+				'file',
+				new File( [ 'test' ], 'image-150x150.png' )
+			);
+
+			const options = { path, method: 'POST', body: formData };
+
+			await tusMiddleware( options, next );
+
+			expect( next ).toHaveBeenCalledWith( options );
+			expect( upload ).not.toHaveBeenCalled();
+		} );
+
+		it.each( [ 'generate_sub_sizes', 'convert_format' ] )(
+			'passes through uploads with %s=false, which TUS cannot honor',
+			async ( field ) => {
+				const formData = new FormData();
+				formData.append( 'file', new File( [ 'test' ], 'image.png' ) );
+				formData.append( field, 'false' );
+
+				const options = {
+					path: '/wp/v2/media?_embed=wp:featuredmedia',
+					method: 'POST',
+					body: formData,
+				};
+
+				await tusMiddleware( options, next );
+
+				expect( next ).toHaveBeenCalledWith( options );
+				expect( upload ).not.toHaveBeenCalled();
+			}
+		);
+
+		it( 'intercepts uploads with generate_sub_sizes=true and convert_format=true', async () => {
+			const formData = new FormData();
+			formData.append( 'file', new File( [ 'video' ], 'movie.mp4' ) );
+			formData.append( 'generate_sub_sizes', 'true' );
+			formData.append( 'convert_format', 'true' );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			await tusMiddleware(
+				{
+					path: '/wp/v2/media?_embed=wp:featuredmedia',
+					method: 'POST',
+					body: formData,
+				},
+				next
+			);
+
+			expect( upload ).toHaveBeenCalled();
+			expect( next ).not.toHaveBeenCalled();
+		} );
 	} );
 
 	describe( 'TUS upload', () => {
@@ -237,9 +321,35 @@ describe( 'tusMiddleware', () => {
 
 			await tusMiddleware( options, next );
 
-			expect( upload ).toHaveBeenCalledWith( file, {
-				signal: controller.signal,
-			} );
+			expect( upload ).toHaveBeenCalledWith(
+				file,
+				expect.objectContaining( { signal: controller.signal } )
+			);
+		} );
+
+		it( 'passes the form fields to upload as params', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const formData = new FormData();
+			formData.append( 'file', file );
+			formData.append( 'post', '42' );
+			formData.append( 'alt_text', 'A test file' );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			await tusMiddleware(
+				{ path: '/wp/v2/media', method: 'POST', body: formData },
+				next
+			);
+
+			expect( upload ).toHaveBeenCalledWith(
+				file,
+				expect.objectContaining( {
+					params: expect.objectContaining( {
+						post: '42',
+						alt_text: 'A test file',
+					} ),
+				} )
+			);
 		} );
 
 		it( 'returns attachment data on successful upload', async () => {
@@ -267,53 +377,79 @@ describe( 'tusMiddleware', () => {
 	} );
 
 	describe( 'fallback behavior', () => {
-		it( 'falls back to standard upload on TUS error', async () => {
-			const file = new File( [ 'test' ], 'test.txt' );
-			const formData = new FormData();
-			formData.append( 'file', file );
-
-			const tusError = new Error( 'Network error' );
-			upload.mockRejectedValue( tusError );
-			next.mockResolvedValue( { id: 456 } );
-
-			const options = {
-				path: '/wp/v2/media',
-				method: 'POST',
-				body: formData,
-			};
-
-			const result = await tusMiddleware( options, next );
-
-			expect( upload ).toHaveBeenCalled();
-			expect( next ).toHaveBeenCalledWith( options );
-			expect( result ).toEqual( { id: 456 } );
-			expect( consoleWarn ).toHaveBeenCalled();
-		} );
-
-		it( 'dispatches warning notice on TUS failure before fallback', async () => {
-			const mockCreateWarningNotice = vi.fn();
-			dispatch.mockReturnValue( {
-				createWarningNotice: mockCreateWarningNotice,
-				createInfoNotice: vi.fn(),
+		/**
+		 * Builds the error `upload()` rejects with, wrapping a TUS DetailedError.
+		 *
+		 * @param {string}      message Error message.
+		 * @param {string}      method  Method of the failed request.
+		 * @param {number|null} status  Response status, or null for a network error.
+		 * @param {Object}      headers Request headers.
+		 * @return {Error} The error.
+		 */
+		const tusError = ( message, method, status, headers = {} ) =>
+			new Error( message, {
+				cause: {
+					originalRequest: {
+						getMethod: () => method,
+						getHeader: ( name ) => headers[ name ],
+					},
+					originalResponse:
+						null === status ? null : { getStatus: () => status },
+				},
 			} );
 
-			const file = new File( [ 'test' ], 'test.txt' );
+		/**
+		 * Builds a media upload request.
+		 *
+		 * @return {Object} apiFetch options.
+		 */
+		const uploadRequest = () => {
 			const formData = new FormData();
-			formData.append( 'file', file );
+			formData.append( 'file', new File( [ 'test' ], 'test.txt' ) );
 
-			upload.mockRejectedValue( new Error( 'Network error' ) );
+			return { path: '/wp/v2/media', method: 'POST', body: formData };
+		};
+
+		let createWarningNotice;
+
+		beforeEach( () => {
+			createWarningNotice = vi.fn();
+			dispatch.mockReturnValue( {
+				createWarningNotice,
+				createInfoNotice: vi.fn(),
+			} );
 			next.mockResolvedValue( { id: 456 } );
+		} );
 
-			const options = {
-				path: '/wp/v2/media',
-				method: 'POST',
-				body: formData,
-			};
+		it.each( [
+			[ 'a network error', null ],
+			[ 'a 404', 404 ],
+			[ 'a 405', 405 ],
+			[ 'a 501', 501 ],
+		] )(
+			'falls back to standard upload on %s when creating the upload',
+			async ( label, status ) => {
+				upload.mockRejectedValue(
+					tusError( 'tus: failed to create upload', 'POST', status )
+				);
+				const options = uploadRequest();
 
-			await tusMiddleware( options, next );
+				const result = await tusMiddleware( options, next );
 
-			expect( dispatch ).toHaveBeenCalled();
-			expect( mockCreateWarningNotice ).toHaveBeenCalledWith(
+				expect( next ).toHaveBeenCalledWith( options );
+				expect( result ).toEqual( { id: 456 } );
+				expect( consoleWarn ).toHaveBeenCalled();
+			}
+		);
+
+		it( 'dispatches warning notice before fallback', async () => {
+			upload.mockRejectedValue(
+				tusError( 'tus: failed to create upload', 'POST', null )
+			);
+
+			await tusMiddleware( uploadRequest(), next );
+
+			expect( createWarningNotice ).toHaveBeenCalledWith(
 				'Resumable upload unavailable for this file. Using standard upload.',
 				expect.objectContaining( {
 					id: 'uploads-unleashed-fallback-test.txt',
@@ -321,65 +457,83 @@ describe( 'tusMiddleware', () => {
 					type: 'snackbar',
 				} )
 			);
-			expect( consoleWarn ).toHaveBeenCalled();
 		} );
 
-		it( 'warning notice has snackbar type', async () => {
-			const mockCreateWarningNotice = vi.fn();
-			dispatch.mockReturnValue( {
-				createWarningNotice: mockCreateWarningNotice,
-				createInfoNotice: vi.fn(),
-			} );
+		it.each( [
+			[ 'an invalid file type', 400 ],
+			[ 'a missing permission', 403 ],
+			[ 'a file that is too large', 413 ],
+			[ 'a server error', 500 ],
+			[ 'a full disk', 507 ],
+		] )(
+			'rethrows the server message on %s when creating the upload',
+			async ( label, status ) => {
+				const error = tusError( 'Server says no.', 'POST', status );
+				upload.mockRejectedValue( error );
 
-			const file = new File( [ 'test' ], 'report.pdf' );
-			const formData = new FormData();
-			formData.append( 'file', file );
+				await expect(
+					tusMiddleware( uploadRequest(), next )
+				).rejects.toBe( error );
 
-			upload.mockRejectedValue( new Error( 'Server error' ) );
-			next.mockResolvedValue( { id: 789 } );
+				expect( next ).not.toHaveBeenCalled();
+				expect( createWarningNotice ).not.toHaveBeenCalled();
+			}
+		);
 
-			const options = {
-				path: '/wp/v2/media',
-				method: 'POST',
-				body: formData,
-			};
+		it.each( [
+			[ 'rejects a chunk', 'PATCH', 400, {} ],
+			[ 'fails mid-upload', 'PATCH', null, {} ],
+			[
+				'rejects an overridden chunk',
+				'POST',
+				404,
+				{ 'X-HTTP-Method-Override': 'PATCH' },
+			],
+			[ 'fails a resume check', 'HEAD', null, {} ],
+		] )(
+			'rethrows when the server %s',
+			async ( label, method, status, headers ) => {
+				const error = tusError(
+					'Not enough space.',
+					method,
+					status,
+					headers
+				);
+				upload.mockRejectedValue( error );
 
-			await tusMiddleware( options, next );
+				await expect(
+					tusMiddleware( uploadRequest(), next )
+				).rejects.toBe( error );
 
-			expect( mockCreateWarningNotice ).toHaveBeenCalledWith(
-				expect.any( String ),
-				expect.objectContaining( {
-					type: 'snackbar',
-				} )
+				expect( next ).not.toHaveBeenCalled();
+				expect( createWarningNotice ).not.toHaveBeenCalled();
+			}
+		);
+
+		it( 'rethrows errors without a TUS request', async () => {
+			const error = new Error(
+				'Upload completed but no attachment data received'
 			);
-			expect( consoleWarn ).toHaveBeenCalled();
+			upload.mockRejectedValue( error );
+
+			await expect( tusMiddleware( uploadRequest(), next ) ).rejects.toBe(
+				error
+			);
+
+			expect( next ).not.toHaveBeenCalled();
+			expect( createWarningNotice ).not.toHaveBeenCalled();
 		} );
 
 		it( 'respects allowFallback filter returning false', async () => {
-			const mockCreateWarningNotice = vi.fn();
-			dispatch.mockReturnValue( {
-				createWarningNotice: mockCreateWarningNotice,
-				createInfoNotice: vi.fn(),
-			} );
-
-			const file = new File( [ 'test' ], 'test.txt' );
-			const formData = new FormData();
-			formData.append( 'file', file );
-
-			const tusError = new Error( 'TUS failed' );
-			upload.mockRejectedValue( tusError );
+			const error = tusError( 'TUS failed', 'POST', null );
+			upload.mockRejectedValue( error );
 			applyFilters.mockImplementation( ( hookName, defaultValue ) => {
 				if ( hookName === 'uploadsUnleashed.allowFallback' ) {
 					return false;
 				}
 				return defaultValue;
 			} );
-
-			const options = {
-				path: '/wp/v2/media',
-				method: 'POST',
-				body: formData,
-			};
+			const options = uploadRequest();
 
 			await expect( tusMiddleware( options, next ) ).rejects.toThrow(
 				'TUS failed'
@@ -388,14 +542,11 @@ describe( 'tusMiddleware', () => {
 			expect( applyFilters ).toHaveBeenCalledWith(
 				'uploadsUnleashed.allowFallback',
 				true,
-				tusError,
-				file
+				error,
+				options.body.get( 'file' )
 			);
 			expect( next ).not.toHaveBeenCalled();
-			// Warning is logged before checking allowFallback filter
-			expect( consoleWarn ).toHaveBeenCalled();
-			// Notice should NOT be dispatched — fallback didn't happen
-			expect( mockCreateWarningNotice ).not.toHaveBeenCalled();
+			expect( createWarningNotice ).not.toHaveBeenCalled();
 		} );
 	} );
 

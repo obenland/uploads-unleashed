@@ -13,6 +13,14 @@
 class Uploads_Unleashed_TUS_Chunk_Storage {
 
 	/**
+	 * Rules that deny web access to the chunk directory on Apache 2.4 and 2.2.
+	 *
+	 * @since 1.2.0
+	 * @var string
+	 */
+	const HTACCESS_RULES = "# Apache 2.4\n<IfModule mod_authz_core.c>\n\tRequire all denied\n</IfModule>\n\n# Apache 2.2\n<IfModule !mod_authz_core.c>\n\tOrder deny,allow\n\tDeny from all\n</IfModule>\n";
+
+	/**
 	 * Base directory for chunk storage.
 	 *
 	 * @since 0.1.0
@@ -27,42 +35,101 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 */
 	public function __construct() {
 		if ( null === self::$base_dir ) {
-			self::$base_dir = self::get_base_dir_path();
+			self::$base_dir = self::get_chunk_dir();
 
 			$this->maybe_create_directory();
 		}
 	}
 
 	/**
-	 * Returns the base directory path for chunk storage.
+	 * Returns the directory that holds chunk files for the current site.
 	 *
-	 * @since 1.0.0
+	 * Doesn't create the directory, so it's safe to call anywhere, e.g. to
+	 * exclude chunks from disk usage. Not cached, so it follows switch_to_blog().
 	 *
-	 * @return string The base directory path.
+	 * @since 1.2.0
+	 *
+	 * @return string Absolute path to the chunk directory, with a trailing slash.
 	 */
-	private static function get_base_dir_path(): string {
-		$upload_dir = wp_upload_dir();
+	public static function get_chunk_dir(): string {
+		$chunk_dir = trailingslashit( wp_upload_dir( null, false )['basedir'] ) . '.tus-chunks';
 
-		return trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
+		/**
+		 * Filters the directory that holds in-progress upload chunks.
+		 *
+		 * The directory must be on a local or mounted filesystem that supports
+		 * flock() and glob(), so not a stream wrapper. Sites whose uploads
+		 * directory is a stream wrapper, like S3-Uploads or VIP, must use this
+		 * filter. On load-balanced hosts without sticky sessions, every web
+		 * server must share the directory.
+		 *
+		 * @since 1.2.0
+		 *
+		 * @param string $chunk_dir Absolute path to the chunk directory. Default `.tus-chunks`
+		 *                          in the uploads directory.
+		 */
+		$chunk_dir = (string) apply_filters( 'uploads_unleashed_chunk_dir', $chunk_dir );
+
+		return trailingslashit( $chunk_dir );
 	}
 
 	/**
-	 * Creates the chunk storage directory if it doesn't exist.
+	 * Checks that chunks can be stored in the chunk directory.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return true|WP_Error True if chunks can be stored, WP_Error otherwise.
+	 */
+	public function check_directory() {
+		if ( wp_is_stream( self::$base_dir ) ) {
+			return new WP_Error(
+				'tus_chunk_dir_not_local',
+				__( 'Uploads cannot start because the upload storage directory is not on the local filesystem, for example because media is stored on S3 or VIP. Use the uploads_unleashed_chunk_dir filter to choose a local directory.', 'uploads-unleashed' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		if ( ! is_dir( self::$base_dir ) || ! wp_is_writable( self::$base_dir ) ) {
+			return new WP_Error(
+				'tus_chunk_dir_not_writable',
+				__( 'Uploads cannot start because the upload storage directory is not writable.', 'uploads-unleashed' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Creates the chunk storage directory and its protection files if they don't exist.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Writes Apache 2.4 rules, replaces an .htaccess that lacks them,
+	 *              and leaves stream wrappers alone.
 	 */
 	protected function maybe_create_directory(): void {
-		if ( file_exists( self::$base_dir ) ) {
+		// check_directory() rejects stream wrappers; don't create anything remote.
+		if ( wp_is_stream( self::$base_dir ) ) {
 			return;
 		}
 
-		wp_mkdir_p( self::$base_dir );
+		if ( ! file_exists( self::$base_dir ) ) {
+			wp_mkdir_p( self::$base_dir );
+		}
 
-		// Protect directory from direct access.
+		if ( ! is_dir( self::$base_dir ) ) {
+			return;
+		}
+
+		/*
+		 * Protect the directory from direct access. Older versions wrote only the
+		 * Apache 2.2 rule, which Apache 2.4 rejects without mod_access_compat.
+		 */
 		$htaccess_file = self::$base_dir . '.htaccess';
-		if ( ! file_exists( $htaccess_file ) ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local file.
+		if ( ! file_exists( $htaccess_file ) || false === strpos( (string) file_get_contents( $htaccess_file ), 'Require all denied' ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
-			file_put_contents( $htaccess_file, "Deny from all\n" );
+			file_put_contents( $htaccess_file, self::HTACCESS_RULES );
 		}
 
 		$index_file = self::$base_dir . 'index.php';
@@ -85,6 +152,22 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$safe_id = preg_replace( '/[^a-zA-Z0-9-]/', '', $upload_id );
 
 		return self::$base_dir . $safe_id . '.part';
+	}
+
+	/**
+	 * Creates an empty chunk file for a new upload.
+	 *
+	 * Chunk files are how pending uploads are found, so creating one up front
+	 * makes the upload count against the available space before its first chunk.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return bool True on success, false on failure.
+	 */
+	public function create( string $upload_id ): bool {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Same as append(): WP_Filesystem requires credentials, impractical for runtime.
+		return touch( $this->get_path( $upload_id ) );
 	}
 
 	/**
@@ -148,27 +231,92 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
-	 * Deletes a chunk file.
+	 * Deletes a chunk file and its finalization lock file.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Also deletes the lock file.
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True on success, false on failure.
 	 */
 	public function delete( string $upload_id ): bool {
+		$lock_path = $this->get_lock_path( $upload_id );
+		if ( file_exists( $lock_path ) ) {
+			wp_delete_file( $lock_path );
+		}
+
 		$path = $this->get_path( $upload_id );
 
 		if ( file_exists( $path ) ) {
-			return wp_delete_file( $path );
+			// wp_delete_file() only returns a value since WordPress 6.7.
+			wp_delete_file( $path );
 		}
 
-		return true;
+		return ! file_exists( $path );
+	}
+
+	/**
+	 * Takes the exclusive finalization lock for an upload without waiting.
+	 *
+	 * Uses a separate lock file, because finalization moves the chunk file
+	 * away. The operating system releases the lock when the process dies, so
+	 * a request killed mid-finalization never leaves the upload locked.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return resource|false The lock handle, or false if another request holds the lock.
+	 */
+	public function lock( string $upload_id ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem lacks flock support needed for TUS concurrency.
+		$handle = fopen( $this->get_lock_path( $upload_id ), 'c' );
+		if ( ! $handle ) {
+			return false;
+		}
+
+		if ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
+			fclose( $handle );
+
+			return false;
+		}
+
+		return $handle;
+	}
+
+	/**
+	 * Releases a finalization lock taken with lock().
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param resource $handle The lock handle.
+	 */
+	public function unlock( $handle ): void {
+		flock( $handle, LOCK_UN );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock in lock().
+		fclose( $handle );
+	}
+
+	/**
+	 * Returns the path to an upload's finalization lock file.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return string The full path to the lock file.
+	 */
+	private function get_lock_path( string $upload_id ): string {
+		return substr( $this->get_path( $upload_id ), 0, -strlen( '.part' ) ) . '.lock';
 	}
 
 	/**
 	 * Returns the current size of a chunk file.
 	 *
+	 * Reads the size under a shared lock, so a chunk that append() is still
+	 * writing is never reported half-written.
+	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Reads the size under a shared lock.
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return int File size in bytes, or 0 if file doesn't exist.
@@ -180,10 +328,19 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			return 0;
 		}
 
-		clearstatcache( true, $path );
-		$size = filesize( $path );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem lacks flock support needed for TUS concurrency.
+		$handle = fopen( $path, 'rb' );
+		if ( ! $handle ) {
+			return 0;
+		}
 
-		return false === $size ? 0 : $size;
+		flock( $handle, LOCK_SH );
+		$stat = fstat( $handle );
+		flock( $handle, LOCK_UN );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
+		fclose( $handle );
+
+		return false === $stat ? 0 : (int) $stat['size'];
 	}
 
 	/**
@@ -232,6 +389,102 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Returns the number of bytes pending uploads have yet to receive.
+	 *
+	 * Unlike get_total_pending_size(), this leaves out bytes already
+	 * written to chunk files, for limits based on space that already
+	 * accounts for them, like free disk space.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return int Total bytes still to be received, in bytes.
+	 */
+	public function get_total_remaining_size(): int {
+		$total_size = 0;
+
+		foreach ( self::list_active_sessions() as $data ) {
+			$total_size += max( 0, (int) $data['length'] - (int) $data['offset'] );
+		}
+
+		return $total_size;
+	}
+
+	/**
+	 * Excludes the chunk directory from directory size calculations on multisite.
+	 *
+	 * Hooked to `pre_recurse_dirsize`. Pending uploads reserve their full
+	 * length against the site quota, so counting their chunk files in
+	 * get_space_used() as well would count every upload twice.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int|false $size      The directory size, or false to calculate it.
+	 * @param string    $directory Full path of the directory.
+	 * @return int|false 0 for the chunk directory, the unchanged size otherwise.
+	 */
+	public static function exclude_from_dirsize( $size, $directory ) {
+		if ( ! is_multisite() || ! is_string( $directory ) || self::get_dirsize_key() !== wp_normalize_path( $directory ) ) {
+			return $size;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Drops a stale cached size of the chunk directory on multisite.
+	 *
+	 * Hooked to `transient_dirsize_cache`. Core never invalidates the cached
+	 * size of the chunk directory, which may have been cached before it was
+	 * excluded, or while the plugin was inactive. With a persistent object
+	 * cache that size never expires. Removing it and the sizes of its parent
+	 * directories makes core recalculate them, which excludes the chunks.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param mixed $directory_cache Cached directory sizes, keyed by path.
+	 * @return mixed The cache without a non-zero size for the chunk directory.
+	 */
+	public static function drop_stale_dirsize( $directory_cache ) {
+		if ( ! is_multisite() || ! is_array( $directory_cache ) ) {
+			return $directory_cache;
+		}
+
+		$chunks_dir = self::get_dirsize_key();
+
+		foreach ( $directory_cache as $path => $size ) {
+			if ( 0 === $size || wp_normalize_path( (string) $path ) !== $chunks_dir ) {
+				continue;
+			}
+
+			// Same traversal as core's clean_dirsize_cache().
+			$last_path = null;
+			unset( $directory_cache[ $path ] );
+
+			while ( $last_path !== $path && DIRECTORY_SEPARATOR !== $path && '.' !== $path && '..' !== $path ) {
+				$last_path = $path;
+				$path      = dirname( $path );
+				unset( $directory_cache[ $path ] );
+			}
+		}
+
+		return $directory_cache;
+	}
+
+	/**
+	 * Returns the chunk directory in the form used to compare directory size paths.
+	 *
+	 * Resolved on every call, so it follows the configured chunk directory
+	 * and the current site.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return string Normalized chunk directory path without a trailing slash.
+	 */
+	private static function get_dirsize_key(): string {
+		return wp_normalize_path( untrailingslashit( self::get_chunk_dir() ) );
+	}
+
+	/**
 	 * Lists all active upload sessions by scanning chunk files on disk.
 	 *
 	 * Uses get_transient() for each session lookup so it works regardless
@@ -277,14 +530,11 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$storage = new self();
 		$session = new Uploads_Unleashed_TUS_Upload_Session();
 
-		$files = glob( self::$base_dir . '*.part' );
-
-		if ( ! $files ) {
-			return;
-		}
+		// Lock files outlive their chunk file when finalization was interrupted.
+		$files = array_merge( (array) glob( self::$base_dir . '*.part' ), (array) glob( self::$base_dir . '*.lock' ) );
 
 		foreach ( $files as $file ) {
-			$upload_id = basename( $file, '.part' );
+			$upload_id = pathinfo( $file, PATHINFO_FILENAME );
 			$data      = $session->get( $upload_id );
 
 			// Delete if session doesn't exist or has expired.
@@ -296,15 +546,41 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Returns the IDs of all uploads that have a chunk file on the current site.
+	 *
+	 * Every upload gets a chunk file when it's created, so this lists every
+	 * session, including ones a persistent object cache keeps out of the
+	 * options table. Doesn't create the storage directory.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return string[] Upload IDs.
+	 */
+	public static function get_upload_ids(): array {
+		$files = glob( self::get_chunk_dir() . '*.part' );
+
+		if ( ! $files ) {
+			return array();
+		}
+
+		return array_map(
+			static function ( string $file ): string {
+				return basename( $file, '.part' );
+			},
+			$files
+		);
+	}
+
+	/**
 	 * Deletes all chunk files, protection files, and the storage directory for the current site.
 	 *
-	 * Computes the storage path via get_base_dir_path() to avoid
+	 * Computes the storage path via get_chunk_dir() to avoid
 	 * recreating the directory during uninstall.
 	 *
 	 * @since 1.0.0
 	 */
 	public static function delete_all(): void {
-		$chunks_dir = self::get_base_dir_path();
+		$chunks_dir = self::get_chunk_dir();
 
 		if ( ! is_dir( $chunks_dir ) ) {
 			return;
