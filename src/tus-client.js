@@ -33,9 +33,129 @@ function getNonce() {
 	return window.uploadsUnleashed?.nonce || '';
 }
 
+/**
+ * Get the ID of the current site, to scope stored uploads to it.
+ *
+ * @since 1.2.0
+ *
+ * @return {string} Blog ID.
+ */
+function getBlogId() {
+	return String( window.uploadsUnleashed?.blogId ?? '' );
+}
+
+/**
+ * Get the ID of the current user, to scope stored uploads to them.
+ *
+ * @since 1.2.0
+ *
+ * @return {string} User ID.
+ */
+function getUserId() {
+	return String( window.uploadsUnleashed?.userId ?? '' );
+}
+
 // ============================================================================
 // Storage
 // ============================================================================
+
+/**
+ * localStorage access that never throws.
+ *
+ * Storage can be full or blocked by the browser. Uploads still work then,
+ * they just can't be resumed.
+ *
+ * @since 1.2.0
+ */
+const storage = {
+	/**
+	 * Reads a value.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param {string} key Storage key.
+	 * @return {string|null} The value, or null if absent or unreadable.
+	 */
+	get( key ) {
+		try {
+			return window.localStorage.getItem( key );
+		} catch {
+			return null;
+		}
+	},
+
+	/**
+	 * Writes a value.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param {string} key   Storage key.
+	 * @param {string} value The value.
+	 * @return {boolean} Whether the value was stored.
+	 */
+	set( key, value ) {
+		try {
+			window.localStorage.setItem( key, value );
+			return true;
+		} catch {
+			return false;
+		}
+	},
+
+	/**
+	 * Removes a value.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param {string} key Storage key.
+	 */
+	remove( key ) {
+		try {
+			window.localStorage.removeItem( key );
+		} catch {
+			// Storage is blocked, so there is nothing to remove.
+		}
+	},
+
+	/**
+	 * Lists all keys, as a snapshot that's safe to remove keys while iterating.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return {Array<string>} Storage keys.
+	 */
+	keys() {
+		try {
+			const keys = [];
+			for ( let i = 0; i < window.localStorage.length; i++ ) {
+				keys.push( window.localStorage.key( i ) );
+			}
+			return keys;
+		} catch {
+			return [];
+		}
+	},
+};
+
+/**
+ * Removes a stored upload together with its progress.
+ *
+ * @since 1.2.0
+ *
+ * @param {string} key The localStorage key of the upload.
+ */
+function removeStoredUpload( key ) {
+	try {
+		const { uploadUrl } = JSON.parse( storage.get( key ) || '' );
+		if ( uploadUrl ) {
+			removeUploadProgress( uploadUrl );
+		}
+	} catch {
+		// Malformed entries have no progress to remove.
+	}
+
+	storage.remove( key );
+}
 
 /**
  * TUS URL storage that embeds expiration timestamp in localStorage keys.
@@ -48,16 +168,17 @@ class ExpiringUrlStorage {
 	 *
 	 * @param {string} uploadFingerprint Unique identifier for the file.
 	 * @param {Object} previousUpload    Upload state to persist.
-	 * @return {Promise<string>} The localStorage key.
+	 * @return {Promise<string|null>} The localStorage key, or null if storage is unavailable.
 	 */
 	addUpload( uploadFingerprint, previousUpload ) {
 		const id = Math.round( Math.random() * 1e12 );
 		const expiresAt = Date.now() + UPLOAD_EXPIRATION_MS;
 		const key = `tus::${ uploadFingerprint }::${ expiresAt }::${ id }`;
 
-		localStorage.setItem( key, JSON.stringify( previousUpload ) );
+		// Without storage, tus uploads the file without remembering it for resuming.
+		const stored = storage.set( key, JSON.stringify( previousUpload ) );
 
-		return Promise.resolve( key );
+		return Promise.resolve( stored ? key : null );
 	}
 
 	/**
@@ -88,7 +209,7 @@ class ExpiringUrlStorage {
 	 * @return {Promise<void>}
 	 */
 	removeUpload( urlStorageKey ) {
-		localStorage.removeItem( urlStorageKey );
+		removeStoredUpload( urlStorageKey );
 
 		return Promise.resolve();
 	}
@@ -102,9 +223,7 @@ class ExpiringUrlStorage {
 	_findEntries( prefix ) {
 		const results = [];
 
-		// Iterate backwards to safely remove items during iteration
-		for ( let i = localStorage.length - 1; i >= 0; i-- ) {
-			const key = localStorage.key( i );
+		for ( const key of storage.keys() ) {
 			if ( ! key?.startsWith( prefix ) ) {
 				continue;
 			}
@@ -113,26 +232,24 @@ class ExpiringUrlStorage {
 			const parts = key.split( '::' );
 			if ( parts.length < 4 ) {
 				// Clean up malformed entries
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 			const expiresAt = parseInt( parts[ 2 ], 10 );
 
 			// Skip and clean up expired or invalid entries
 			if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 
 			try {
-				const storedUpload = JSON.parse(
-					localStorage.getItem( key ) || ''
-				);
+				const storedUpload = JSON.parse( storage.get( key ) || '' );
 				storedUpload.urlStorageKey = key;
 				results.push( storedUpload );
 			} catch {
 				// Clean up malformed JSON entries
-				localStorage.removeItem( key );
+				storage.remove( key );
 			}
 		}
 
@@ -151,11 +268,8 @@ class ExpiringUrlStorage {
  * @param {number} bytesUploaded Bytes uploaded so far.
  */
 function saveUploadProgress( uploadUrl, bytesUploaded ) {
-	try {
-		localStorage.setItem( `tus-progress::${ uploadUrl }`, bytesUploaded );
-	} catch {
-		// Storage full or unavailable — progress display is non-critical.
-	}
+	// Progress display is non-critical, so a full or blocked storage is fine.
+	storage.set( `tus-progress::${ uploadUrl }`, bytesUploaded );
 }
 
 /**
@@ -165,12 +279,7 @@ function saveUploadProgress( uploadUrl, bytesUploaded ) {
  * @return {number} Bytes uploaded, or 0 if absent.
  */
 function getUploadProgress( uploadUrl ) {
-	return (
-		parseInt(
-			localStorage.getItem( `tus-progress::${ uploadUrl }` ),
-			10
-		) || 0
-	);
+	return parseInt( storage.get( `tus-progress::${ uploadUrl }` ), 10 ) || 0;
 }
 
 /**
@@ -179,7 +288,7 @@ function getUploadProgress( uploadUrl ) {
  * @param {string} uploadUrl The TUS upload URL.
  */
 function removeUploadProgress( uploadUrl ) {
-	localStorage.removeItem( `tus-progress::${ uploadUrl }` );
+	storage.remove( `tus-progress::${ uploadUrl }` );
 }
 
 // ============================================================================
@@ -188,6 +297,9 @@ function removeUploadProgress( uploadUrl ) {
 
 /**
  * Generates a fingerprint for resumable uploads.
+ *
+ * Includes the site and user, so another user of the same browser can't see
+ * or resume the upload.
  *
  * @param {File}   file    The file to fingerprint.
  * @param {Object} options TUS upload options.
@@ -201,6 +313,8 @@ function fingerprint( file, options ) {
 			file.size,
 			file.lastModified,
 			options.endpoint,
+			getBlogId(),
+			getUserId(),
 		].join( '|' )
 	);
 }
@@ -450,18 +564,16 @@ export function abort( tusUpload ) {
 /**
  * Get all pending (resumable) uploads from localStorage.
  *
- * Returns uploads that match the current TUS endpoint and haven't expired.
- * Use this to display a "Resume upload" UI to users.
+ * Returns uploads of the current user and site that match the current TUS
+ * endpoint and haven't expired. Use this to display a "Resume upload" UI to users.
  *
- * @return {Array<Object>} Array of pending upload objects with key, uploadUrl, filename, size, bytesUploaded.
+ * @return {Array<Object>} Array of pending upload objects with key, uploadUrl, filename, size, lastModified, bytesUploaded.
  */
 export function getPendingUploads() {
 	const endpoint = getEndpoint();
 	const pending = [];
 
-	// Iterate backwards to safely remove items during iteration
-	for ( let i = localStorage.length - 1; i >= 0; i-- ) {
-		const key = localStorage.key( i );
+	for ( const key of storage.keys() ) {
 		if ( ! key?.startsWith( 'tus::tus-br|' ) ) {
 			continue;
 		}
@@ -473,23 +585,31 @@ export function getPendingUploads() {
 			// Parse key: tus::{fingerprint}::{expiresAt}::{id}
 			const keyParts = key.split( '::' );
 			if ( keyParts.length < 4 ) {
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 
 			// Check expiration
 			const expiresAt = parseInt( keyParts[ 2 ], 10 );
 			if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 
-			const data = JSON.parse( localStorage.getItem( key ) || '' );
+			const data = JSON.parse( storage.get( key ) || '' );
 
-			// Parse fingerprint: tus-br|{filename}|{size}|{lastModified}|{endpoint}
+			// Parse fingerprint: tus-br|{filename}|{size}|{lastModified}|{endpoint}|{blogId}|{userId}
 			const fingerprintParts = keyParts[ 1 ].split( '|' );
-			if ( fingerprintParts.length !== 5 ) {
-				localStorage.removeItem( key );
+			if ( fingerprintParts.length !== 7 ) {
+				removeStoredUpload( key );
+				continue;
+			}
+
+			// Leave other users' uploads alone, they may come back to them.
+			if (
+				fingerprintParts[ 5 ] !== getBlogId() ||
+				fingerprintParts[ 6 ] !== getUserId()
+			) {
 				continue;
 			}
 
@@ -498,11 +618,12 @@ export function getPendingUploads() {
 				uploadUrl: data.uploadUrl,
 				filename: decodeURIComponent( fingerprintParts[ 1 ] ),
 				size: parseInt( fingerprintParts[ 2 ], 10 ),
+				lastModified: parseInt( fingerprintParts[ 3 ], 10 ),
 				bytesUploaded: getUploadProgress( data.uploadUrl ),
 			} );
 		} catch {
 			// Clean up malformed entries
-			localStorage.removeItem( key );
+			storage.remove( key );
 		}
 	}
 
@@ -530,7 +651,7 @@ export async function discardPendingUpload( pendingUpload ) {
 	}
 
 	// Remove from localStorage
-	localStorage.removeItem( pendingUpload.key );
+	removeStoredUpload( pendingUpload.key );
 	removeUploadProgress( pendingUpload.uploadUrl );
 }
 

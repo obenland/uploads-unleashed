@@ -388,6 +388,21 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that the client gets the blog and user to scope stored uploads to.
+	 */
+	public function test_register_scripts_localizes_blog_and_user() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		wp_deregister_script( 'uploads-unleashed' );
+		uploads_unleashed_register_scripts();
+		$data = wp_scripts()->get_data( 'uploads-unleashed', 'data' );
+
+		$this->assertStringContainsString( '"blogId":"' . get_current_blog_id() . '"', $data );
+		$this->assertStringContainsString( '"userId":"' . $user_id . '"', $data );
+	}
+
+	/**
 	 * Test that style is registered after register_scripts runs.
 	 */
 	public function test_register_scripts_registers_style() {
