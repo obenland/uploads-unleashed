@@ -292,6 +292,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_upload_length_invalid', __( 'Upload-Length must be a positive integer.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
+		// Enforce the network's "Max upload file size" setting.
+		$file_size_check = $this->check_network_max_file_size( $upload_length );
+		if ( is_wp_error( $file_size_check ) ) {
+			return $file_size_check;
+		}
+
 		/*
 		 * Reject file types that would fail at finalize now, before the client
 		 * sends any bytes. Mirrors the check in _wp_handle_upload().
@@ -758,12 +764,51 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_file_unreadable', __( 'Could not determine file size for quota check.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
+		// The setting can change while the upload is in progress.
+		$file_size_check = $this->check_network_max_file_size( $file_size );
+		if ( is_wp_error( $file_size_check ) ) {
+			return $file_size_check;
+		}
+
 		$space_used    = get_space_used();
 		$space_allowed = get_space_allowed();
 		$file_size_mb  = $file_size / MB_IN_BYTES;
 
 		if ( $space_used + $file_size_mb > $space_allowed ) {
 			return new WP_Error( 'rest_quota_exceeded', __( 'You have used your space quota.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Checks a file size against the network's "Max upload file size" setting.
+	 *
+	 * Mirrors the per-file check in core's check_upload_size(), which
+	 * wp_handle_sideload() does not run.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int $file_size File size in bytes.
+	 * @return true|WP_Error True if the file is within the limit or not on multisite, WP_Error otherwise.
+	 */
+	protected function check_network_max_file_size( int $file_size ) {
+		if ( ! is_multisite() ) {
+			return true;
+		}
+
+		$fileupload_maxk = (int) get_site_option( 'fileupload_maxk', 1500 );
+
+		if ( $file_size > KB_IN_BYTES * $fileupload_maxk ) {
+			return new WP_Error(
+				'rest_upload_file_too_big',
+				sprintf(
+					/* translators: %s: Maximum allowed file size in kilobytes. */
+					__( 'This file is too big. Files must be less than %s KB in size.', 'uploads-unleashed' ),
+					number_format_i18n( $fileupload_maxk )
+				),
+				array( 'status' => 413 )
+			);
 		}
 
 		return true;

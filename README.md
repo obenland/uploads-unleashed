@@ -90,7 +90,7 @@ Those plugins raise the limit WordPress uses, but the request still has to pass 
 Yes, a few:
 
 * **Disk space.** A file can't be larger than the free space in your uploads folder, minus other uploads in progress.
-* **Multisite.** The site's upload space quota and the network's allowed file types still apply.
+* **Multisite.** The site's upload space quota and the network's allowed file types and maximum upload file size still apply.
 * **Chunk size.** Your web server, PHP and any proxy or firewall in front of them need to accept a single 5 MB request. If they don't, uploads fail, often with a 413 error.
 
 ### Is it secure?
