@@ -1443,6 +1443,38 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Test image MIME validation rejects non-image content that a filter labelled as an image.
+	 */
+	public function test_validate_file_rejects_filtered_non_image_content() {
+		$fake_jpeg_content = '<?php echo "not an image"; ?>';
+		$upload_id         = $this->create_upload_session(
+			array(
+				'filename' => 'fake.jpg',
+				'filetype' => 'image/jpeg',
+				'length'   => strlen( $fake_jpeg_content ),
+			)
+		);
+
+		$filter_callback = function ( $data ) {
+			$data['ext']  = 'jpg';
+			$data['type'] = 'image/jpeg';
+			return $data;
+		};
+		add_filter( 'wp_check_filetype_and_ext', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $fake_jpeg_content );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'wp_check_filetype_and_ext', $filter_callback );
+
+		$this->assertErrorResponse( 'rest_invalid_image', $response, 400 );
+	}
+
+	/**
 	 * Test image MIME validation rejects image content that doesn't match the validated type.
 	 */
 	public function test_validate_file_rejects_mismatched_image_content() {
