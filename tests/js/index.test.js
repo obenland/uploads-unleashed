@@ -282,6 +282,104 @@ describe( 'upload', () => {
 		);
 	} );
 
+	describe( 'success without attachment data', () => {
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		const attachmentData = { id: 123, title: { rendered: 'Test' } };
+		const flush = () =>
+			new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// A HEAD response for an upload the server already finished.
+		const headResponse = ( attachmentId = null ) => ( {
+			lastResponse: {
+				getStatus: () => 200,
+				getBody: () => '',
+				getHeader: ( name ) =>
+					'X-WP-Upload-Attachment-ID' === name
+						? attachmentId
+						: undefined,
+			},
+		} );
+
+		const jsonResponse = ( data, ok = true ) => ( {
+			ok,
+			json: () => Promise.resolve( data ),
+		} );
+
+		afterEach( () => {
+			tus.Upload.mock.results[ 0 ].value.url = null;
+			delete global.fetch;
+		} );
+
+		it( 'fetches the attachment from the upload URL', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValue( jsonResponse( attachmentData ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse() );
+
+			await expect( promise ).resolves.toEqual( attachmentData );
+			expect( global.fetch ).toHaveBeenCalledWith( uploadUrl, {
+				headers: { 'X-WP-Nonce': 'test-nonce' },
+			} );
+		} );
+
+		it( 'falls back to the attachment ID header', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValueOnce( jsonResponse( {}, false ) )
+				.mockResolvedValueOnce( jsonResponse( attachmentData ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse( '123' ) );
+
+			await expect( promise ).resolves.toEqual( attachmentData );
+			expect( global.fetch ).toHaveBeenLastCalledWith(
+				'http://localhost:3000/wp-json/wp/v2/media/123?context=edit',
+				{ headers: { 'X-WP-Nonce': 'test-nonce' } }
+			);
+		} );
+
+		it( 'builds the attachment URL for plain permalinks', async () => {
+			window.uploadsUnleashed.endpoint =
+				'http://example.org/?rest_route=/wp/v2/media';
+			global.fetch = vi
+				.fn()
+				.mockRejectedValueOnce( new Error( 'Network' ) )
+				.mockResolvedValueOnce( jsonResponse( attachmentData ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse( '123' ) );
+
+			await expect( promise ).resolves.toEqual( attachmentData );
+			expect( global.fetch ).toHaveBeenLastCalledWith(
+				'http://example.org/?rest_route=%2Fwp%2Fv2%2Fmedia%2F123&context=edit',
+				{ headers: { 'X-WP-Nonce': 'test-nonce' } }
+			);
+		} );
+
+		it( 'rejects when the attachment cannot be fetched', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValue( jsonResponse( {}, false ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse() );
+
+			await expect( promise ).rejects.toThrow(
+				'Upload completed but no attachment data received'
+			);
+		} );
+	} );
+
 	it( 'rejects when response body is invalid JSON', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
