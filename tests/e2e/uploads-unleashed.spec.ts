@@ -1,7 +1,7 @@
 import { test, expect, type Request } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { loginAsAdmin } from './utils';
+import { findAttachments, loginAsAdmin } from './utils';
 
 /**
  * End-to-end coverage for Uploads Unleashed.
@@ -230,19 +230,6 @@ test.describe( 'Uploads Unleashed', () => {
 		);
 		await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
 
-		const attachments = await page.evaluate( async ( search ) => {
-			const config = (
-				window as unknown as {
-					uploadsUnleashed: { endpoint: string; nonce: string };
-				}
-			 ).uploadsUnleashed;
-			const url = new URL( config.endpoint, window.location.href );
-			url.searchParams.set( 'search', search );
-			const response = await fetch( url, {
-				headers: { 'X-WP-Nonce': config.nonce },
-			} );
-			return response.json();
-		}, name );
-		expect( attachments ).toHaveLength( 1 );
+		expect( await findAttachments( page, name ) ).toHaveLength( 1 );
 	} );
 } );
