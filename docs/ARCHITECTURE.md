@@ -136,7 +136,7 @@ Manages upload session metadata using WordPress transients:
 - `get()` - Retrieve session data
 - `update_offset()` - Update upload progress
 - `delete()` - Remove session
-- `delete_all()` - Remove every session (uninstall)
+- `delete_all()` - Remove every session (uninstall), including ones in a persistent object cache, found through their chunk files
 
 **Session Data:**
 ```php
@@ -170,6 +170,7 @@ Manages physical chunk files on disk:
 - `delete()` - Remove chunk file
 - `get_total_pending_size()` - Bytes held by in-progress uploads (multisite quota)
 - `list_active_sessions()` - Active uploads (used by `wp tus list`)
+- `get_upload_ids()` - IDs of all uploads with a chunk file (uninstall)
 - `cleanup_expired()` - Cron job for old files
 - `delete_all()` - Remove the chunk directory (uninstall)
 
