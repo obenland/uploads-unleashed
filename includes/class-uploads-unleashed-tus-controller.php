@@ -684,11 +684,11 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			/*
 			 * For images, verify actual image data (prevents PHP-in-image attacks).
 			 * wp_check_filetype_and_ext() has already checked the content; this
-			 * guards against that check being filtered. Types wp_get_image_mime()
-			 * can't read, like SVG, are left to wp_check_filetype_and_ext().
+			 * guards against that check being filtered. SVG is the one allowed image
+			 * type wp_get_image_mime() can't read, so it's left to that check.
 			 */
 			$actual_mime = wp_get_image_mime( $file_path );
-			if ( $actual_mime && $actual_mime !== $type ) {
+			if ( 'image/svg+xml' !== $type && $actual_mime !== $type ) {
 				return new WP_Error(
 					'rest_invalid_image',
 					__( 'File is not a valid image.', 'uploads-unleashed' ),
