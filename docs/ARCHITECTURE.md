@@ -257,8 +257,8 @@ See [docs/hooks.md](hooks.md) for detailed documentation.
 
 1. **Authentication**: All endpoints require `upload_files` capability
 2. **Ownership**: Users can only access their own uploads
-3. **File Types**: Validated against WordPress allowed types
-4. **Image Verification**: `wp_get_image_mime()` prevents PHP-in-image
+3. **File Types**: Validated against WordPress allowed types with `wp_check_filetype_and_ext()`, unless the user can `unfiltered_upload`
+4. **Image Verification**: `wp_check_filetype_and_ext()` checks the content, and `wp_get_image_mime()` must match the validated type when it can read the image, which prevents PHP-in-image
 5. **Path Traversal**: Upload IDs sanitized to alphanumeric + hyphens
 6. **Directory Protection**: `.htaccess` denies direct chunk access
 7. **Checksum Verification**: Optional integrity validation

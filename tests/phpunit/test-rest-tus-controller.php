@@ -1490,6 +1490,18 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		};
 		add_filter( 'upload_mimes', $mimes_callback );
 
+		// SVG plugins provide dimensions, which core's REST response expects for image/* types.
+		$metadata_callback = function ( $metadata ) {
+			return array_merge(
+				$metadata,
+				array(
+					'width'  => 1,
+					'height' => 1,
+				)
+			);
+		};
+		add_filter( 'wp_generate_attachment_metadata', $metadata_callback );
+
 		// No width/height, so getimagesize() can't read it on PHP 8.5+ either.
 		$svg_content = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>';
 		$upload_id   = $this->create_upload_session(
@@ -1508,6 +1520,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$response = rest_get_server()->dispatch( $request );
 
 		remove_filter( 'upload_mimes', $mimes_callback );
+		remove_filter( 'wp_generate_attachment_metadata', $metadata_callback );
 
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
