@@ -1480,15 +1480,21 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test an image type that wp_get_image_mime() can't read (SVG) is accepted when allowed.
 	 */
 	public function test_validate_file_accepts_allowed_svg() {
-		if ( ! extension_loaded( 'fileinfo' ) ) {
-			$this->markTestSkipped( 'wp_check_filetype_and_ext() needs fileinfo to check SVG content.' );
-		}
-
 		$mimes_callback = function ( $mimes ) {
 			$mimes['svg'] = 'image/svg+xml';
 			return $mimes;
 		};
 		add_filter( 'upload_mimes', $mimes_callback );
+
+		// Older fileinfo versions don't detect SVG; SVG plugins correct the result like this.
+		$filetype_callback = function ( $data, $file, $filename ) {
+			if ( 'svg' === pathinfo( $filename, PATHINFO_EXTENSION ) ) {
+				$data['ext']  = 'svg';
+				$data['type'] = 'image/svg+xml';
+			}
+			return $data;
+		};
+		add_filter( 'wp_check_filetype_and_ext', $filetype_callback, 10, 3 );
 
 		// SVG plugins provide dimensions, which core's REST response expects for image/* types.
 		$metadata_callback = function ( $metadata ) {
@@ -1520,6 +1526,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$response = rest_get_server()->dispatch( $request );
 
 		remove_filter( 'upload_mimes', $mimes_callback );
+		remove_filter( 'wp_check_filetype_and_ext', $filetype_callback, 10 );
 		remove_filter( 'wp_generate_attachment_metadata', $metadata_callback );
 
 		$this->assertSame( 200, $response->get_status() );
