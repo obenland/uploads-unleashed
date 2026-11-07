@@ -18,12 +18,37 @@ class Test_Uninstall extends WP_UnitTestCase {
 	protected static int $admin_id;
 
 	/**
+	 * Whether an external object cache was in use before the test.
+	 *
+	 * @var bool
+	 */
+	private bool $was_using_ext_object_cache;
+
+	/**
 	 * Set up class fixtures.
 	 *
 	 * @param WP_UnitTest_Factory $factory Test factory.
 	 */
 	public static function wpSetUpBeforeClass( WP_UnitTest_Factory $factory ) {
 		self::$admin_id = $factory->user->create( array( 'role' => 'administrator' ) );
+	}
+
+	/**
+	 * Set up each test.
+	 */
+	public function set_up() {
+		parent::set_up();
+
+		$this->was_using_ext_object_cache = (bool) wp_using_ext_object_cache();
+	}
+
+	/**
+	 * Clean up after each test.
+	 */
+	public function tear_down() {
+		wp_using_ext_object_cache( $this->was_using_ext_object_cache );
+
+		parent::tear_down();
 	}
 
 	/**
@@ -138,6 +163,66 @@ class Test_Uninstall extends WP_UnitTestCase {
 			)
 		);
 		$this->assertSame( '0', $remaining );
+	}
+
+	/**
+	 * Tests that delete_all removes session transients kept in a persistent object cache.
+	 */
+	public function test_upload_session_delete_all_removes_transients_from_object_cache() {
+		$upload_id = $this->create_session_in_object_cache();
+
+		Uploads_Unleashed_TUS_Upload_Session::delete_all();
+
+		$this->assertNull( ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id ) );
+
+		Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
+	}
+
+	/**
+	 * Tests that uninstall.php removes session transients kept in a persistent object cache.
+	 */
+	public function test_uninstall_script_removes_sessions_from_object_cache() {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'Single-site only test.' );
+		}
+
+		$upload_id = $this->create_session_in_object_cache();
+
+		if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
+			define( 'WP_UNINSTALL_PLUGIN', 'uploads-unleashed/uploads-unleashed.php' );
+		}
+
+		include dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		$this->assertNull( ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id ) );
+
+		// Re-create the directory for subsequent tests.
+		new Uploads_Unleashed_TUS_Chunk_Storage();
+	}
+
+	/**
+	 * Creates an upload session the way create_item() does, with transients in the object cache.
+	 *
+	 * Switches wp_using_ext_object_cache() on; tear_down() restores it.
+	 *
+	 * @return string The upload ID.
+	 */
+	private function create_session_in_object_cache(): string {
+		wp_set_current_user( self::$admin_id );
+		wp_using_ext_object_cache( true );
+
+		$upload_id = ( new Uploads_Unleashed_TUS_Upload_Session() )->create(
+			array(
+				'filename' => 'cached.txt',
+				'length'   => 100,
+			),
+			new WP_REST_Request( 'POST', '/wp/v2/media' )
+		);
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->create( $upload_id );
+
+		$this->assertNotNull( ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id ) );
+
+		return $upload_id;
 	}
 
 	/**
