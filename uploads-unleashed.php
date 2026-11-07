@@ -366,7 +366,14 @@ function uploads_unleashed_skip_oversized_chunk_body( WP $wp ): void {
 		return;
 	}
 
-	// WP_REST_Server::get_raw_data() returns this instead of reading php://input once it's set.
+	/*
+	 * Relies on a core implementation detail: WP_REST_Server::get_raw_data() returns the
+	 * $HTTP_RAW_POST_DATA global when it's set and only reads php://input otherwise
+	 * (identical in WordPress 6.4 through 7.1). Pre-setting it keeps the oversized body
+	 * out of memory. If core ever stops consulting the global, the body is buffered again
+	 * and an oversized chunk can exhaust memory; upload_chunk() still answers 413 from the
+	 * Content-Length header whenever PHP survives that.
+	 */
 	$GLOBALS['HTTP_RAW_POST_DATA'] = ''; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The REST server's cache of the request body.
 }
 add_action( 'parse_request', 'uploads_unleashed_skip_oversized_chunk_body', 9 );
