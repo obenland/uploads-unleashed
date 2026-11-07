@@ -163,6 +163,7 @@ uploads-unleashed/
 │   ├── class-uploads-unleashed-tus-controller.php
 │   ├── class-uploads-unleashed-tus-upload-session.php
 │   ├── class-uploads-unleashed-tus-chunk-storage.php
+│   ├── class-uploads-unleashed-tus-attachments-controller.php
 │   └── class-uploads-unleashed-cli-command.php
 ├── src/                    # JavaScript source
 │   ├── tus-client.js       # Core TUS client wrapper

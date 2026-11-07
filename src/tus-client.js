@@ -217,6 +217,19 @@ const DEFAULT_TUS_OPTIONS = {
 };
 
 /**
+ * Params of POST /wp/v2/media that the server applies when finalizing.
+ */
+const UPLOAD_PARAMS = [
+	'post',
+	'title',
+	'caption',
+	'description',
+	'alt_text',
+	'generate_sub_sizes',
+	'convert_format',
+];
+
+/**
  * Creates a raw TUS upload instance.
  * For internal use - prefer upload() for the public API.
  *
@@ -225,9 +238,11 @@ const DEFAULT_TUS_OPTIONS = {
  * @param {(percent: number, bytesUploaded: number, bytesTotal: number) => void} [callbacks.onProgress] Progress callback.
  * @param {(attachment: Object|null) => void}                                    callbacks.onSuccess    Success callback.
  * @param {(error: Error) => void}                                               callbacks.onError      Error callback.
+ * @param {Object}                                                               [callbacks.params]     Params of POST /wp/v2/media to carry in Upload-Metadata.
  * @return {tus.Upload} TUS upload instance.
  */
 function createTusUpload( file, callbacks ) {
+	const params = callbacks.params || {};
 	const tusUpload = new tus.Upload( file, {
 		...DEFAULT_TUS_OPTIONS,
 		endpoint: getEndpoint(),
@@ -235,6 +250,15 @@ function createTusUpload( file, callbacks ) {
 			'X-WP-Nonce': getNonce(),
 		},
 		metadata: {
+			// Scalars only, so File entries and empty fields are skipped.
+			...Object.fromEntries(
+				UPLOAD_PARAMS.filter(
+					( key ) =>
+						[ 'string', 'number', 'boolean' ].includes(
+							typeof params[ key ]
+						) && '' !== params[ key ]
+				).map( ( key ) => [ key, String( params[ key ] ) ] )
+			),
 			filename: file.name,
 			filetype: file.type || 'application/octet-stream',
 		},
@@ -440,6 +464,7 @@ async function forgetUploadIfGone( tusUpload ) {
  * @param {Object}                                                               [options]            Upload options.
  * @param {(percent: number, bytesUploaded: number, bytesTotal: number) => void} [options.onProgress] Progress callback.
  * @param {AbortSignal}                                                          [options.signal]     AbortSignal for cancellation.
+ * @param {Object}                                                               [options.params]     Params of POST /wp/v2/media for the attachment: post, title, caption, description, alt_text, generate_sub_sizes, convert_format.
  * @return {Promise<Object>} Resolves with WordPress attachment data.
  *
  * @example
@@ -463,6 +488,7 @@ export async function upload( file, options = {} ) {
 		let settled = false;
 
 		const tusUpload = createTusUpload( file, {
+			params: options.params,
 			onProgress: options.onProgress,
 			onSuccess: ( attachment ) => {
 				if ( settled ) {

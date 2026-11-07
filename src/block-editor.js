@@ -96,6 +96,7 @@ const tusMiddleware = async ( options, next ) => {
 		// Try TUS upload
 		return await upload( file, {
 			signal: options.signal,
+			params: Object.fromEntries( options.body ),
 		} );
 	} catch ( error ) {
 		// Log for debugging

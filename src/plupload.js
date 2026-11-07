@@ -93,6 +93,7 @@ function handleBeforeUpload( uploader, file ) {
 
 	// Use TUS for this file
 	upload( nativeFile, {
+		params: { post: uploader.settings?.multipart_params?.post_id },
 		onProgress: ( percent, bytesUploaded ) => {
 			file.loaded = bytesUploaded;
 			file.percent = percent;
