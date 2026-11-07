@@ -97,6 +97,23 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Helper method to send a PATCH request with chunk data.
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @param int    $offset    The Upload-Offset header value.
+	 * @param string $body      The chunk data.
+	 * @return WP_REST_Response The response.
+	 */
+	protected function send_chunk( string $upload_id, int $offset, string $body ): WP_REST_Response {
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', (string) $offset );
+		$request->set_body( $body );
+
+		return rest_get_server()->dispatch( $request );
+	}
+
+	/**
 	 * Test route registration.
 	 */
 	public function test_register_routes() {
@@ -1247,6 +1264,84 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$response = rest_get_server()->dispatch( $request );
 		$this->assertSame( 409, $response->get_status() );
 		$this->assertSame( 'rest_offset_mismatch', $response->get_data()['code'] );
+	}
+
+	/**
+	 * Test HEAD reports the bytes on disk when the session offset lags behind.
+	 *
+	 * Simulates PHP being killed after a chunk was written but before the
+	 * session offset was updated.
+	 */
+	public function test_head_reports_bytes_on_disk_when_session_offset_lags() {
+		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+
+		$response = $this->send_chunk( $upload_id, 0, 'aaaaa' );
+		$this->assertSame( 204, $response->get_status() );
+
+		// Bytes that reached the disk without the session being updated.
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'bb', 5 );
+
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/' . $upload_id );
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( '7', (string) $response->get_headers()['Upload-Offset'] );
+
+		// The session is reconciled from the file.
+		$upload = ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id );
+		$this->assertSame( 7, (int) $upload['offset'] );
+	}
+
+	/**
+	 * Test PATCH resumes at the bytes on disk when the session offset lags behind.
+	 */
+	public function test_patch_resumes_at_bytes_on_disk_when_session_offset_lags() {
+		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+
+		$this->send_chunk( $upload_id, 0, 'aaaaa' );
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'bb', 5 );
+
+		// The stale session offset is rejected without touching the file.
+		$response = $this->send_chunk( $upload_id, 5, 'bbccc' );
+		$this->assertErrorResponse( 'rest_offset_mismatch', $response, 409 );
+
+		$response = $this->send_chunk( $upload_id, 7, 'ccc' );
+		$this->assertSame( 200, $response->get_status() );
+
+		$attachment_id = $response->get_data()['id'];
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading file in test.
+		$this->assertSame( 'aaaaabbccc', file_get_contents( get_attached_file( $attachment_id ) ) );
+
+		wp_delete_attachment( $attachment_id, true );
+	}
+
+	/**
+	 * Test an upload stays resumable when the session offset fails to save.
+	 */
+	public function test_upload_resumes_when_session_offset_update_fails() {
+		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+
+		// Keep the stored value unchanged, so set_transient() returns false.
+		$block_update = static function ( $value, $old_value ) {
+			return $old_value;
+		};
+		add_filter( 'pre_update_option__transient_tus_upload_' . $upload_id, $block_update, 10, 2 );
+
+		$response = $this->send_chunk( $upload_id, 0, 'aaaaa' );
+
+		remove_filter( 'pre_update_option__transient_tus_upload_' . $upload_id, $block_update );
+
+		$this->assertSame( 204, $response->get_status() );
+		$this->assertSame( '5', (string) $response->get_headers()['Upload-Offset'] );
+
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/' . $upload_id );
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( '5', (string) $response->get_headers()['Upload-Offset'] );
+
+		$response = $this->send_chunk( $upload_id, 5, 'bbbbb' );
+		$this->assertSame( 200, $response->get_status() );
+
+		wp_delete_attachment( $response->get_data()['id'], true );
 	}
 
 	/**
