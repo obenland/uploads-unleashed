@@ -271,6 +271,22 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
 			fclose( $handle );
 
+			/*
+			 * The file only grows, and the session offset is updated after each
+			 * write, so on a single server the file is never behind the session.
+			 * When it is, earlier chunks were stored elsewhere: on another server
+			 * behind a load balancer, or in a chunk directory that was emptied.
+			 * Retrying can't recover the bytes, so don't answer with a 409, which
+			 * TUS clients retry.
+			 */
+			if ( $current_size < $offset ) {
+				return new WP_Error(
+					'tus_chunk_data_missing',
+					__( 'Part of this upload is missing on the server, so it cannot continue. On hosts with several web servers, every server needs to share the upload storage directory, or the load balancer needs sticky sessions. Please upload the file again.', 'uploads-unleashed' ),
+					array( 'status' => 410 )
+				);
+			}
+
 			return new WP_Error( 'tus_chunk_offset_mismatch', __( 'File offset does not match expected value.', 'uploads-unleashed' ), array( 'status' => 409 ) );
 		}
 

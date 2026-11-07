@@ -454,6 +454,11 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		// Write chunk.
 		$new_offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, $chunk_data, $server_offset );
 		if ( is_wp_error( $new_offset ) ) {
+			// The stored bytes are gone, so delete the upload rather than leave it for the client to resume.
+			if ( 'tus_chunk_data_missing' === $new_offset->get_error_code() ) {
+				$this->delete_upload( $upload_id );
+			}
+
 			return $new_offset;
 		}
 

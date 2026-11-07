@@ -62,6 +62,10 @@ No. Upload session data is stored temporarily on your server and automatically d
 
 WordPress goes back to handling uploads the way it normally does. Files you already uploaded stay in your Media Library. Any temporary upload data will be automatically cleaned up.
 
+### Does this work on hosts with several web servers?
+
+Yes, with one requirement. The pieces of an upload are stored on the web server that receives them until the upload completes. If a load balancer sends the pieces to different servers, the upload stops with "Part of this upload is missing on the server". Either turn on sticky sessions on the load balancer, or point the `uploads_unleashed_chunk_dir` filter at a directory every server shares. That directory needs to support file locking.
+
 ## Screenshots
 
 1. Resumable uploads — pick up where you left off after a connection drop.
