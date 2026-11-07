@@ -64,23 +64,48 @@
 	color: #fff;
 }
 
-.uploads-unleashed-list .discard-upload {
+.uploads-unleashed-list .resume-upload:focus {
+	box-shadow: 0 0 0 1px #fff, 0 0 0 3px #135e96;
+}
+
+.uploads-unleashed-list .discard-upload,
+.uploads-unleashed-list .confirm-discard {
 	color: #b32d2e;
 	border-color: #b32d2e;
 }
 
 .uploads-unleashed-list .discard-upload:hover,
-.uploads-unleashed-list .discard-upload:focus {
+.uploads-unleashed-list .discard-upload:focus,
+.uploads-unleashed-list .confirm-discard:hover,
+.uploads-unleashed-list .confirm-discard:focus {
 	background: #d63638;
 	border-color: #b32d2e;
 	box-shadow: 0 0 0 1px #b32d2e;
 	color: #fff;
 }
 
+/* A ring set off from the button, so focus stays distinguishable from hover. */
+.uploads-unleashed-list .discard-upload:focus,
+.uploads-unleashed-list .confirm-discard:focus {
+	box-shadow: 0 0 0 1px #fff, 0 0 0 3px #b32d2e;
+}
+
+.uploads-unleashed-confirm {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-left: auto;
+}
+
+.uploads-unleashed-list .uploads-unleashed-confirm .button {
+	margin-left: 0;
+}
+
 .uploads-unleashed-error {
 	display: block;
 	width: 100%;
-	color: #d63638;
+	color: #b32d2e;
 	font-size: 12px;
 	font-weight: 500;
 }
