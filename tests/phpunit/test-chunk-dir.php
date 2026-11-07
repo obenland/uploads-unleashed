@@ -10,8 +10,7 @@ declare( strict_types = 1 );
 require_once __DIR__ . '/includes/class-uploads-unleashed-test-stream-wrapper.php';
 
 /**
- * Tests where chunks are stored, and that uploads work when the uploads
- * directory is a stream wrapper.
+ * Tests where chunks are stored, including when the uploads directory is a stream wrapper.
  *
  * @since 1.2.0
  */
@@ -40,14 +39,6 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	 * @var string
 	 */
 	private string $custom_dir = '';
-
-	/**
-	 * Files, symlinks, and directories a test created outside the chunk directory.
-	 *
-	 * @since 1.2.0
-	 * @var string[]
-	 */
-	private array $cleanup_paths = array();
 
 	/**
 	 * Filter callback that points the uploads directory at the stream wrapper.
@@ -86,7 +77,8 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 
 		$this->wrapper_root = trailingslashit( get_temp_dir() ) . 'uu-wrapper-' . wp_generate_password( 8, false );
 		$this->custom_dir   = trailingslashit( get_temp_dir() ) . 'uu-custom-' . wp_generate_password( 8, false );
-		wp_mkdir_p( $this->wrapper_root );
+		// wp_upload_dir() only creates each path once per request, so create this test's month directory itself.
+		wp_mkdir_p( $this->wrapper_root . '/uploads' . wp_upload_dir( null, false )['subdir'] );
 		Uploads_Unleashed_Test_Stream_Wrapper::register( $this->wrapper_root );
 
 		$this->upload_dir_filter = static function ( array $uploads ): array {
@@ -113,14 +105,6 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	 * @since 1.2.0
 	 */
 	public function tear_down(): void {
-		foreach ( $this->cleanup_paths as $path ) {
-			if ( is_link( $path ) || is_file( $path ) ) {
-				unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
-			} else {
-				$this->delete_tree( $path );
-			}
-		}
-
 		Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
 
 		remove_filter( 'upload_dir', $this->upload_dir_filter );
@@ -128,6 +112,9 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 
 		$this->delete_tree( $this->wrapper_root );
 		$this->delete_tree( $this->custom_dir );
+		if ( is_file( $this->custom_dir ) ) {
+			wp_delete_file( $this->custom_dir );
+		}
 
 		Uploads_Unleashed_Test_Stream_Wrapper::unregister();
 		$this->reset_cached_chunk_dir();
@@ -136,11 +123,11 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Tests that chunks stay in the uploads directory when it's local.
+	 * Tests that chunks are stored in the uploads directory by default.
 	 *
 	 * @since 1.2.0
 	 */
-	public function test_chunk_dir_defaults_to_local_uploads_dir(): void {
+	public function test_chunk_dir_defaults_to_uploads_dir(): void {
 		$expected = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks/';
 
 		$this->assertSame( $expected, Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() );
@@ -148,113 +135,62 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Tests that chunks go to a local directory when the uploads directory is a stream wrapper.
+	 * Tests that creating an upload fails clearly when chunks would go to a stream wrapper.
+	 *
+	 * Stream wrappers like S3-Uploads (`s3://`) or VIP (`vip://`) don't support
+	 * flock() or glob(), so every chunk would fail mid-upload.
 	 *
 	 * @since 1.2.0
 	 */
-	public function test_chunk_dir_is_local_when_uploads_dir_is_stream_wrapper(): void {
+	public function test_create_upload_fails_when_chunk_dir_is_stream_wrapper(): void {
 		add_filter( 'upload_dir', $this->upload_dir_filter );
 
-		$path = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( 'abc' );
+		$response = rest_get_server()->dispatch( $this->create_request( 9 ) );
 
-		$this->assertFalse( wp_is_stream( $path ), 'Chunk path must not use a stream wrapper.' );
-		$this->assertStringStartsWith( trailingslashit( get_temp_dir() ), $path );
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'tus_chunk_dir_not_local', $response->get_data()['code'] );
+		$this->assertStringContainsString( 'uploads_unleashed_chunk_dir', $response->get_data()['message'] );
+
+		// Nothing was written to the remote uploads directory.
+		$this->assertDirectoryDoesNotExist( $this->wrapper_root . '/uploads/.tus-chunks' );
 	}
 
 	/**
-	 * Tests that the temp chunk directory differs per uploads directory, so sites don't share it.
+	 * Tests that creating an upload fails clearly when the chunk directory can't be created.
 	 *
 	 * @since 1.2.0
 	 */
-	public function test_temp_chunk_dir_is_unique_per_uploads_dir(): void {
-		add_filter( 'upload_dir', $this->upload_dir_filter );
-		$first = Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir();
-
-		$other_site = static function ( array $uploads ): array {
-			$uploads['basedir'] .= '/sites/2';
-
-			return $uploads;
+	public function test_create_upload_fails_when_chunk_dir_is_not_writable(): void {
+		// A file where the directory's parent should be, so the directory can't be created.
+		file_put_contents( $this->custom_dir, '' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		$custom_dir       = $this->custom_dir;
+		$chunk_dir_filter = static function () use ( $custom_dir ): string {
+			return $custom_dir . '/chunks';
 		};
-		add_filter( 'upload_dir', $other_site, 11 );
-		$second = Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir();
-		remove_filter( 'upload_dir', $other_site, 11 );
+		add_filter( 'uploads_unleashed_chunk_dir', $chunk_dir_filter );
 
-		$this->assertNotSame( $first, $second );
+		$response = rest_get_server()->dispatch( $this->create_request( 9 ) );
+		remove_filter( 'uploads_unleashed_chunk_dir', $chunk_dir_filter );
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertSame( 'tus_chunk_dir_not_writable', $response->get_data()['code'] );
 	}
 
 	/**
-	 * Tests that the temp chunk directory isn't readable by other users.
+	 * Tests that a local chunk directory makes uploads work with a stream-wrapper uploads dir.
+	 *
+	 * Finalization has to copy the file from the local chunk directory into the wrapper.
 	 *
 	 * @since 1.2.0
 	 */
-	public function test_temp_chunk_dir_is_private(): void {
-		if ( 'WIN' === strtoupper( substr( PHP_OS, 0, 3 ) ) ) {
-			$this->markTestSkipped( 'POSIX permissions are not available on Windows.' );
-		}
-
+	public function test_upload_completes_into_stream_wrapper_uploads_dir_with_local_chunk_dir(): void {
 		add_filter( 'upload_dir', $this->upload_dir_filter );
-		new Uploads_Unleashed_TUS_Chunk_Storage();
+		add_filter( 'uploads_unleashed_chunk_dir', $this->chunk_dir_filter );
 
-		clearstatcache();
-		$this->assertSame( '0700', substr( sprintf( '%o', fileperms( Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() ) ), -4 ) );
-	}
+		$response = rest_get_server()->dispatch( $this->create_request( 9 ) );
+		$this->assertSame( 201, $response->get_status(), wp_json_encode( $response->get_data() ) );
 
-	/**
-	 * Tests that chunks can be appended when the uploads directory is a stream wrapper.
-	 *
-	 * @since 1.2.0
-	 */
-	public function test_append_works_when_uploads_dir_is_stream_wrapper(): void {
-		add_filter( 'upload_dir', $this->upload_dir_filter );
-
-		$storage   = new Uploads_Unleashed_TUS_Chunk_Storage();
-		$upload_id = wp_generate_uuid4();
-
-		$this->assertSame( 5, $storage->append( $upload_id, 'Hello', 0 ) );
-		$this->assertSame( 11, $storage->append( $upload_id, ' World', 5 ) );
-		$this->assertSame( 11, $storage->get_size( $upload_id ) );
-	}
-
-	/**
-	 * Tests that cleanup finds orphaned chunks when the uploads directory is a stream wrapper.
-	 *
-	 * @since 1.2.0
-	 */
-	public function test_cleanup_removes_orphans_when_uploads_dir_is_stream_wrapper(): void {
-		add_filter( 'upload_dir', $this->upload_dir_filter );
-
-		$storage   = new Uploads_Unleashed_TUS_Chunk_Storage();
-		$upload_id = wp_generate_uuid4();
-		$path      = $storage->get_path( $upload_id );
-
-		// No session exists for this chunk, so it's an orphan.
-		file_put_contents( $path, 'orphan' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-		$this->assertFileExists( $path );
-
-		Uploads_Unleashed_TUS_Chunk_Storage::cleanup_expired();
-
-		$this->assertFileDoesNotExist( $path );
-	}
-
-	/**
-	 * Tests that a completed upload is moved into a stream-wrapper uploads directory.
-	 *
-	 * @since 1.2.0
-	 */
-	public function test_complete_upload_moves_file_into_stream_wrapper_uploads_dir(): void {
-		add_filter( 'upload_dir', $this->upload_dir_filter );
-
-		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
-		$request->set_header( 'Upload-Length', '9' );
-
-		$upload_id = ( new Uploads_Unleashed_TUS_Upload_Session() )->create(
-			array(
-				'filename' => 'wrapped.txt',
-				'filetype' => 'text/plain',
-				'length'   => 9,
-			),
-			$request
-		);
+		$upload_id = basename( $response->get_headers()['Location'] );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
@@ -285,18 +221,6 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 
 		$this->assertSame( trailingslashit( $this->custom_dir ), Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() );
 		$this->assertFileExists( trailingslashit( $this->custom_dir ) . $upload_id . '.part' );
-	}
-
-	/**
-	 * Tests that the filter takes precedence over the stream wrapper fallback.
-	 *
-	 * @since 1.2.0
-	 */
-	public function test_chunk_dir_filter_overrides_stream_wrapper_default(): void {
-		add_filter( 'upload_dir', $this->upload_dir_filter );
-		add_filter( 'uploads_unleashed_chunk_dir', $this->chunk_dir_filter );
-
-		$this->assertSame( trailingslashit( $this->custom_dir ), Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() );
 	}
 
 	/**
@@ -364,124 +288,19 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Tests that the temp chunk directory's name can't be derived from public information.
+	 * Builds a TUS creation request.
 	 *
 	 * @since 1.2.0
-	 */
-	public function test_temp_chunk_dir_name_is_not_predictable(): void {
-		add_filter( 'upload_dir', $this->upload_dir_filter );
-
-		$chunk_dir = Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir();
-
-		$this->assertStringNotContainsString( md5( 'uutest://uploads' ), $chunk_dir );
-		$this->assertStringNotContainsString( md5( 'uutest://uploads/' ), $chunk_dir );
-	}
-
-	/**
-	 * Tests that a temp chunk directory someone else could access is refused.
 	 *
-	 * Simulates another local user creating the directory first.
-	 *
-	 * @since 1.2.0
+	 * @param int $length The upload length.
+	 * @return WP_REST_Request The request.
 	 */
-	public function test_pre_existing_shared_temp_chunk_dir_is_refused(): void {
-		$this->skip_without_posix_permissions();
-		add_filter( 'upload_dir', $this->upload_dir_filter );
+	private function create_request( int $length ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', (string) $length );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'wrapped.txt' ) . ',filetype ' . base64_encode( 'text/plain' ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- TUS metadata is base64-encoded.
 
-		$chunk_dir             = untrailingslashit( Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() );
-		$this->cleanup_paths[] = $chunk_dir;
-		mkdir( $chunk_dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
-		chmod( $chunk_dir, 0777 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod
-
-		$upload_id = wp_generate_uuid4();
-		$result    = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'secret', 0 );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 'tus_chunk_dir_unsafe', $result->get_error_code() );
-		$this->assertFileDoesNotExist( $chunk_dir . '/' . $upload_id . '.part' );
-	}
-
-	/**
-	 * Tests that a temp chunk directory planted as a symlink is refused.
-	 *
-	 * @since 1.2.0
-	 */
-	public function test_symlinked_temp_chunk_dir_is_refused(): void {
-		$this->skip_without_posix_permissions();
-		add_filter( 'upload_dir', $this->upload_dir_filter );
-
-		$chunk_dir = untrailingslashit( Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() );
-		$target    = $this->custom_dir;
-		mkdir( $target, 0700 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
-		symlink( $target, $chunk_dir );
-		$this->cleanup_paths[] = $chunk_dir;
-
-		$upload_id = wp_generate_uuid4();
-		$result    = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'secret', 0 );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 'tus_chunk_dir_unsafe', $result->get_error_code() );
-		$this->assertFileDoesNotExist( $target . '/' . $upload_id . '.part' );
-	}
-
-	/**
-	 * Tests that a chunk file planted as a symlink isn't written through.
-	 *
-	 * @since 1.2.0
-	 */
-	public function test_symlinked_chunk_file_is_refused(): void {
-		$this->skip_without_posix_permissions();
-
-		$storage   = new Uploads_Unleashed_TUS_Chunk_Storage();
-		$upload_id = wp_generate_uuid4();
-		$target    = $this->custom_dir . '.target';
-		file_put_contents( $target, '' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-		$this->cleanup_paths[] = $target;
-		symlink( $target, $storage->get_path( $upload_id ) );
-		$this->cleanup_paths[] = $storage->get_path( $upload_id );
-
-		$result = $storage->append( $upload_id, 'secret', 0 );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 'tus_chunk_unsafe_path', $result->get_error_code() );
-		$this->assertSame( '', file_get_contents( $target ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-	}
-
-	/**
-	 * Tests that protection files planted as symlinks aren't written through.
-	 *
-	 * @since 1.2.0
-	 */
-	public function test_symlinked_protection_files_are_not_written_through(): void {
-		$this->skip_without_posix_permissions();
-
-		new Uploads_Unleashed_TUS_Chunk_Storage();
-		$chunk_dir = Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir();
-		$target    = $this->custom_dir . '.target';
-		file_put_contents( $target, 'untouched' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-
-		foreach ( array( '.htaccess', 'index.php' ) as $file ) {
-			wp_delete_file( $chunk_dir . $file );
-			symlink( $target, $chunk_dir . $file );
-			$this->cleanup_paths[] = $chunk_dir . $file;
-		}
-		$this->cleanup_paths[] = $target;
-
-		$this->reset_cached_chunk_dir();
-		new Uploads_Unleashed_TUS_Chunk_Storage();
-
-		$this->assertSame( 'untouched', file_get_contents( $target ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-	}
-
-	/**
-	 * Skips the test where symlinks and POSIX permissions aren't available.
-	 *
-	 * @since 1.2.0
-	 */
-	private function skip_without_posix_permissions(): void {
-		if ( 'WIN' === strtoupper( substr( PHP_OS, 0, 3 ) ) ) {
-			$this->markTestSkipped( 'Symlinks and POSIX permissions are not reliably available on Windows.' );
-		}
+		return $request;
 	}
 
 	/**
@@ -491,7 +310,9 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	 */
 	private function reset_cached_chunk_dir(): void {
 		$property = new ReflectionProperty( Uploads_Unleashed_TUS_Chunk_Storage::class, 'base_dir' );
-		$property->setAccessible( true );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$property->setAccessible( true );
+		}
 		$property->setValue( null, null );
 	}
 

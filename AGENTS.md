@@ -20,7 +20,7 @@ The plugin `require`s the generated `build/*.asset.php` files, so run `npm run b
 ## Layout
 
 - `uploads-unleashed.php`: bootstrap, script registration, and the `rest_pre_dispatch` filter that turns a `POST /wp/v2/media` with an `Upload-Length` header into a TUS upload.
-- `includes/`: REST controller (`wp/v2/media/<uuid>`), upload session (transients), chunk storage (`uploads/.tus-chunks/` by default, see `Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir()`), WP-CLI `wp tus` command.
+- `includes/`: REST controller (`wp/v2/media/<uuid>`), upload session (transients), chunk storage (`uploads/.tus-chunks/` by default, resolved by `Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir()`; S3/VIP sites must set the `uploads_unleashed_chunk_dir` filter), WP-CLI `wp tus` command.
 - `src/`: `tus-client.js` (upload API), `plupload.js` (media library and `media-new.php`), `block-editor.js` (`apiFetch` middleware), `resume-ui.js` and `resume-ui.css` (interrupted-uploads UI). Plain JS, built with `@wordpress/scripts`.
 - `webpack.config.js` externalizes both `tus-js-client` (the vendored `src/vendor/tus.js`, shipped as `build/tus.min.js` and exposed as `window.tus`) and `@uploads-unleashed/tus-client` (exposed as `window.uploadsUnleashed.tusClient`), so each is loaded once as its own registered script. When replacing the vendored file, update its script version (`4.3.1`) in `uploads-unleashed.php`.
 - `tests/phpunit`, `tests/js` (Vitest), `tests/e2e` (Playwright, TypeScript).

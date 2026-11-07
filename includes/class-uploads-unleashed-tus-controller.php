@@ -316,6 +316,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// Fail now, not on the first chunk, when chunks can't be stored.
+		$chunk_dir_check = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->check_directory();
+		if ( is_wp_error( $chunk_dir_check ) ) {
+			return $chunk_dir_check;
+		}
+
 		// Parse metadata and create upload session.
 		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
 		$session   = new Uploads_Unleashed_TUS_Upload_Session();
