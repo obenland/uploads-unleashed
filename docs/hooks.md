@@ -33,6 +33,8 @@ Override the maximum allowed chunk size per PATCH request.
 
 Controls how large each individual PATCH request body can be. The default is 10 MB. The return value is clamped to a minimum of 1 MB.
 
+The filter also runs on `parse_request`, before the REST server reads the body, so that a PATCH whose `Content-Length` exceeds the limit is rejected with 413 without being loaded into memory. In that call, `$request` carries the route and headers but no body.
+
 **Parameters:**
 - `$max_chunk_size` (int) - The maximum chunk size in bytes. Default `10 * MB_IN_BYTES`.
 - `$request` (WP_REST_Request) - The REST request object.

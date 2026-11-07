@@ -317,6 +317,61 @@ function uploads_unleashed_intercept_tus_creation( $result, $server, $request ) 
 add_filter( 'rest_pre_dispatch', 'uploads_unleashed_intercept_tus_creation', 10, 3 );
 
 /**
+ * Keeps the body of an oversized TUS chunk out of memory.
+ *
+ * WP_REST_Server::serve_request() reads the whole request body into memory
+ * before it dispatches, so a PATCH far over the chunk size limit exhausts
+ * PHP's memory before upload_chunk() can answer 413. When Content-Length
+ * already exceeds the limit, give the server an empty body instead: it
+ * never reads php://input, and upload_chunk() rejects the request based on
+ * its Content-Length header.
+ *
+ * Runs on parse_request before rest_api_loaded(), which serves REST requests.
+ *
+ * @since 1.2.0
+ *
+ * @param WP $wp Current WordPress environment instance.
+ */
+function uploads_unleashed_skip_oversized_chunk_body( WP $wp ): void {
+	if ( empty( $wp->query_vars['rest_route'] ) || empty( $_SERVER['CONTENT_LENGTH'] ) || empty( $_SERVER['REQUEST_METHOD'] ) ) {
+		return;
+	}
+
+	$route = '/' . trim( $wp->query_vars['rest_route'], '/' );
+	if ( ! preg_match( '#^/wp/v2/media/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$#', $route ) ) {
+		return;
+	}
+
+	// Resolve the method the same way WP_REST_Server::serve_request() does.
+	$method = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) );
+	if ( isset( $_GET['_method'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only reads the method; the REST server authenticates the request.
+		$method = sanitize_text_field( wp_unslash( $_GET['_method'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- See above.
+	} elseif ( isset( $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ) ) {
+		$method = sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ) );
+	}
+
+	if ( 'PATCH' !== strtoupper( $method ) ) {
+		return;
+	}
+
+	$content_length = sanitize_text_field( wp_unslash( $_SERVER['CONTENT_LENGTH'] ) );
+	if ( ! ctype_digit( $content_length ) ) {
+		return;
+	}
+
+	$request = new WP_REST_Request( 'PATCH', $route );
+	$request->set_headers( rest_get_server()->get_headers( wp_unslash( $_SERVER ) ) );
+
+	if ( (int) $content_length <= Uploads_Unleashed_TUS_Controller::get_max_chunk_size( $request ) ) {
+		return;
+	}
+
+	// WP_REST_Server::get_raw_data() returns this instead of reading php://input once it's set.
+	$GLOBALS['HTTP_RAW_POST_DATA'] = ''; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The REST server's cache of the request body.
+}
+add_action( 'parse_request', 'uploads_unleashed_skip_oversized_chunk_body', 9 );
+
+/**
  * Cleans up expired uploads.
  *
  * @since 0.1.0
