@@ -184,6 +184,8 @@ Manages physical chunk files on disk:
    - Validates permissions (create_item_permissions_check())
    Uploads_Unleashed_TUS_Controller::create_item()
    - Parses metadata (filename, filetype)
+   - Rejects a missing filename or a disallowed file type (400),
+     unless the user can `unfiltered_upload`
    - Creates Uploads_Unleashed_TUS_Upload_Session
 
 3. Response: 201 Created
