@@ -346,6 +346,13 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return $upload_id;
 		}
 
+		// Reserve the upload's space right away, not only once its first chunk arrives.
+		if ( ! ( new Uploads_Unleashed_TUS_Chunk_Storage() )->create( $upload_id ) ) {
+			$session->delete( $upload_id );
+
+			return new WP_Error( 'tus_chunk_create_failed', __( 'Could not create chunk file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
+		}
+
 		$upload = $session->get( $upload_id );
 
 		/**
