@@ -14,8 +14,16 @@ jobs:
             pull-requests: write
         steps:
             - name: Enable auto-merge
-              run: gh pr merge --auto --squash "$PR_URL"
+              # A PAT-merged push triggers trunk workflows (and their caches); GITHUB_TOKEN pushes don't.
+              run: |
+                  if [ -n "$WORKFLOW_PAT" ] && GH_TOKEN="$WORKFLOW_PAT" gh pr merge --auto --squash "$PR_URL"; then
+                      exit 0
+                  fi
+                  if [ -n "$WORKFLOW_PAT" ]; then
+                      echo "::warning::WORKFLOW_PAT was rejected; falling back to GITHUB_TOKEN, so the merge won't trigger trunk workflows. Update the Dependabot secret."
+                  fi
+                  GH_TOKEN="$GITHUB_TOKEN" gh pr merge --auto --squash "$PR_URL"
               env:
                   PR_URL: ${{ github.event.pull_request.html_url }}
-                  # A PAT-merged push triggers trunk workflows (and their caches); GITHUB_TOKEN pushes don't.
-                  GH_TOKEN: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+                  WORKFLOW_PAT: ${{ secrets.WORKFLOW_PAT }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
