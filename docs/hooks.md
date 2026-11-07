@@ -414,4 +414,6 @@ function vidproc_log_complete( $attachment_id, $upload_id, $upload_data ) {
 
 3. **Store persistent data in session** - Use `uploads_unleashed_session_data` to store data that needs to persist across chunks and be available during finalization.
 
-4. **Use upload_data for context** - The `$upload_data` array contains useful information like `filename`, `filetype`, `length`, `user_id`, and any custom fields you added via `uploads_unleashed_session_data`.
+4. **Expect finalization to be replayed** - If a request dies during finalization, the next HEAD or PATCH for the upload resumes it. `uploads_unleashed_pre_finalize` and `uploads_unleashed_finalize_upload` run again if the file hadn't been moved yet; `uploads_unleashed_upload_complete` fires once. A custom finalization result is stored and returned for replays.
+
+5. **Use upload_data for context** - The `$upload_data` array contains useful information like `filename`, `filetype`, `length`, `user_id`, and any custom fields you added via `uploads_unleashed_session_data`.

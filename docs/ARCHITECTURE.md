@@ -137,6 +137,7 @@ Manages upload session metadata using WordPress transients:
 - `create()` - Create new session with UUID
 - `get()` - Retrieve session data
 - `update_offset()` - Update upload progress
+- `update()` - Merge fields into a session (finalization progress)
 - `delete()` - Remove session
 - `delete_all()` - Remove every session (uninstall), including ones in a persistent object cache, found through their chunk files
 
@@ -149,10 +150,13 @@ Manages upload session metadata using WordPress transients:
     'filetype'   => 'image/jpeg',
     'length'     => 5242880,
     'offset'     => 0,
+    'status'     => 'uploading', // 'finalizing', then 'finalized'.
     'created_at' => 1700000000,
     'expires_at' => 1700086400,
 ]
 ```
+
+Finalization adds `file` (the result of moving the file into the uploads directory) and `attachment_id` as each step completes, so an interrupted finalization resumes where it stopped. A finalized session stays behind as a tombstone until it expires, mapping the upload to its attachment (or to a custom finalization's `result`).
 
 ### Uploads_Unleashed_TUS_Chunk_Storage
 
@@ -171,7 +175,8 @@ Manages physical chunk files on disk:
 - `get_path()` - Get sanitized file path
 - `get_size()` - Current file size
 - `exists()` - Whether a chunk file exists
-- `delete()` - Remove chunk file
+- `delete()` - Remove chunk file and lock file
+- `lock()` / `unlock()` - Exclusive, non-blocking finalization lock (`{id}.lock`, released by the OS if PHP dies)
 - `get_total_pending_size()` - Bytes held by in-progress uploads (multisite quota)
 - `list_active_sessions()` - Active uploads (used by `wp tus list`)
 - `get_upload_ids()` - IDs of all uploads with a chunk file (uninstall)
@@ -223,11 +228,16 @@ Manages physical chunk files on disk:
    Headers: Upload-Offset: {new_offset}
 
 4. If offset == length (complete):
-   - finalize_upload() called
-   - File validated and moved
-   - WordPress attachment created
+   - finalize_upload() called under the upload's lock (423 if held)
+   - File validated and renamed into the uploads directory
+   - WordPress attachment created, X-WP-Upload-Attachment-ID sent
+   - Metadata generated, session marked finalized (tombstone)
    Response: 200 OK
+   Headers: Upload-Offset, Upload-Length, X-WP-Upload-Attachment-ID
    Body: Attachment JSON
+
+   A PATCH at offset == length after that (a replay) returns the
+   same result.
 ```
 
 ### Upload Resume
@@ -238,9 +248,15 @@ Manages physical chunk files on disk:
 
 2. Client sends HEAD /wp/v2/media/{id}
    - Gets current server offset (the chunk file's size)
+   - If every byte has arrived, the server finalizes the upload (or
+     resumes an interrupted finalization, or reads the tombstone) and
+     responds like the final PATCH. GET returns the same body.
 
 3. Client resumes from offset
    - Sends remaining chunks
+   - If the offset equals the length, tus-js-client succeeds with the
+     bodyless HEAD response, and the client fetches the attachment from
+     the upload URL (or the X-WP-Upload-Attachment-ID header)
 ```
 
 ## Extension Points
