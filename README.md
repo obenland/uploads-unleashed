@@ -157,123 +157,12 @@ WordPress handles uploads the way it normally does again, and files you already 
 * Count each pending upload once against the quota by @obenland in #234
 * Carry the upload context and apply it through core by @obenland in #259
 * Block editor: don't fall back or show a snackbar after a cancelled upload by @obenland in #246
+* Convert readme.txt to README.md by @obenland in #83
 * Add AGENTS.md and CLAUDE.md, fix stale developer docs by @obenland in #218
 * Rewrite the WordPress.org readme for search and accuracy by @obenland in #220
 * Describe what the screenshot shows in its caption by @obenland in #262
 * Require a changelog label on every PR by @obenland in #266
-* Bump @wordpress/data from 10.40.0 to 10.41.0 by @dependabot[bot] in #67
-* Bump @wordpress/notices from 5.40.0 to 5.41.0 by @dependabot[bot] in #69
-* Bump basic-ftp from 5.1.0 to 5.2.0 in the npm_and_yarn group across 1 directory by @dependabot[bot] in #66
-* Bump actions/create-github-app-token from 2 to 3 by @dependabot[bot] in #71
-* Bump actions/cache from 4 to 5 by @dependabot[bot] in #63
-* Bump the npm_and_yarn group across 1 directory with 15 updates by @dependabot[bot] in #80
-* Bump @wordpress/scripts from 31.4.0 to 32.1.0 by @dependabot[bot] in #70
-* Bump @wordpress/env from 10.39.0 to 11.5.0 by @dependabot[bot] in #68
-* Bump @wordpress/notices from 5.41.0 to 5.45.0 by @dependabot[bot] in #84
-* Bump @wordpress/a11y from 4.41.0 to 4.45.0 by @dependabot[bot] in #86
-* Bump @wordpress/hooks from 4.41.0 to 4.45.0 by @dependabot[bot] in #87
-* Bump @wordpress/i18n from 6.18.0 to 6.19.0 by @dependabot[bot] in #85
-* Bump @wordpress/api-fetch from 7.40.0 to 7.46.0 by @dependabot[bot] in #88
-* Bump @wordpress/scripts from 32.1.0 to 32.2.0 by @dependabot[bot] in #91
-* Bump @playwright/test from 1.58.2 to 1.60.0 by @dependabot[bot] in #92
-* Bump @wordpress/env from 11.5.0 to 11.6.0 by @dependabot[bot] in #93
-* Bump @wordpress/data from 10.45.0 to 10.46.0 by @dependabot[bot] in #95
-* Bump @wordpress/notices from 5.45.0 to 5.46.0 by @dependabot[bot] in #94
-* Bump tmp from 0.2.5 to 0.2.7 in the npm_and_yarn group across 1 directory by @dependabot[bot] in #98
-* Bump @wordpress/api-fetch from 7.46.0 to 7.47.0 by @dependabot[bot] in #108
-* Bump @wordpress/hooks from 4.46.0 to 4.47.0 by @dependabot[bot] in #109
-* Bump @wordpress/a11y from 4.46.0 to 4.47.0 by @dependabot[bot] in #111
-* Bump @wordpress/data from 10.46.0 to 10.48.0 by @dependabot[bot] in #113
-* Bump @wordpress/a11y from 4.47.0 to 4.48.0 by @dependabot[bot] in #117
-* Bump @wordpress/scripts from 32.2.0 to 32.4.0 by @dependabot[bot] in #118
-* Bump the npm_and_yarn group across 1 directory with 2 updates by @dependabot[bot] in #119
-* Bump @wordpress/api-fetch from 7.47.0 to 7.48.0 by @dependabot[bot] in #114
-* Bump @wordpress/hooks from 4.48.0 to 4.48.1 by @dependabot[bot] in #121
-* Bump @wordpress/scripts from 32.4.0 to 32.4.1 by @dependabot[bot] in #122
-* Bump @wordpress/data from 10.48.0 to 10.48.1 by @dependabot[bot] in #123
-* Bump @wordpress/notices from 5.46.0 to 5.48.1 by @dependabot[bot] in #120
-* Bump the npm_and_yarn group across 1 directory with 2 updates by @dependabot[bot] in #125
-* Bump actions/cache from 5 to 6 by @dependabot[bot] in #126
-* Bump @playwright/test from 1.60.0 to 1.61.1 by @dependabot[bot] in #128
-* Bump @wordpress/api-fetch from 7.48.0 to 7.48.1 by @dependabot[bot] in #129
-* Bump @wordpress/env from 11.6.0 to 11.8.1 by @dependabot[bot] in #130
-* Bump actions/checkout from 6 to 7 by @dependabot[bot] in #127
-* Bump @wordpress/scripts from 32.4.1 to 32.5.1 by @dependabot[bot] in #131
-* Bump @wordpress/i18n from 6.21.1 to 6.22.0 by @dependabot[bot] in #132
-* Bump @wordpress/env from 11.8.1 to 11.9.0 by @dependabot[bot] in #133
-* Bump @wordpress/a11y from 4.48.1 to 4.49.0 by @dependabot[bot] in #134
-* Bump @wordpress/data from 10.48.1 to 10.50.0 by @dependabot[bot] in #136
-* Bump @wordpress/hooks from 4.49.0 to 4.50.0 by @dependabot[bot] in #137
-* Bump @wordpress/scripts from 32.5.1 to 32.6.0 by @dependabot[bot] in #138
-* Bump @wordpress/a11y from 4.49.0 to 4.50.0 by @dependabot[bot] in #140
-* Bump @wordpress/notices from 5.48.1 to 5.50.0 by @dependabot[bot] in #139
-* Bump actions/setup-node from 6 to 7 by @dependabot[bot] in #142
-* Bump @wordpress/api-fetch from 7.48.1 to 7.51.0 by @dependabot[bot] in #144
-* Bump @wordpress/hooks from 4.50.0 to 4.51.0 by @dependabot[bot] in #146
-* Bump @wordpress/scripts from 32.6.0 to 33.0.0 by @dependabot[bot] in #143
-* Bump @wordpress/notices from 5.50.0 to 5.51.0 by @dependabot[bot] in #147
-* Bump websocket-driver from 0.7.4 to 0.7.5 in the npm_and_yarn group across 1 directory by @dependabot[bot] in #148
-* Bump wp-coding-standards/wpcs from 3.3.0 to 3.4.0 by @dependabot[bot] in #149
-* Bump @wordpress/env from 11.9.0 to 11.11.0 by @dependabot[bot] in #150
-* Bump wp-coding-standards/wpcs from 3.4.0 to 3.4.1 by @dependabot[bot] in #151
-* Bump @playwright/test from 1.61.1 to 1.62.0 by @dependabot[bot] in #152
-* Bump the npm_and_yarn group across 1 directory with 5 updates by @dependabot[bot] in #153
-* Bump the npm_and_yarn group across 1 directory with 2 updates by @dependabot[bot] in #154
-* Bump @wordpress/api-fetch from 7.51.0 to 7.52.0 by @dependabot[bot] in #155
-* Bump @playwright/test from 1.62.0 to 1.62.1 by @dependabot[bot] in #156
-* Bump @wordpress/notices from 5.51.0 to 5.52.0 by @dependabot[bot] in #157
-* Bump @wordpress/env from 11.11.0 to 11.12.0 by @dependabot[bot] in #159
-* Bump fast-uri from 3.1.4 to 3.1.5 in the npm_and_yarn group across 1 directory by @dependabot[bot] in #160
-* Bump squizlabs/php_codesniffer from 3.13.5 to 3.13.6 in the composer group across 1 directory by @dependabot[bot] in #161
-* Bump @wordpress/env from 11.12.0 to 11.13.0 by @dependabot[bot] in #164
-* Bump Tested up to 7.1 by @obenland in #167
-* Bump @wordpress/notices from 5.52.0 to 5.53.0 by @dependabot[bot] in #168
-* Bump the npm_and_yarn group across 1 directory with 2 updates by @dependabot[bot] in #169
-* Bump @wordpress/api-fetch from 7.52.0 to 7.54.0 by @dependabot[bot] in #165
-* Bump browserslist from 4.28.6 to 4.28.8 in the npm_and_yarn group across 1 directory by @dependabot[bot] in #170
-* Bump @wordpress/data from 10.53.0 to 10.54.0 by @dependabot[bot] in #171
-* Bump @wordpress/a11y from 4.53.0 to 4.54.0 by @dependabot[bot] in #172
-* Bump @wordpress/notices from 5.53.0 to 5.54.0 by @dependabot[bot] in #173
-* Bump fast-uri from 3.1.5 to 3.1.7 in the npm_and_yarn group across 1 directory by @dependabot[bot] in #174
-* Bump @wordpress/env from 11.14.0 to 11.15.0 by @dependabot[bot] in #180
-* Bump @wordpress/a11y from 4.54.0 to 4.55.0 by @dependabot[bot] in #178
-* Bump the npm_and_yarn group across 1 directory with 4 updates by @dependabot[bot] in #177
-* Bump @wordpress/api-fetch from 7.54.0 to 7.55.0 by @dependabot[bot] in #179
-* Bump @playwright/test from 1.62.1 to 1.63.0 by @dependabot[bot] in #175
-* Bump adm-zip from 0.6.0 to 0.6.1 in the npm_and_yarn group across 1 directory by @dependabot[bot] in #181
-* Bump @wordpress/notices from 5.54.0 to 5.55.0 by @dependabot[bot] in #182
-* Bump @wordpress/a11y from 4.55.0 to 4.56.0 by @dependabot[bot] in #186
-* Bump @wordpress/notices from 5.55.0 to 5.56.0 by @dependabot[bot] in #187
-* Bump @wordpress/api-fetch from 7.55.0 to 7.56.0 by @dependabot[bot] in #185
-* Bump ip-address from 10.7.0 to 10.7.2 by @dependabot[bot] in #192
-* Bump @wordpress/env from 11.15.0 to 11.16.0 by @dependabot[bot] in #193
-* Bump @wordpress/a11y from 4.56.0 to 4.57.0 by @dependabot[bot] in #194
-* Bump @wordpress/hooks from 4.56.0 to 4.57.0 by @dependabot[bot] in #196
-* Bump @wordpress/data from 10.56.0 to 10.57.0 by @dependabot[bot] in #198
-* Bump @wordpress/notices from 5.56.0 to 5.57.0 by @dependabot[bot] in #199
-* Bump @wordpress/env from 11.16.0 to 11.17.0 by @dependabot[bot] in #197
-* Bump @playwright/test from 1.63.0 to 1.64.1 by @dependabot[bot] in #202
-* Bump @wordpress/api-fetch from 7.56.0 to 7.57.0 by @dependabot[bot] in #201
-* Bump @wordpress/i18n from 6.30.0 to 7.0.0 by @dependabot[bot] in #203
-* Bump @wordpress/a11y from 4.57.0 to 5.0.0 by @dependabot[bot] in #204
-* Bump @wordpress/data from 10.57.0 to 11.0.0 by @dependabot[bot] in #205
-* Bump @wordpress/api-fetch from 7.57.0 to 8.0.0 by @dependabot[bot] in #208
-* Bump @wordpress/notices from 5.57.0 to 6.0.0 by @dependabot[bot] in #207
-* Bump @wordpress/env from 11.17.0 to 12.0.0 by @dependabot[bot] in #209
-* Bump @wordpress/scripts from 34.2.0 to 37.0.0 by @dependabot[bot] in #206
-* Bump the npm_and_yarn group across 1 directory with 4 updates by @dependabot[bot] in #191
-* Speed up CI: drop Docker image cache, cache npm downloads by @obenland in #212
-* Run PHPUnit in CI without wp-env by @obenland in #213
-* Run e2e tests in CI without wp-env by @obenland in #214
-* Harden GitHub Actions workflows by @obenland in #215
-* Bump @wordpress/hooks from 4.57.0 to 5.0.0 by @dependabot[bot] in #217
-* Bump jsdom from 26.1.0 to 30.1.3 by @dependabot[bot] in #216
-* Exclude eslint.config.cjs from the WordPress.org build by @obenland in #257
-* Keep Dependabot auto-merge working when WORKFLOW_PAT is rejected by @obenland in #238
-* Add e2e tests for TUS uploads on Media → Add New by @obenland in #222
-* Add tests for the WP-CLI command, pending uploads notice and multisite uninstall by @obenland in #248
-* Fix resume UI tests broken by the lastModified check by @obenland in #261
-* Add multisite, WordPress 6.4 and nightly legs to PHPUnit CI by @obenland in #233
+* Modernize GitHub Actions to latest versions by @obenland in #74
 * Add weekly workflow to keep Tested up to current by @obenland in #73
 * Fall back to immediate merge when bump PR is already mergeable by @obenland in #75
 * Use mergeStateStatus to choose between immediate and auto-merge by @obenland in #76
@@ -282,7 +171,6 @@ WordPress handles uploads the way it normally does again, and files you already 
 * Add Playwright E2E tests for the Media uploader integration by @obenland in #79
 * Skip validate in tested-up-to workflow when readme already current by @obenland in #81
 * Run tested-up-to weekly instead of daily by @obenland in #82
-* Convert readme.txt to README.md by @obenland in #83
 * Pass README_NAME to the asset/readme workflow by @obenland in #89
 * Add Dependabot auto-merge workflow by @obenland in #90
 * Fix Update Tested up to workflow: sign commits, bypass redundant PR checks by @obenland in #99
@@ -293,6 +181,17 @@ WordPress handles uploads the way it normally does again, and files you already 
 * Bump Tested up to 7.0 by @obenland in #105
 * Move scheduled tested-up-to run to Fridays at 01:00 UTC by @obenland in #96
 * Migrate wp-env to per-config test environment model by @obenland in #106
+* Bump Tested up to 7.1 by @obenland in #167
+* Speed up CI: drop Docker image cache, cache npm downloads by @obenland in #212
+* Run PHPUnit in CI without wp-env by @obenland in #213
+* Run e2e tests in CI without wp-env by @obenland in #214
+* Harden GitHub Actions workflows by @obenland in #215
+* Exclude eslint.config.cjs from the WordPress.org build by @obenland in #257
+* Keep Dependabot auto-merge working when WORKFLOW_PAT is rejected by @obenland in #238
+* Add e2e tests for TUS uploads on Media → Add New by @obenland in #222
+* Add tests for the WP-CLI command, pending uploads notice and multisite uninstall by @obenland in #248
+* Fix resume UI tests broken by the lastModified check by @obenland in #261
+* Add multisite, WordPress 6.4 and nightly legs to PHPUnit CI by @obenland in #233
 
 ### 1.1.0
 * Fix HEAD request 404 on nginx servers by @obenland in #53
