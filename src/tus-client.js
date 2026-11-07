@@ -313,7 +313,18 @@ function createTusUpload( file, callbacks ) {
 			fetchAttachment(
 				tusUpload.url,
 				payload.lastResponse.getHeader?.( 'X-WP-Upload-Attachment-ID' )
-			).then( callbacks.onSuccess );
+			).then( ( fetched ) => {
+				if ( fetched ) {
+					callbacks.onSuccess( fetched );
+					return;
+				}
+
+				callbacks.onError(
+					new Error(
+						'Upload completed but no attachment data received'
+					)
+				);
+			} );
 		},
 		onError: ( error ) => {
 			// Extract a clean error message from TUS errors

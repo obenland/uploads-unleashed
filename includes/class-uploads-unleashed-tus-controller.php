@@ -700,6 +700,8 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			$attachment_id = $this->create_attachment( $upload_data['file'], $upload_id, $upload_data['params'] ?? array() );
 
 			if ( is_wp_error( $attachment_id ) ) {
+				// The file was already moved out of the chunk directory.
+				wp_delete_file( $upload_data['file']['file'] );
 				$this->delete_upload( $upload_id );
 
 				return $attachment_id;
