@@ -13,6 +13,14 @@
 class Uploads_Unleashed_TUS_Chunk_Storage {
 
 	/**
+	 * Rules that deny web access to the chunk directory on Apache 2.4 and 2.2.
+	 *
+	 * @since 1.2.0
+	 * @var string
+	 */
+	const HTACCESS_RULES = "# Apache 2.4\n<IfModule mod_authz_core.c>\n\tRequire all denied\n</IfModule>\n\n# Apache 2.2\n<IfModule !mod_authz_core.c>\n\tOrder deny,allow\n\tDeny from all\n</IfModule>\n";
+
+	/**
 	 * Base directory for chunk storage.
 	 *
 	 * @since 0.1.0
@@ -27,42 +35,101 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 */
 	public function __construct() {
 		if ( null === self::$base_dir ) {
-			self::$base_dir = self::get_base_dir_path();
+			self::$base_dir = self::get_chunk_dir();
 
 			$this->maybe_create_directory();
 		}
 	}
 
 	/**
-	 * Returns the base directory path for chunk storage.
+	 * Returns the directory that holds chunk files for the current site.
 	 *
-	 * @since 1.0.0
+	 * Doesn't create the directory, so it's safe to call anywhere, e.g. to
+	 * exclude chunks from disk usage. Not cached, so it follows switch_to_blog().
 	 *
-	 * @return string The base directory path.
+	 * @since 1.2.0
+	 *
+	 * @return string Absolute path to the chunk directory, with a trailing slash.
 	 */
-	private static function get_base_dir_path(): string {
-		$upload_dir = wp_upload_dir();
+	public static function get_chunk_dir(): string {
+		$chunk_dir = trailingslashit( wp_upload_dir( null, false )['basedir'] ) . '.tus-chunks';
 
-		return trailingslashit( $upload_dir['basedir'] ) . '.tus-chunks/';
+		/**
+		 * Filters the directory that holds in-progress upload chunks.
+		 *
+		 * The directory must be on a local or mounted filesystem that supports
+		 * flock() and glob(), so not a stream wrapper. Sites whose uploads
+		 * directory is a stream wrapper, like S3-Uploads or VIP, must use this
+		 * filter. On load-balanced hosts without sticky sessions, every web
+		 * server must share the directory.
+		 *
+		 * @since 1.2.0
+		 *
+		 * @param string $chunk_dir Absolute path to the chunk directory. Default `.tus-chunks`
+		 *                          in the uploads directory.
+		 */
+		$chunk_dir = (string) apply_filters( 'uploads_unleashed_chunk_dir', $chunk_dir );
+
+		return trailingslashit( $chunk_dir );
 	}
 
 	/**
-	 * Creates the chunk storage directory if it doesn't exist.
+	 * Checks that chunks can be stored in the chunk directory.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return true|WP_Error True if chunks can be stored, WP_Error otherwise.
+	 */
+	public function check_directory() {
+		if ( wp_is_stream( self::$base_dir ) ) {
+			return new WP_Error(
+				'tus_chunk_dir_not_local',
+				__( 'Uploads cannot start because the upload storage directory is not on the local filesystem, for example because media is stored on S3 or VIP. Use the uploads_unleashed_chunk_dir filter to choose a local directory.', 'uploads-unleashed' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		if ( ! is_dir( self::$base_dir ) || ! wp_is_writable( self::$base_dir ) ) {
+			return new WP_Error(
+				'tus_chunk_dir_not_writable',
+				__( 'Uploads cannot start because the upload storage directory is not writable.', 'uploads-unleashed' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Creates the chunk storage directory and its protection files if they don't exist.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Writes Apache 2.4 rules, replaces an .htaccess that lacks them,
+	 *              and leaves stream wrappers alone.
 	 */
 	protected function maybe_create_directory(): void {
-		if ( file_exists( self::$base_dir ) ) {
+		// check_directory() rejects stream wrappers; don't create anything remote.
+		if ( wp_is_stream( self::$base_dir ) ) {
 			return;
 		}
 
-		wp_mkdir_p( self::$base_dir );
+		if ( ! file_exists( self::$base_dir ) ) {
+			wp_mkdir_p( self::$base_dir );
+		}
 
-		// Protect directory from direct access.
+		if ( ! is_dir( self::$base_dir ) ) {
+			return;
+		}
+
+		/*
+		 * Protect the directory from direct access. Older versions wrote only the
+		 * Apache 2.2 rule, which Apache 2.4 rejects without mod_access_compat.
+		 */
 		$htaccess_file = self::$base_dir . '.htaccess';
-		if ( ! file_exists( $htaccess_file ) ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local file.
+		if ( ! file_exists( $htaccess_file ) || false === strpos( (string) file_get_contents( $htaccess_file ), 'Require all denied' ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Matches core pattern in privacy-tools.php. WP_Filesystem requires credentials, impractical for runtime.
-			file_put_contents( $htaccess_file, "Deny from all\n" );
+			file_put_contents( $htaccess_file, self::HTACCESS_RULES );
 		}
 
 		$index_file = self::$base_dir . 'index.php';
@@ -328,13 +395,13 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	/**
 	 * Deletes all chunk files, protection files, and the storage directory for the current site.
 	 *
-	 * Computes the storage path via get_base_dir_path() to avoid
+	 * Computes the storage path via get_chunk_dir() to avoid
 	 * recreating the directory during uninstall.
 	 *
 	 * @since 1.0.0
 	 */
 	public static function delete_all(): void {
-		$chunks_dir = self::get_base_dir_path();
+		$chunks_dir = self::get_chunk_dir();
 
 		if ( ! is_dir( $chunks_dir ) ) {
 			return;

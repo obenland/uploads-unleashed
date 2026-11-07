@@ -332,6 +332,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// Fail now, not on the first chunk, when chunks can't be stored.
+		$chunk_dir_check = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->check_directory();
+		if ( is_wp_error( $chunk_dir_check ) ) {
+			return $chunk_dir_check;
+		}
+
 		$session   = new Uploads_Unleashed_TUS_Upload_Session();
 		$upload_id = $session->create(
 			array(

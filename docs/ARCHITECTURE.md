@@ -157,12 +157,14 @@ Manages upload session metadata using WordPress transients:
 
 Manages physical chunk files on disk:
 
-- Base directory: `wp-content/uploads/.tus-chunks/`
-- Protected with `.htaccess` and `index.php`
+- Base directory: `wp-content/uploads/.tus-chunks/`, overridable with the `uploads_unleashed_chunk_dir` filter. It must be local: when it's a stream wrapper (S3-Uploads `s3://`, VIP `vip://`), which can't lock or list files, creating an upload fails with `tus_chunk_dir_not_local`, so those sites must set the filter.
+- Protected with `.htaccess` (Apache 2.2 and 2.4 rules) and `index.php`; nginx ignores `.htaccess`
 - File-level locking for concurrent access
 - Cleanup via WP-Cron (daily)
 
 **Methods:**
+- `get_chunk_dir()` - Resolved chunk directory for the current site (static, filtered, doesn't create it)
+- `check_directory()` - Whether chunks can be stored (local and writable), checked when an upload is created
 - `create()` - Create the empty chunk file when an upload is created, so it counts as pending
 - `append()` - Write chunk data at offset
 - `get_path()` - Get sanitized file path
@@ -242,6 +244,7 @@ Manages physical chunk files on disk:
 |--------|---------|
 | `uploads_unleashed_max_upload_size` | Modify max file size |
 | `uploads_unleashed_max_chunk_size` | Modify max chunk size per PATCH |
+| `uploads_unleashed_chunk_dir` | Move the chunk directory (required for S3/VIP uploads) |
 | `uploads_unleashed_session_data` | Add custom session data |
 | `uploads_unleashed_pre_finalize` | Validate before finalizing |
 | `uploads_unleashed_finalize_upload` | Custom finalization |

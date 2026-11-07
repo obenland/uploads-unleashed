@@ -49,6 +49,40 @@ add_filter( 'uploads_unleashed_max_chunk_size', function( $max_chunk_size, $requ
 
 ---
 
+### `uploads_unleashed_chunk_dir`
+
+Override the directory that holds in-progress upload chunks until the upload completes. The default is `.tus-chunks` in the uploads directory.
+
+**Sites whose uploads directory is a stream wrapper must set this filter.** That includes S3-Uploads (`s3://`) and WordPress VIP (`vip://`). Chunks are written with `flock()` and listed with `glob()`, and neither works on stream wrappers. Without the filter, creating an upload fails with `tus_chunk_dir_not_local`. When an upload completes, the file is copied from the chunk directory into the uploads directory as usual.
+
+The directory must:
+
+- Be a local or mounted path, not a stream wrapper, and be writable. Otherwise uploads fail at creation with `tus_chunk_dir_not_local` or `tus_chunk_dir_not_writable`.
+- Support `flock()`. Check that a network mount (NFS, EFS) supports locking.
+- Be shared by every web server when a load balancer can send the requests of one upload to different servers (unless sessions are sticky).
+- Not be served by the web server. The plugin writes an `.htaccess` that denies access on Apache, but nginx ignores it, so prefer a directory outside the web root.
+- Be separate for each site on multisite. Cleanup deletes chunk files that have no upload session on the current site.
+
+Cleanup and uninstall use the filtered path too, so add the filter from a must-use plugin, which keeps it active when they run.
+
+**Since:** 1.2.0
+
+**Parameters:**
+- `$chunk_dir` (string) - Absolute path to the chunk directory.
+
+**Return:** string - Absolute path to the chunk directory.
+
+**Example:**
+```php
+// wp-content/mu-plugins/uploads-unleashed-chunk-dir.php
+add_filter( 'uploads_unleashed_chunk_dir', function( $chunk_dir ) {
+    // S3/VIP uploads: keep chunks on a local (or shared) disk outside the web root, one directory per site.
+    return '/srv/uploads-unleashed-chunks/' . get_current_blog_id();
+} );
+```
+
+---
+
 ### `uploads_unleashed_session_data`
 
 Filter session data before it's stored. Add custom fields to persist throughout the upload.
