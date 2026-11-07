@@ -5,6 +5,9 @@
 #
 # Usage: bin/install-wp-tests.sh <db-name> <db-user> <db-pass> [db-host] [wp-version]
 #
+# wp-version is `latest` (default), `nightly`, a branch like `6.4` (its newest
+# release) or an exact release like `6.4.3`; see bin/resolve-wp-version.sh.
+#
 # Honors WP_CORE_DIR and WP_TESTS_DIR (default: $TMPDIR/wordpress and
 # $TMPDIR/wordpress-tests-lib). Existing installs of the same version are
 # reused, so both directories can be cached between runs.
@@ -20,23 +23,26 @@ DB_NAME=$1
 DB_USER=$2
 DB_PASS=$3
 DB_HOST=${4:-localhost}
-WP_VERSION=${5:-latest}
+WP_VERSION=$("$(dirname "$0")/resolve-wp-version.sh" "${5:-latest}")
 
 TMPDIR=${TMPDIR:-/tmp}
 TMPDIR=${TMPDIR%/}
 WP_CORE_DIR=${WP_CORE_DIR:-$TMPDIR/wordpress}
 WP_TESTS_DIR=${WP_TESTS_DIR:-$TMPDIR/wordpress-tests-lib}
 
-if [ "$WP_VERSION" = 'latest' ]; then
-	WP_VERSION=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | php -r 'echo json_decode( stream_get_contents( STDIN ) )->offers[0]->version;')
-fi
-
 echo "Installing WordPress $WP_VERSION"
 
-# wordpress-develop tags x.y releases as x.y.0.
-TESTS_TAG=$WP_VERSION
-if [[ "$TESTS_TAG" =~ ^[0-9]+\.[0-9]+$ ]]; then
-	TESTS_TAG=$TESTS_TAG.0
+if [ "$WP_VERSION" = 'nightly' ]; then
+	TESTS_TAG=trunk
+
+	# The nightly build changes daily, so never reuse an install.
+	rm -rf "$WP_CORE_DIR" "$WP_TESTS_DIR"
+else
+	# wordpress-develop tags x.y releases as x.y.0.
+	TESTS_TAG=$WP_VERSION
+	if [[ "$TESTS_TAG" =~ ^[0-9]+\.[0-9]+$ ]]; then
+		TESTS_TAG=$TESTS_TAG.0
+	fi
 fi
 
 # Replace an existing install of a different version.
@@ -54,7 +60,16 @@ fi
 
 if [ ! -f "$WP_CORE_DIR/wp-includes/version.php" ]; then
 	mkdir -p "$WP_CORE_DIR"
-	curl -fsSL "https://wordpress.org/wordpress-$WP_VERSION.tar.gz" | tar -xz --strip-components=1 -C "$WP_CORE_DIR"
+	if [ "$WP_VERSION" = 'nightly' ]; then
+		# Nightly builds only come as zip files.
+		NIGHTLY_DIR=$(mktemp -d)
+		curl -fsSL -o "$NIGHTLY_DIR/wordpress.zip" https://wordpress.org/nightly-builds/wordpress-latest.zip
+		unzip -q "$NIGHTLY_DIR/wordpress.zip" -d "$NIGHTLY_DIR"
+		cp -R "$NIGHTLY_DIR/wordpress/." "$WP_CORE_DIR/"
+		rm -rf "$NIGHTLY_DIR"
+	else
+		curl -fsSL "https://wordpress.org/wordpress-$WP_VERSION.tar.gz" | tar -xz --strip-components=1 -C "$WP_CORE_DIR"
+	fi
 fi
 
 if [ ! -f "$WP_TESTS_DIR/includes/functions.php" ]; then

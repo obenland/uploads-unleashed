@@ -29,7 +29,7 @@ The plugin `require`s the generated `build/*.asset.php` files, so run `npm run b
 
 - WordPress coding standards; `phpcs` and ESLint must pass with no errors or warnings.
 - New PHP files declare `declare( strict_types = 1 );` after the file docblock and type every parameter and return. Existing files stay as they are.
-- PHP must run on 7.4 (CI tests 7.4 and 8.4).
+- PHP must run on 7.4 and WordPress on 6.4. PHPUnit runs on PHP 7.4, 8.1 and 8.4, as multisite, on WordPress 6.4, and on nightly (allowed to fail).
 - New functions, classes, and hooks get `@since` set to the next minor version (`1.2.0` after `1.1.0`).
 - New filters and actions are documented in `docs/hooks.md` and the Extension Points tables in `docs/ARCHITECTURE.md`.
 - Comments: `/** */` docblocks on every function, class, property and constant; `/* */` for multi-line comments in a function body; never stack `//` lines.
