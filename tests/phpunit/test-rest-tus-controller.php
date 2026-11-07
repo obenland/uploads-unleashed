@@ -246,6 +246,31 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Test PATCH fails clearly, without a retryable 409, when earlier chunks are on another server.
+	 *
+	 * On load-balanced hosts without shared chunk storage, the session (in the
+	 * database) is ahead of the chunk file on the server handling the request.
+	 */
+	public function test_patch_fails_when_chunk_data_is_on_another_server() {
+		$upload_id = $this->create_upload_session();
+
+		// A previous chunk went to another server: the session moved on, but there's no file here.
+		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, 512 );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '512' );
+		$request->set_body( str_repeat( 'a', 512 ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'tus_chunk_data_missing', $response, 410 );
+
+		// The upload can't be completed, so it's gone and the client stops resuming it.
+		$this->assertNull( ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id ) );
+	}
+
+	/**
 	 * Test PATCH uploads chunk successfully.
 	 */
 	public function test_patch_uploads_chunk() {

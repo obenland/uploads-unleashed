@@ -105,11 +105,38 @@ class Test_Uploads_Unleashed_TUS_Chunk_Storage extends WP_UnitTestCase {
 		// First write some data.
 		$this->storage->append( $upload_id, $data, 0 );
 
-		// Try to append with wrong offset.
-		$result = $this->storage->append( $upload_id, ' World', 100 );
+		// Try to append at an offset the file has already passed.
+		$result = $this->storage->append( $upload_id, ' World', 2 );
 
 		$this->assertWPError( $result );
 		$this->assertSame( 'tus_chunk_offset_mismatch', $result->get_error_code() );
+	}
+
+	/**
+	 * Tests that append reports missing data when the file is shorter than the session's offset.
+	 *
+	 * Happens on load-balanced hosts when earlier chunks were stored on another server.
+	 */
+	public function test_append_returns_data_missing_when_file_is_behind_offset() {
+		$upload_id = wp_generate_uuid4();
+
+		$this->storage->append( $upload_id, 'Hello', 0 );
+
+		$result = $this->storage->append( $upload_id, ' World', 100 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'tus_chunk_data_missing', $result->get_error_code() );
+		$this->assertSame( 410, $result->get_error_data()['status'] );
+	}
+
+	/**
+	 * Tests that append reports missing data when the chunk file doesn't exist on this server.
+	 */
+	public function test_append_returns_data_missing_when_file_does_not_exist() {
+		$result = $this->storage->append( wp_generate_uuid4(), 'data', 5 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'tus_chunk_data_missing', $result->get_error_code() );
 	}
 
 	/**
