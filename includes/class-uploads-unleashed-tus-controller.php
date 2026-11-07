@@ -143,6 +143,32 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Returns the maximum allowed chunk size for a PATCH request.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param WP_REST_Request $request The request object.
+	 * @return int Maximum chunk size in bytes, at least 1 MB.
+	 */
+	public static function get_max_chunk_size( WP_REST_Request $request ): int {
+		/**
+		 * Filters the maximum allowed chunk size.
+		 *
+		 * Controls how large each individual PATCH request body can be.
+		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
+		 * is clamped to a minimum of 1 MB.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
+		 * @param WP_REST_Request $request        The request object.
+		 */
+		$max_chunk_size = (int) apply_filters( 'uploads_unleashed_max_chunk_size', self::DEFAULT_MAX_CHUNK_SIZE, $request );
+
+		return max( $max_chunk_size, MB_IN_BYTES );
+	}
+
+	/**
 	 * Checks if a given request has access to create uploads.
 	 *
 	 * @since 0.1.0
@@ -438,21 +464,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 		// Validate chunk size against server limit.
 		$content_length = $request->get_header( 'Content-Length' );
-
-		/**
-		 * Filters the maximum allowed chunk size.
-		 *
-		 * Controls how large each individual PATCH request body can be.
-		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
-		 * is clamped to a minimum of 1 MB.
-		 *
-		 * @since 1.0.0
-		 *
-		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
-		 * @param WP_REST_Request $request        The request object.
-		 */
-		$max_chunk_size = (int) apply_filters( 'uploads_unleashed_max_chunk_size', self::DEFAULT_MAX_CHUNK_SIZE, $request );
-		$max_chunk_size = max( $max_chunk_size, MB_IN_BYTES );
+		$max_chunk_size = self::get_max_chunk_size( $request );
 
 		if ( null !== $content_length && (int) $content_length > $max_chunk_size ) {
 			return $this->chunk_too_large_error( $max_chunk_size );

@@ -204,9 +204,14 @@ Manages physical chunk files on disk:
    Headers: Upload-Offset, Content-Type
    Body: Binary chunk data
 
+   uploads_unleashed_skip_oversized_chunk_body() (parse_request)
+   - If Content-Length exceeds the chunk size limit, keeps the REST
+     server from reading the body into memory
+
 2. Uploads_Unleashed_TUS_Controller::upload_chunk()
    - Validates session exists
    - Verifies offset matches the chunk file's size (the source of truth)
+   - Rejects chunks over the size limit (413)
    - Optional checksum verification
    - Appends to Uploads_Unleashed_TUS_Chunk_Storage
    - Updates session offset (reconciled from the file size if it falls behind)
