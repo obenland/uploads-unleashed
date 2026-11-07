@@ -402,7 +402,7 @@ function createTusUpload( file, callbacks ) {
 			 * upload was aborted meanwhile. The termination request still goes out.
 			 */
 			if ( tusUpload._aborted && 'DELETE' !== req.getMethod() ) {
-				throw new Error( 'Upload aborted' );
+				throw new Error( __( 'Upload aborted', 'uploads-unleashed' ) );
 			}
 		},
 		onProgress: ( bytesUploaded, bytesTotal ) => {
@@ -662,7 +662,9 @@ function withUploadSlot( task, signal ) {
 			const index = uploadQueue.indexOf( run );
 			if ( -1 !== index ) {
 				uploadQueue.splice( index, 1 );
-				reject( new Error( 'Upload aborted' ) );
+				reject(
+					new Error( __( 'Upload aborted', 'uploads-unleashed' ) )
+				);
 			}
 		};
 
@@ -716,7 +718,7 @@ function withUploadSlot( task, signal ) {
  */
 export async function upload( file, options = {} ) {
 	if ( options.signal?.aborted ) {
-		throw new Error( 'Upload aborted' );
+		throw new Error( __( 'Upload aborted', 'uploads-unleashed' ) );
 	}
 
 	return withUploadSlot( () => startUpload( file, options ), options.signal );
