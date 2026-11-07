@@ -231,14 +231,20 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
-	 * Deletes a chunk file.
+	 * Deletes a chunk file and its finalization lock file.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Also deletes the lock file.
 	 *
 	 * @param string $upload_id The upload ID.
 	 * @return bool True on success, false on failure.
 	 */
 	public function delete( string $upload_id ): bool {
+		$lock_path = $this->get_lock_path( $upload_id );
+		if ( file_exists( $lock_path ) ) {
+			wp_delete_file( $lock_path );
+		}
+
 		$path = $this->get_path( $upload_id );
 
 		if ( file_exists( $path ) ) {
@@ -247,6 +253,60 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		}
 
 		return ! file_exists( $path );
+	}
+
+	/**
+	 * Takes the exclusive finalization lock for an upload without waiting.
+	 *
+	 * Uses a separate lock file, because finalization moves the chunk file
+	 * away. The operating system releases the lock when the process dies, so
+	 * a request killed mid-finalization never leaves the upload locked.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return resource|false The lock handle, or false if another request holds the lock.
+	 */
+	public function lock( string $upload_id ) {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- WP_Filesystem lacks flock support needed for TUS concurrency.
+		$handle = fopen( $this->get_lock_path( $upload_id ), 'c' );
+		if ( ! $handle ) {
+			return false;
+		}
+
+		if ( ! flock( $handle, LOCK_EX | LOCK_NB ) ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock above.
+			fclose( $handle );
+
+			return false;
+		}
+
+		return $handle;
+	}
+
+	/**
+	 * Releases a finalization lock taken with lock().
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param resource $handle The lock handle.
+	 */
+	public function unlock( $handle ): void {
+		flock( $handle, LOCK_UN );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Paired with fopen/flock in lock().
+		fclose( $handle );
+	}
+
+	/**
+	 * Returns the path to an upload's finalization lock file.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return string The full path to the lock file.
+	 */
+	private function get_lock_path( string $upload_id ): string {
+		return substr( $this->get_path( $upload_id ), 0, -strlen( '.part' ) ) . '.lock';
 	}
 
 	/**
@@ -470,14 +530,11 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$storage = new self();
 		$session = new Uploads_Unleashed_TUS_Upload_Session();
 
-		$files = glob( self::$base_dir . '*.part' );
-
-		if ( ! $files ) {
-			return;
-		}
+		// Lock files outlive their chunk file when finalization was interrupted.
+		$files = array_merge( (array) glob( self::$base_dir . '*.part' ), (array) glob( self::$base_dir . '*.lock' ) );
 
 		foreach ( $files as $file ) {
-			$upload_id = basename( $file, '.part' );
+			$upload_id = pathinfo( $file, PATHINFO_FILENAME );
 			$data      = $session->get( $upload_id );
 
 			// Delete if session doesn't exist or has expired.
@@ -486,6 +543,32 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 				$session->delete( $upload_id );
 			}
 		}
+	}
+
+	/**
+	 * Returns the IDs of all uploads that have a chunk file on the current site.
+	 *
+	 * Every upload gets a chunk file when it's created, so this lists every
+	 * session, including ones a persistent object cache keeps out of the
+	 * options table. Doesn't create the storage directory.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return string[] Upload IDs.
+	 */
+	public static function get_upload_ids(): array {
+		$files = glob( self::get_chunk_dir() . '*.part' );
+
+		if ( ! $files ) {
+			return array();
+		}
+
+		return array_map(
+			static function ( string $file ): string {
+				return basename( $file, '.part' );
+			},
+			$files
+		);
 	}
 
 	/**

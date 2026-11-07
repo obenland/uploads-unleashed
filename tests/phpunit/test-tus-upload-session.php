@@ -180,6 +180,37 @@ class Test_Uploads_Unleashed_TUS_Upload_Session extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that update merges data into the session and keeps its expiration.
+	 */
+	public function test_update_merges_data() {
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$upload_id = $this->session->create(
+			array(
+				'filename' => 'test.txt',
+				'filetype' => 'text/plain',
+				'length'   => 1024,
+			),
+			$request
+		);
+		$original  = $this->session->get( $upload_id );
+
+		$this->assertTrue( $this->session->update( $upload_id, array( 'status' => 'finalizing' ) ) );
+
+		$data = $this->session->get( $upload_id );
+		$this->assertSame( 'finalizing', $data['status'] );
+		$this->assertSame( $original['filename'], $data['filename'] );
+		$this->assertSame( $original['expires_at'], $data['expires_at'] );
+	}
+
+	/**
+	 * Tests that update returns false for non-existent session.
+	 */
+	public function test_update_returns_false_for_nonexistent() {
+		$this->assertFalse( $this->session->update( 'nonexistent-uuid', array( 'status' => 'finalized' ) ) );
+		$this->assertNull( $this->session->get( 'nonexistent-uuid' ) );
+	}
+
+	/**
 	 * Tests that update_offset returns false for non-existent session.
 	 */
 	public function test_update_offset_returns_false_for_nonexistent() {

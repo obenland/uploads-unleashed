@@ -29,6 +29,32 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	const EXPIRATION = DAY_IN_SECONDS;
 
 	/**
+	 * Status of a session that is receiving chunks.
+	 *
+	 * @since 1.2.0
+	 * @var string
+	 */
+	const STATUS_UPLOADING = 'uploading';
+
+	/**
+	 * Status of a session whose upload is being turned into an attachment.
+	 *
+	 * @since 1.2.0
+	 * @var string
+	 */
+	const STATUS_FINALIZING = 'finalizing';
+
+	/**
+	 * Status of a finished upload. The session stays behind as a tombstone
+	 * that maps the upload to its attachment, so replayed requests get the
+	 * same result instead of a new upload.
+	 *
+	 * @since 1.2.0
+	 * @var string
+	 */
+	const STATUS_FINALIZED = 'finalized';
+
+	/**
 	 * Creates a new upload session.
 	 *
 	 * @since 0.1.0
@@ -51,6 +77,7 @@ class Uploads_Unleashed_TUS_Upload_Session {
 			'filetype'   => sanitize_mime_type( $data['filetype'] ?? 'application/octet-stream' ),
 			'length'     => (int) ( $data['length'] ?? 0 ),
 			'offset'     => 0,
+			'status'     => self::STATUS_UPLOADING,
 			'created_at' => time(),
 			'expires_at' => time() + self::EXPIRATION,
 		);
@@ -104,13 +131,26 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	 * @return bool True on success, false on failure.
 	 */
 	public function update_offset( string $upload_id, int $offset ): bool {
+		return $this->update( $upload_id, array( 'offset' => $offset ) );
+	}
+
+	/**
+	 * Merges data into an upload session.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @param array  $changes   Session fields to set.
+	 * @return bool True on success, false on failure or if the session doesn't exist.
+	 */
+	public function update( string $upload_id, array $changes ): bool {
 		$data = $this->get( $upload_id );
 
 		if ( ! $data ) {
 			return false;
 		}
 
-		$data['offset'] = $offset;
+		$data = array_merge( $data, $changes );
 
 		// Recalculate remaining expiration time.
 		$remaining = $data['expires_at'] - time();
@@ -136,10 +176,21 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	/**
 	 * Deletes all upload session transients.
 	 *
+	 * Must run before Uploads_Unleashed_TUS_Chunk_Storage::delete_all(), which
+	 * removes the chunk files that sessions are found through.
+	 *
 	 * @since 1.0.0
+	 * @since 1.2.0 Also deletes sessions kept in a persistent object cache.
 	 */
 	public static function delete_all(): void {
 		global $wpdb;
+
+		// A persistent object cache keeps transients out of the options table, so delete them by ID.
+		foreach ( Uploads_Unleashed_TUS_Chunk_Storage::get_upload_ids() as $upload_id ) {
+			delete_transient( self::TRANSIENT_PREFIX . $upload_id );
+		}
+
+		// Catches sessions in the options table whose chunk file is already gone.
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->query(
