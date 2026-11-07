@@ -156,12 +156,13 @@ Manages upload session metadata using WordPress transients:
 
 Manages physical chunk files on disk:
 
-- Base directory: `wp-content/uploads/.tus-chunks/`
-- Protected with `.htaccess` and `index.php`
+- Base directory: `wp-content/uploads/.tus-chunks/`. When the uploads directory is a stream wrapper (S3-Uploads `s3://`, VIP `vip://`), which can't lock or list files, chunks go to a per-site directory in `get_temp_dir()` instead, and finalization copies the finished file into the uploads directory. The `uploads_unleashed_chunk_dir` filter overrides both.
+- Protected with `.htaccess` (Apache 2.2 and 2.4 rules) and `index.php`; nginx ignores `.htaccess`, so on nginx prefer a chunk directory outside the web root
 - File-level locking for concurrent access
 - Cleanup via WP-Cron (daily)
 
 **Methods:**
+- `get_chunk_dir()` - Resolved chunk directory for the current site (static, filtered, doesn't create it)
 - `append()` - Write chunk data at offset
 - `get_path()` - Get sanitized file path
 - `get_size()` - Current file size
@@ -237,6 +238,7 @@ Manages physical chunk files on disk:
 |--------|---------|
 | `uploads_unleashed_max_upload_size` | Modify max file size |
 | `uploads_unleashed_max_chunk_size` | Modify max chunk size per PATCH |
+| `uploads_unleashed_chunk_dir` | Move the chunk directory |
 | `uploads_unleashed_session_data` | Add custom session data |
 | `uploads_unleashed_pre_finalize` | Validate before finalizing |
 | `uploads_unleashed_finalize_upload` | Custom finalization |

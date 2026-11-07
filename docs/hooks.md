@@ -49,6 +49,38 @@ add_filter( 'uploads_unleashed_max_chunk_size', function( $max_chunk_size, $requ
 
 ---
 
+### `uploads_unleashed_chunk_dir`
+
+Override the directory that holds in-progress upload chunks until the upload completes.
+
+The default is `.tus-chunks` in the uploads directory. When the uploads directory is a stream wrapper, such as S3-Uploads (`s3://`) or WordPress VIP (`vip://`), the default is a per-site directory in `get_temp_dir()` instead, because chunks are written with `flock()` and listed with `glob()`, which don't work on stream wrappers.
+
+The directory must:
+
+- Be a local or mounted path, not a stream wrapper.
+- Support `flock()`. Check that a network mount (NFS, EFS) supports locking; without it, two requests for the same upload can write to the file at once.
+- Be shared by every web server when a load balancer can send the requests of one upload to different servers (unless sessions are sticky).
+- Not be served by the web server. The plugin writes an `.htaccess` that denies access on Apache, but nginx ignores it, so prefer a directory outside the web root.
+
+Cleanup and uninstall use the filtered path too, so make sure the filter is also active when they run (e.g. add it from a must-use plugin).
+
+**Since:** 1.2.0
+
+**Parameters:**
+- `$chunk_dir` (string) - Absolute path to the chunk directory.
+
+**Return:** string - Absolute path to the chunk directory.
+
+**Example:**
+```php
+add_filter( 'uploads_unleashed_chunk_dir', function( $chunk_dir ) {
+    // Keep chunks outside the web root, on storage every web server shares.
+    return '/mnt/shared/uploads-unleashed-chunks/' . get_current_blog_id();
+} );
+```
+
+---
+
 ### `uploads_unleashed_session_data`
 
 Filter session data before it's stored. Add custom fields to persist throughout the upload.
