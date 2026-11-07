@@ -210,4 +210,50 @@ test.describe( 'Uploads Unleashed', () => {
 			)
 			.toBe( 0 );
 	} );
+
+	test( 'keeps the uploaded grid item as the cached attachment model', async ( {
+		page,
+	} ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/upload.php?mode=grid' );
+		await page.locator( '.page-title-action' ).click();
+
+		const filename = `cached-${ Date.now() }.png`;
+		await page
+			.locator( '.moxie-shim input[type="file"]' )
+			.first()
+			.setInputFiles( {
+				name: filename,
+				mimeType: 'image/png',
+				buffer: await fs.readFile(
+					path.resolve( __dirname, 'fixtures/test-image.png' )
+				),
+			} );
+
+		/*
+		 * Core files the grid's model under its ID once the upload is done.
+		 * Edits made through the cache (the attachment details modal, for
+		 * one) only reach the grid if it's the same model. Null until the
+		 * upload is done.
+		 */
+		const isSameAsCache = () =>
+			page.evaluate( ( name ) => {
+				const { media } = ( window as unknown as { wp: any } ).wp;
+				const model = media.frame
+					.state()
+					.get( 'library' )
+					.find(
+						( attachment: any ) =>
+							attachment.get( 'filename' ) === name &&
+							attachment.id &&
+							! attachment.get( 'uploading' )
+					);
+				return model
+					? model === media.model.Attachment.get( model.id )
+					: null;
+			}, filename );
+
+		await expect.poll( isSameAsCache, { timeout: 15000 } ).not.toBeNull();
+		expect( await isSameAsCache() ).toBe( true );
+	} );
 } );

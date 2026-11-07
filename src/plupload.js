@@ -169,8 +169,14 @@ function handleBeforeUpload( uploader, file ) {
 				return;
 			}
 
-			// Fetch attachment in wp_prepare_attachment_for_js() format.
-			const model = window.wp.media.attachment( attachment.id );
+			/*
+			 * Fetch attachment in wp_prepare_attachment_for_js() format.
+			 * Not via wp.media.attachment(): its memoized cache would keep this
+			 * model in place of the grid's file.attachment.
+			 */
+			const model = new window.wp.media.model.Attachment( {
+				id: attachment.id,
+			} );
 
 			return model.fetch().then( () => {
 				uploader.trigger( 'FileUploaded', file, {
