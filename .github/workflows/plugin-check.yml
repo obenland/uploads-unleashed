@@ -44,3 +44,5 @@ jobs:
               uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1.1.9
               with:
                   build-dir: ${{ runner.temp }}/uploads-unleashed
+                  # Results show as annotations; a PR comment would need `pull-requests: write`.
+                  repo-token: ''
