@@ -66,7 +66,7 @@ The main TUS client wrapper built on `tus-js-client`, exposed to other scripts a
 **Key Features:**
 - 5MB default chunk size
 - Retries with a backoff capped at one minute; while the browser is offline, requests wait for the connection to come back
-- Fingerprint-based resume (stored in localStorage)
+- Fingerprint-based resume (stored in localStorage, scoped to the site and user; uploads still work without storage)
 - Automatic cleanup on success
 
 ### plupload.js - Media Library Integration
@@ -87,16 +87,17 @@ Integrates with the Block Editor's `wp.apiFetch` middleware:
 - Extracts files from FormData
 - Routes to TUS protocol instead
 - Handles AbortSignal for cancellation
-- Falls back to a standard upload if TUS fails
+- Falls back to a standard upload if the TUS endpoint is unavailable, and passes server rejections through
 
 ### resume-ui.js - Pending Uploads UI
 
 Displays interrupted uploads that can be resumed:
 
 - Parses localStorage for TUS fingerprints
-- Shows Resume/Discard buttons
+- Shows Resume/Discard buttons; Discard asks for an inline confirmation
 - Uses File System Access API when available
 - Validates file matches before resuming
+- Announces mismatches and resumed upload progress (every 10%, at most every 5 seconds) via `wp.a11y.speak()`, and moves focus to the next item when one is removed
 
 ## Backend Components
 
@@ -184,6 +185,8 @@ Manages physical chunk files on disk:
    - Validates permissions (create_item_permissions_check())
    Uploads_Unleashed_TUS_Controller::create_item()
    - Parses metadata (filename, filetype)
+   - Rejects a missing filename or a disallowed file type (400),
+     unless the user can `unfiltered_upload`
    - Creates Uploads_Unleashed_TUS_Upload_Session
 
 3. Response: 201 Created
@@ -199,10 +202,10 @@ Manages physical chunk files on disk:
 
 2. Uploads_Unleashed_TUS_Controller::upload_chunk()
    - Validates session exists
-   - Verifies offset matches
+   - Verifies offset matches the chunk file's size (the source of truth)
    - Optional checksum verification
    - Appends to Uploads_Unleashed_TUS_Chunk_Storage
-   - Updates session offset
+   - Updates session offset (reconciled from the file size if it falls behind)
 
 3. If offset < length:
    Response: 204 No Content
@@ -223,7 +226,7 @@ Manages physical chunk files on disk:
    - Searches localStorage by fingerprint
 
 2. Client sends HEAD /wp/v2/media/{id}
-   - Gets current server offset
+   - Gets current server offset (the chunk file's size)
 
 3. Client resumes from offset
    - Sends remaining chunks
@@ -257,8 +260,8 @@ See [docs/hooks.md](hooks.md) for detailed documentation.
 
 1. **Authentication**: All endpoints require `upload_files` capability
 2. **Ownership**: Users can only access their own uploads
-3. **File Types**: Validated against WordPress allowed types
-4. **Image Verification**: `wp_get_image_mime()` prevents PHP-in-image
+3. **File Types**: Validated against WordPress allowed types with `wp_check_filetype_and_ext()`, unless the user can `unfiltered_upload`
+4. **Image Verification**: `wp_check_filetype_and_ext()` checks the content, and `wp_get_image_mime()` must match the validated type when it can read the image, which prevents PHP-in-image
 5. **Path Traversal**: Upload IDs sanitized to alphanumeric + hyphens
 6. **Directory Protection**: `.htaccess` denies direct chunk access
 7. **Checksum Verification**: Optional integrity validation

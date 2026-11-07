@@ -132,6 +132,46 @@ test.describe( 'Uploads Unleashed', () => {
 		}
 	} );
 
+	test( 'uploads every file of a multi-file selection via the Media → Add New uploader', async ( {
+		page,
+	} ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/media-new.php' );
+
+		const fileInput = page
+			.locator( '#plupload-upload-ui .moxie-shim input[type="file"]' )
+			.first();
+		await expect( fileInput ).toBeAttached( { timeout: 10000 } );
+
+		const stamp = Date.now();
+		const image = await fs.readFile(
+			path.resolve( __dirname, 'fixtures/test-image.png' )
+		);
+		const asUpload = ( index: number ) => ( {
+			name: `multi-${ stamp }-${ index }.png`,
+			mimeType: 'image/png',
+			buffer: image,
+		} );
+
+		// A finished item swaps its progress bar for the attachment's edit form.
+		const items = page.locator( '#media-items .media-item' );
+		const finished = items.filter( {
+			has: page.locator( 'a.edit-attachment' ),
+		} );
+
+		await fileInput.setInputFiles( [ asUpload( 1 ), asUpload( 2 ) ] );
+		await expect( items ).toHaveCount( 2 );
+		await expect( finished ).toHaveCount( 2, { timeout: 30000 } );
+
+		// Files added once the first batch is done must start too.
+		await fileInput.setInputFiles( [ asUpload( 3 ) ] );
+		await expect( items ).toHaveCount( 3 );
+		await expect( finished ).toHaveCount( 3, { timeout: 30000 } );
+		await expect( page.locator( '#media-items .error-div' ) ).toHaveCount(
+			0
+		);
+	} );
+
 	test( 'shows the server error when an upload is rejected server-side in the grid', async ( {
 		page,
 	} ) => {
@@ -170,6 +210,7 @@ test.describe( 'Uploads Unleashed', () => {
 			)
 			.toBe( 0 );
 	} );
+
 	test( 'finishes an upload after the connection drops mid-upload', async ( {
 		page,
 		context,
@@ -231,5 +272,51 @@ test.describe( 'Uploads Unleashed', () => {
 		await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
 
 		expect( await findAttachments( page, name ) ).toHaveLength( 1 );
+	} );
+
+	test( 'keeps the uploaded grid item as the cached attachment model', async ( {
+		page,
+	} ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/upload.php?mode=grid' );
+		await page.locator( '.page-title-action' ).click();
+
+		const filename = `cached-${ Date.now() }.png`;
+		await page
+			.locator( '.moxie-shim input[type="file"]' )
+			.first()
+			.setInputFiles( {
+				name: filename,
+				mimeType: 'image/png',
+				buffer: await fs.readFile(
+					path.resolve( __dirname, 'fixtures/test-image.png' )
+				),
+			} );
+
+		/*
+		 * Core files the grid's model under its ID once the upload is done.
+		 * Edits made through the cache (the attachment details modal, for
+		 * one) only reach the grid if it's the same model. Null until the
+		 * upload is done.
+		 */
+		const isSameAsCache = () =>
+			page.evaluate( ( name ) => {
+				const { media } = ( window as unknown as { wp: any } ).wp;
+				const model = media.frame
+					.state()
+					.get( 'library' )
+					.find(
+						( attachment: any ) =>
+							attachment.get( 'filename' ) === name &&
+							attachment.id &&
+							! attachment.get( 'uploading' )
+					);
+				return model
+					? model === media.model.Attachment.get( model.id )
+					: null;
+			}, filename );
+
+		await expect.poll( isSameAsCache, { timeout: 15000 } ).not.toBeNull();
+		expect( await isSameAsCache() ).toBe( true );
 	} );
 } );
