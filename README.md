@@ -118,7 +118,7 @@ WordPress handles uploads the way it normally does again, and files you already 
 
 ## Screenshots
 
-1. Resumable uploads — pick up where you left off after a connection drop.
+1. Pick up where you left off: Add New Media lists an interrupted 1.5 GB video upload at 30% with Resume and Discard buttons. The maximum upload file size now reflects free disk space instead of PHP's limit.
 
 ## Changelog
 
