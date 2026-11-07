@@ -565,6 +565,20 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Test that the supported checksum algorithms are advertised.
+	 */
+	public function test_checksum_algorithms_advertised() {
+		$request  = new WP_REST_Request( 'OPTIONS', '/wp/v2/media' );
+		$response = rest_get_server()->dispatch( $request );
+
+		// Apply the filter manually since rest_post_dispatch isn't called in tests.
+		$response = uploads_unleashed_add_options_headers( $response, rest_get_server(), $request );
+		$headers  = $response->get_headers();
+
+		$this->assertSame( 'sha256,sha1,md5', $headers['Tus-Checksum-Algorithm'] );
+	}
+
+	/**
 	 * Test PATCH with valid SHA256 checksum succeeds.
 	 */
 	public function test_patch_with_valid_sha256_checksum() {

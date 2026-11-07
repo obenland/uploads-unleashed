@@ -170,4 +170,56 @@ test.describe( 'Uploads Unleashed', () => {
 			)
 			.toBe( 0 );
 	} );
+
+	test( 'answers a checksum mismatch with HTTP 460', async ( { page } ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/media-new.php' );
+
+		const { endpoint, nonce } = await page.evaluate(
+			() =>
+				(
+					window as unknown as {
+						uploadsUnleashed: { endpoint: string; nonce: string };
+					}
+				 ).uploadsUnleashed
+		);
+
+		const body = Buffer.from( 'hello' );
+		const created = await page.request.post( endpoint, {
+			headers: {
+				'X-WP-Nonce': nonce,
+				'Tus-Resumable': '1.0.0',
+				'Upload-Length': String( body.length ),
+				'Upload-Metadata': `filename ${ Buffer.from(
+					'checksum.txt'
+				).toString( 'base64' ) }`,
+			},
+		} );
+		expect( created.status() ).toBe( 201 );
+
+		const location = created.headers().location;
+		const patched = await page.request.fetch( location, {
+			method: 'PATCH',
+			headers: {
+				'X-WP-Nonce': nonce,
+				'Tus-Resumable': '1.0.0',
+				'Content-Type': 'application/offset+octet-stream',
+				'Upload-Offset': '0',
+				'Upload-Checksum': `sha1 ${ Buffer.from(
+					'0123456789abcdefghij'
+				).toString( 'base64' ) }`,
+			},
+			data: body,
+		} );
+
+		// WordPress drops status codes it has no description for, which turned this into a 200.
+		expect( patched.status() ).toBe( 460 );
+		expect( ( await patched.json() ).code ).toBe(
+			'rest_checksum_mismatch'
+		);
+
+		await page.request.delete( location, {
+			headers: { 'X-WP-Nonce': nonce, 'Tus-Resumable': '1.0.0' },
+		} );
+	} );
 } );
