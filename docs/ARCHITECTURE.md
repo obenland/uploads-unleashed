@@ -66,7 +66,7 @@ The main TUS client wrapper built on `tus-js-client`, exposed to other scripts a
 **Key Features:**
 - 5MB default chunk size
 - Exponential backoff retry (0, 1s, 3s, 5s, 10s)
-- Fingerprint-based resume (stored in localStorage)
+- Fingerprint-based resume (stored in localStorage, scoped to the site and user; uploads still work without storage)
 - Automatic cleanup on success
 
 ### plupload.js - Media Library Integration

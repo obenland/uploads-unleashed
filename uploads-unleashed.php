@@ -68,6 +68,8 @@ function uploads_unleashed_register_scripts() {
 			'endpoint'    => rest_url( 'wp/v2/media' ),
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'mediaNewUrl' => admin_url( 'media-new.php' ),
+			'blogId'      => get_current_blog_id(),
+			'userId'      => get_current_user_id(),
 		)
 	);
 

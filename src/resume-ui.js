@@ -43,11 +43,12 @@ function formatFileSize( bytes ) {
  * Prompts user to re-select a file for resuming upload.
  * Uses File System Access API if available, falls back to file input.
  *
- * @param {Object}                    pendingUpload          Pending upload metadata.
- * @param {string}                    pendingUpload.filename Original filename.
- * @param {number}                    pendingUpload.size     File size in bytes.
- * @param {Object}                    options                Optional settings.
- * @param {(message: string) => void} options.onMismatch     Callback when selected file doesn't match.
+ * @param {Object}                    pendingUpload              Pending upload metadata.
+ * @param {string}                    pendingUpload.filename     Original filename.
+ * @param {number}                    pendingUpload.size         File size in bytes.
+ * @param {number}                    pendingUpload.lastModified Last modified time of the original file.
+ * @param {Object}                    options                    Optional settings.
+ * @param {(message: string) => void} options.onMismatch         Callback when selected file doesn't match.
  * @return {Promise<boolean>} True if upload was resumed, false if canceled.
  */
 async function resumeUpload( pendingUpload, options = {} ) {
@@ -113,6 +114,23 @@ async function resumeUpload( pendingUpload, options = {} ) {
 					),
 					pendingUpload.filename,
 					formatFileSize( pendingUpload.size )
+				)
+			);
+		}
+		return false;
+	}
+
+	// The fingerprint includes the modification time, so a changed file would start over.
+	if ( file.lastModified !== pendingUpload.lastModified ) {
+		if ( options.onMismatch ) {
+			options.onMismatch(
+				sprintf(
+					/* translators: 1: filename */
+					__(
+						'%1$s changed since the upload started, so it can no longer be resumed. Discard this upload and upload the file again.',
+						'uploads-unleashed'
+					),
+					pendingUpload.filename
 				)
 			);
 		}
