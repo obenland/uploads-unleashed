@@ -264,11 +264,12 @@ test.describe( 'Uploads Unleashed', () => {
 				),
 			} );
 
-		await expect( page.locator( '.attachment.uploading' ) ).toHaveCount(
-			0,
-			{ timeout: 30000 }
-		);
+		// The grid may not show the upload yet, so wait for the attachment itself.
+		await expect
+			.poll( async () => ( await findAttachments( page, name ) ).length, {
+				timeout: 30000,
+			} )
+			.toBe( 1 );
 		await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
-		expect( await findAttachments( page, name ) ).toHaveLength( 1 );
 	} );
 } );
