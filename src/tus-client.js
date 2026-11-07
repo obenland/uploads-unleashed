@@ -8,6 +8,7 @@
 
 import * as tus from 'tus-js-client';
 import { addFilter } from '@wordpress/hooks';
+import { __ } from '@wordpress/i18n';
 
 /**
  * Upload expiration time in milliseconds (24 hours).
@@ -368,7 +369,7 @@ function createTusUpload( file, callbacks ) {
 
 			// Check if the server returned an error status.
 			if ( status >= 400 ) {
-				let errorMessage = 'Upload failed';
+				let errorMessage = __( 'Upload failed', 'uploads-unleashed' );
 				try {
 					if ( body ) {
 						const parsed = JSON.parse( body );
@@ -395,7 +396,8 @@ function createTusUpload( file, callbacks ) {
 		},
 		onError: ( error ) => {
 			// Extract a clean error message from TUS errors
-			let cleanMessage = error.message || 'Upload failed';
+			let cleanMessage =
+				error.message || __( 'Upload failed', 'uploads-unleashed' );
 
 			// Try to extract WordPress error message from response body
 			if ( 'originalResponse' in error && error.originalResponse ) {
@@ -498,7 +500,7 @@ export async function upload( file, options = {} ) {
 	return new Promise( ( resolve, reject ) => {
 		// Handle already-aborted signal before creating upload
 		if ( options.signal?.aborted ) {
-			reject( new Error( 'Upload aborted' ) );
+			reject( new Error( __( 'Upload aborted', 'uploads-unleashed' ) ) );
 			return;
 		}
 
@@ -516,7 +518,10 @@ export async function upload( file, options = {} ) {
 				} else {
 					reject(
 						new Error(
-							'Upload completed but no attachment data received'
+							__(
+								'Upload completed but no attachment data received',
+								'uploads-unleashed'
+							)
 						)
 					);
 				}
@@ -536,7 +541,9 @@ export async function upload( file, options = {} ) {
 				if ( ! settled ) {
 					settled = true;
 					tusUpload.abort( true );
-					reject( new Error( 'Upload aborted' ) );
+					reject(
+						new Error( __( 'Upload aborted', 'uploads-unleashed' ) )
+					);
 				}
 			} );
 		}

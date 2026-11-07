@@ -7,6 +7,7 @@
  */
 
 import { applyFilters } from '@wordpress/hooks';
+import { __ } from '@wordpress/i18n';
 import { upload } from '@uploads-unleashed/tus-client';
 
 /**
@@ -191,7 +192,7 @@ function handleBeforeUpload( uploader, file ) {
 			handlePluploadError(
 				uploader,
 				file,
-				error.message || 'Upload failed'
+				error.message || __( 'Upload failed', 'uploads-unleashed' )
 			);
 		} );
 

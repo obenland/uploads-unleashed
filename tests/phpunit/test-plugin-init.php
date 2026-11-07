@@ -410,6 +410,35 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that every script with translatable strings loads its translations.
+	 *
+	 * @dataProvider data_translatable_script_handles
+	 *
+	 * @param string $handle Script handle.
+	 */
+	public function test_register_scripts_sets_script_translations( $handle ) {
+		$script = wp_scripts()->query( $handle, 'registered' );
+
+		$this->assertInstanceOf( _WP_Dependency::class, $script );
+		$this->assertSame( 'uploads-unleashed', $script->textdomain );
+		$this->assertContains( 'wp-i18n', $script->deps );
+	}
+
+	/**
+	 * Data provider for test_register_scripts_sets_script_translations().
+	 *
+	 * @return array[] Script handles.
+	 */
+	public function data_translatable_script_handles() {
+		return array(
+			'tus client'   => array( 'uploads-unleashed' ),
+			'pending UI'   => array( 'uploads-unleashed-ui' ),
+			'plupload'     => array( 'uploads-unleashed-plupload' ),
+			'block editor' => array( 'uploads-unleashed-block-editor' ),
+		);
+	}
+
+	/**
 	 * Test that the pending uploads stylesheet is swapped for its RTL build in RTL locales.
 	 */
 	public function test_pending_ui_style_uses_rtl_build_in_rtl_locales() {
