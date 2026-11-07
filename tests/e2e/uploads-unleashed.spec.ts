@@ -132,6 +132,46 @@ test.describe( 'Uploads Unleashed', () => {
 		}
 	} );
 
+	test( 'uploads every file of a multi-file selection via the Media → Add New uploader', async ( {
+		page,
+	} ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/media-new.php' );
+
+		const fileInput = page
+			.locator( '#plupload-upload-ui .moxie-shim input[type="file"]' )
+			.first();
+		await expect( fileInput ).toBeAttached( { timeout: 10000 } );
+
+		const stamp = Date.now();
+		const image = await fs.readFile(
+			path.resolve( __dirname, 'fixtures/test-image.png' )
+		);
+		const asUpload = ( index: number ) => ( {
+			name: `multi-${ stamp }-${ index }.png`,
+			mimeType: 'image/png',
+			buffer: image,
+		} );
+
+		// A finished item swaps its progress bar for the attachment's edit form.
+		const items = page.locator( '#media-items .media-item' );
+		const finished = items.filter( {
+			has: page.locator( 'a.edit-attachment' ),
+		} );
+
+		await fileInput.setInputFiles( [ asUpload( 1 ), asUpload( 2 ) ] );
+		await expect( items ).toHaveCount( 2 );
+		await expect( finished ).toHaveCount( 2, { timeout: 30000 } );
+
+		// Files added once the first batch is done must start too.
+		await fileInput.setInputFiles( [ asUpload( 3 ) ] );
+		await expect( items ).toHaveCount( 3 );
+		await expect( finished ).toHaveCount( 3, { timeout: 30000 } );
+		await expect( page.locator( '#media-items .error-div' ) ).toHaveCount(
+			0
+		);
+	} );
+
 	test( 'shows the server error when an upload is rejected server-side in the grid', async ( {
 		page,
 	} ) => {

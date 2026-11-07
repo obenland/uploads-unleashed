@@ -2,7 +2,15 @@
  * Tests for the Plupload TUS integration.
  */
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from 'vitest';
 
 // Mock tus-client module
 vi.mock( '../../src/tus-client', () => ( {
@@ -166,7 +174,7 @@ describe( 'handleBeforeUpload', () => {
 		);
 	} );
 
-	it( 'removes file from plupload queue', () => {
+	it( 'keeps the file in the plupload queue as uploading', () => {
 		const nativeFile = new File( [ 'test' ], 'test.txt', {
 			type: 'text/plain',
 		} );
@@ -174,23 +182,8 @@ describe( 'handleBeforeUpload', () => {
 
 		beforeUploadHandler( uploader, file );
 
-		expect( uploader.removeFile ).toHaveBeenCalledWith( file );
-	} );
-
-	it( 'triggers next file in queue', () => {
-		vi.useFakeTimers();
-
-		const nativeFile = new File( [ 'test' ], 'test.txt', {
-			type: 'text/plain',
-		} );
-		const file = createMockFile( nativeFile );
-
-		beforeUploadHandler( uploader, file );
-
-		vi.runAllTimers();
-		expect( uploader.start ).toHaveBeenCalled();
-
-		vi.useRealTimers();
+		expect( file.status ).toBe( 2 ); // UPLOADING
+		expect( uploader.removeFile ).not.toHaveBeenCalled();
 	} );
 
 	it( 'passes native file to upload, not plupload wrapper', () => {
@@ -321,7 +314,7 @@ describe( 'handleBeforeUpload', () => {
 			);
 		} );
 
-		it( 'calls uploadSuccess on media-new.php', async () => {
+		it( 'triggers FileUploaded with the attachment ID on media-new.php', async () => {
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
@@ -338,7 +331,13 @@ describe( 'handleBeforeUpload', () => {
 
 			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-			expect( window.uploadSuccess ).toHaveBeenCalledWith( file, '789' );
+			// handlers.js passes the response on to uploadSuccess().
+			expect( uploader.trigger ).toHaveBeenCalledWith(
+				'FileUploaded',
+				file,
+				{ response: '789' }
+			);
+			expect( file.status ).toBe( 5 ); // DONE
 			// Should NOT fetch legacy data for media-new.php path
 			expect( window.wp.media.attachment ).not.toHaveBeenCalled();
 
@@ -512,6 +511,316 @@ describe( 'handleBeforeUpload', () => {
 				true,
 				nativeFile
 			);
+		} );
+	} );
+} );
+
+describe( 'upload queue', () => {
+	/**
+	 * Plupload's uploader states.
+	 *
+	 * @see https://www.plupload.com/docs/v2/Uploader#state-property
+	 */
+	const STOPPED = 1;
+	const STARTED = 2;
+
+	let tusHandler;
+	let pending;
+	let events;
+
+	/**
+	 * Creates a fake uploader that mirrors plupload 2's queue handling.
+	 *
+	 * Like plupload, it only moves on to the next file from start() while
+	 * stopped and from its own FileUploaded handler, resets uploading files
+	 * when stopped, and fires UploadComplete once every file is done or failed.
+	 *
+	 * @return {Object} Fake plupload uploader.
+	 */
+	function createQueueUploader() {
+		const handlers = {};
+		const up = {
+			state: STOPPED,
+			files: [],
+			bind( event, handler ) {
+				( handlers[ event ] = handlers[ event ] || [] ).push( handler );
+			},
+			trigger( event, ...args ) {
+				events.push(
+					'FileUploaded' === event
+						? `${ event }:${ args[ 0 ].name }`
+						: event
+				);
+				return ( handlers[ event ] || [] ).every(
+					( handler ) => false !== handler( up, ...args )
+				);
+			},
+			start() {
+				if ( up.state !== STARTED ) {
+					up.state = STARTED;
+					up.trigger( 'StateChanged' );
+					uploadNext();
+				}
+			},
+			stop() {
+				if ( up.state !== STOPPED ) {
+					up.state = STOPPED;
+					up.trigger( 'StateChanged' );
+					up.trigger( 'CancelUpload' );
+				}
+			},
+			removeFile( file ) {
+				up.files.splice( up.files.indexOf( file ), 1 );
+			},
+			addFiles( names ) {
+				names.forEach( ( name ) => {
+					const file = createMockFile(
+						new File( [ name ], name, { type: 'text/plain' } )
+					);
+					file.name = name;
+					up.files.push( file );
+				} );
+				up.start();
+			},
+		};
+
+		/**
+		 * Starts the first queued file, or completes the queue.
+		 */
+		function uploadNext() {
+			let file;
+			let count = 0;
+
+			if ( up.state !== STARTED ) {
+				return;
+			}
+
+			for ( let i = 0; i < up.files.length; i++ ) {
+				if ( ! file && 1 === up.files[ i ].status ) {
+					file = up.files[ i ];
+					if ( up.trigger( 'BeforeUpload', file ) ) {
+						file.status = 2;
+						up.trigger( 'UploadFile', file );
+					}
+				} else {
+					count++;
+				}
+			}
+
+			if ( count === up.files.length ) {
+				up.state = STOPPED;
+				up.trigger( 'StateChanged' );
+				up.trigger( 'UploadComplete', up.files );
+			}
+		}
+
+		up.bind( 'BeforeUpload', tusHandler );
+		up.bind( 'StateChanged', () => {
+			if ( up.state === STOPPED ) {
+				up.files
+					.filter( ( file ) => 2 === file.status )
+					.forEach( ( file ) => ( file.status = 1 ) );
+			}
+		} );
+		up.bind( 'FileUploaded', () => {
+			setTimeout( uploadNext, 1 );
+		} );
+
+		return up;
+	}
+
+	/**
+	 * Returns how often UploadComplete fired.
+	 *
+	 * @return {number} Number of UploadComplete events.
+	 */
+	const uploadCompleteCount = () =>
+		events.filter( ( event ) => 'UploadComplete' === event ).length;
+
+	/**
+	 * Settles the oldest pending TUS upload and lets the queue react.
+	 *
+	 * @param {Error} [error] Rejects the upload with this error when given.
+	 */
+	async function settleNext( error ) {
+		const { resolve, reject } = pending.shift();
+		if ( error ) {
+			reject( error );
+		} else {
+			resolve( { id: 123 } );
+		}
+		await new Promise( ( done ) => setTimeout( done, 10 ) );
+	}
+
+	beforeEach( () => {
+		pending = [];
+		events = [];
+		upload.mockImplementation(
+			() =>
+				new Promise( ( resolve, reject ) =>
+					pending.push( { resolve, reject } )
+				)
+		);
+
+		const instance = new window.wp.Uploader();
+		tusHandler = instance.uploader.bind.mock.calls.find(
+			( call ) => call[ 0 ] === 'BeforeUpload'
+		)[ 1 ];
+	} );
+
+	describe( 'on upload.php', () => {
+		it( 'uploads queued files one after another', async () => {
+			const up = createQueueUploader();
+			up.addFiles( [ 'a.txt', 'b.txt', 'c.txt' ] );
+
+			expect( upload ).toHaveBeenCalledTimes( 1 );
+			expect( up.files.map( ( file ) => file.status ) ).toEqual( [
+				2, 1, 1,
+			] );
+
+			await settleNext();
+			expect( upload ).toHaveBeenCalledTimes( 2 );
+
+			await settleNext( new Error( 'Rejected' ) );
+			expect( upload ).toHaveBeenCalledTimes( 3 );
+
+			await settleNext();
+			expect( up.files.map( ( file ) => file.status ) ).toEqual( [
+				5, 4, 5,
+			] );
+			expect( up.state ).toBe( STOPPED );
+		} );
+
+		it( 'fires UploadComplete once, after the last upload finishes', async () => {
+			const up = createQueueUploader();
+			up.addFiles( [ 'a.txt', 'b.txt' ] );
+
+			await settleNext();
+			await settleNext();
+
+			expect(
+				events.filter(
+					( event ) =>
+						event.startsWith( 'FileUploaded' ) ||
+						'UploadComplete' === event
+				)
+			).toEqual( [
+				'FileUploaded:a.txt',
+				'FileUploaded:b.txt',
+				'UploadComplete',
+			] );
+		} );
+
+		it( 'does not fire UploadComplete while the only upload is running', async () => {
+			const up = createQueueUploader();
+			up.addFiles( [ 'a.txt' ] );
+			await new Promise( ( done ) => setTimeout( done, 10 ) );
+
+			expect( uploadCompleteCount() ).toBe( 0 );
+
+			await settleNext();
+			expect( uploadCompleteCount() ).toBe( 1 );
+		} );
+	} );
+
+	describe( 'on media-new.php', () => {
+		let mediaItems;
+
+		/**
+		 * Creates a fake uploader wired up the way handlers.js does it.
+		 *
+		 * @return {Object} Fake plupload uploader.
+		 */
+		function createMediaNewUploader() {
+			const up = createQueueUploader();
+			up.bind( 'FileUploaded', ( _up, file, response ) =>
+				window.uploadSuccess( file, response.response )
+			);
+			return up;
+		}
+
+		beforeEach( () => {
+			window.uploadSuccess = vi.fn();
+			window.wpFileError = vi.fn();
+			mediaItems = document.createElement( 'div' );
+			mediaItems.id = 'media-items';
+			document.body.appendChild( mediaItems );
+		} );
+
+		afterEach( () => {
+			delete window.uploadSuccess;
+			delete window.wpFileError;
+			mediaItems.remove();
+		} );
+
+		it( 'uploads every queued file', async () => {
+			const up = createMediaNewUploader();
+			up.addFiles( [ 'a.txt', 'b.txt' ] );
+
+			await settleNext();
+			expect( upload ).toHaveBeenCalledTimes( 2 );
+
+			await settleNext();
+			expect( window.uploadSuccess ).toHaveBeenCalledTimes( 2 );
+			expect( window.uploadSuccess ).toHaveBeenCalledWith(
+				up.files[ 1 ],
+				'123'
+			);
+			expect( up.state ).toBe( STOPPED );
+			expect( uploadCompleteCount() ).toBe( 1 );
+		} );
+
+		it( 'moves on to the next file after a failed upload', async () => {
+			const up = createMediaNewUploader();
+			up.addFiles( [ 'a.txt', 'b.txt' ] );
+
+			await settleNext( new Error( 'Rejected' ) );
+			expect( window.wpFileError ).toHaveBeenCalledWith(
+				up.files[ 0 ],
+				'Rejected'
+			);
+			expect( upload ).toHaveBeenCalledTimes( 2 );
+
+			await settleNext();
+			expect( window.uploadSuccess ).toHaveBeenCalledTimes( 1 );
+			expect( up.files.map( ( file ) => file.status ) ).toEqual( [
+				4, 5,
+			] );
+			expect( uploadCompleteCount() ).toBe( 1 );
+		} );
+
+		it( 'completes the queue when the last upload fails', async () => {
+			const up = createMediaNewUploader();
+			up.addFiles( [ 'a.txt' ] );
+
+			await settleNext( new Error( 'Rejected' ) );
+			expect( up.state ).toBe( STOPPED );
+			expect( uploadCompleteCount() ).toBe( 1 );
+		} );
+
+		it( 'starts files added after the queue finished', async () => {
+			const up = createMediaNewUploader();
+			up.addFiles( [ 'a.txt' ] );
+			await settleNext();
+
+			up.addFiles( [ 'b.txt' ] );
+			expect( upload ).toHaveBeenCalledTimes( 2 );
+
+			await settleNext();
+			expect( window.uploadSuccess ).toHaveBeenCalledTimes( 2 );
+		} );
+
+		it( 'picks up files added while an upload is running', async () => {
+			const up = createMediaNewUploader();
+			up.addFiles( [ 'a.txt' ] );
+			up.addFiles( [ 'b.txt' ] );
+			expect( upload ).toHaveBeenCalledTimes( 1 );
+
+			await settleNext();
+			expect( upload ).toHaveBeenCalledTimes( 2 );
+
+			await settleNext();
+			expect( window.uploadSuccess ).toHaveBeenCalledTimes( 2 );
 		} );
 	} );
 } );
