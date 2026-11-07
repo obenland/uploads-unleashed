@@ -159,10 +159,11 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 		$path = $this->get_path( $upload_id );
 
 		if ( file_exists( $path ) ) {
-			return wp_delete_file( $path );
+			// wp_delete_file() only returns a value since WordPress 6.7.
+			wp_delete_file( $path );
 		}
 
-		return true;
+		return ! file_exists( $path );
 	}
 
 	/**
