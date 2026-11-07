@@ -505,7 +505,7 @@ describe( 'upload', () => {
 		await expect( promise ).rejects.toThrow( 'Bad request' );
 	} );
 
-	it( 'uses default error message for error status without body', async () => {
+	it( 'uses a generic message for an error status without body', async () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
 		const promise = upload( file );
@@ -519,7 +519,9 @@ describe( 'upload', () => {
 			},
 		} );
 
-		await expect( promise ).rejects.toThrow( 'Upload failed' );
+		await expect( promise ).rejects.toThrow(
+			'The upload failed. Please try again.'
+		);
 	} );
 
 	describe( 'onProgress callback', () => {
@@ -586,16 +588,59 @@ describe( 'upload', () => {
 	} );
 
 	describe( 'onError callback', () => {
-		it( 'rejects on upload error', async () => {
+		it( 'rejects with a generic message on a network error', async () => {
 			const file = new File( [ 'test' ], 'test.txt' );
 
 			const promise = upload( file );
 
 			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-			capturedCallbacks.onError( new Error( 'Network error' ) );
+			capturedCallbacks.onError(
+				new Error(
+					'tus: failed to upload chunk at offset 0, caused by [object ProgressEvent]'
+				)
+			);
 
-			await expect( promise ).rejects.toThrow( 'Network error' );
+			await expect( promise ).rejects.toThrow(
+				'The upload failed. Please try again.'
+			);
+		} );
+
+		it( 'hides the raw tus message for an HTML error page', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			capturedCallbacks.onError( {
+				message:
+					'tus: unexpected response while uploading chunk, originated from request (method: PATCH, url: /wp-json/wp/v2/media/abc, response code: 502, response text: <html><body>Bad Gateway</body></html>, request id: n/a)',
+				originalResponse: {
+					getStatus: () => 502,
+					getBody: () => '<html><body>Bad Gateway</body></html>',
+				},
+			} );
+
+			const error = await promise.catch( ( rejection ) => rejection );
+			expect( error.message ).toBe(
+				'The upload failed. Please try again.'
+			);
+			expect( error.message ).not.toContain( '<html>' );
+		} );
+
+		it( 'keeps the tus error as the cause', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const tusError = new Error( 'tus: failed to resume upload' );
+
+			const promise = upload( file );
+
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+			capturedCallbacks.onError( tusError );
+
+			const error = await promise.catch( ( rejection ) => rejection );
+			expect( error.cause ).toBe( tusError );
 		} );
 
 		it( 'extracts WordPress error message from TUS DetailedError', async () => {
@@ -660,7 +705,9 @@ describe( 'upload', () => {
 
 			capturedCallbacks.onError( detailedError );
 
-			await expect( promise ).rejects.toThrow( 'TUS error' );
+			await expect( promise ).rejects.toThrow(
+				'The upload failed. Please try again.'
+			);
 		} );
 
 		it( 'handles invalid JSON in originalResponse', async () => {
@@ -680,7 +727,9 @@ describe( 'upload', () => {
 
 			capturedCallbacks.onError( detailedError );
 
-			await expect( promise ).rejects.toThrow( 'TUS error' );
+			await expect( promise ).rejects.toThrow(
+				'The upload failed. Please try again.'
+			);
 		} );
 
 		it( 'uses default message when error has no message', async () => {
@@ -692,7 +741,9 @@ describe( 'upload', () => {
 
 			capturedCallbacks.onError( {} );
 
-			await expect( promise ).rejects.toThrow( 'Upload failed' );
+			await expect( promise ).rejects.toThrow(
+				'The upload failed. Please try again.'
+			);
 		} );
 
 		describe( 'server rejection', () => {
@@ -805,7 +856,9 @@ describe( 'upload', () => {
 
 				capturedCallbacks.onError( new Error( 'Network error' ) );
 
-				await expect( promise ).rejects.toThrow( 'Network error' );
+				await expect( promise ).rejects.toThrow(
+					'The upload failed. Please try again.'
+				);
 				await flush();
 				expect( global.fetch ).not.toHaveBeenCalled();
 				expect( localStorage.getItem( storageKey ) ).toBe( '{}' );

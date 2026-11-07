@@ -155,6 +155,31 @@ function parseErrorCode( body ) {
 }
 
 /**
+ * Returns the message to show users for a failed request.
+ *
+ * Shows the message of a WordPress REST API error. Anything else, such as an
+ * HTML error page from a proxy or tus's own error text, gets a generic message.
+ *
+ * @since 1.2.0
+ *
+ * @param {string|null|undefined} body Response body.
+ * @return {string} Error message.
+ */
+function getErrorMessage( body ) {
+	try {
+		const message = JSON.parse( body )?.message;
+
+		if ( message && 'string' === typeof message ) {
+			return message;
+		}
+	} catch {
+		// Not JSON, so not a WordPress error.
+	}
+
+	return __( 'The upload failed. Please try again.', 'uploads-unleashed' );
+}
+
+/**
  * Sends a request for an upload outside of tus.
  *
  * Retries once with a refreshed nonce or with a method override, like tus requests.
@@ -803,16 +828,7 @@ function createTusUpload( file, callbacks ) {
 
 			// Check if the server returned an error status.
 			if ( status >= 400 ) {
-				let errorMessage = __( 'Upload failed', 'uploads-unleashed' );
-				try {
-					if ( body ) {
-						const parsed = JSON.parse( body );
-						errorMessage = parsed.message || errorMessage;
-					}
-				} catch {
-					// Ignore parse errors
-				}
-				callbacks.onError( new Error( errorMessage ) );
+				callbacks.onError( new Error( getErrorMessage( body ) ) );
 				return;
 			}
 
@@ -873,31 +889,17 @@ function createTusUpload( file, callbacks ) {
 				return;
 			}
 
-			// Extract a clean error message from TUS errors
-			let cleanMessage =
-				error.message || __( 'Upload failed', 'uploads-unleashed' );
-
-			// Try to extract WordPress error message from response body
-			if ( 'originalResponse' in error && error.originalResponse ) {
-				try {
-					const body = error.originalResponse.getBody();
-					if ( body ) {
-						const parsed = JSON.parse( body );
-						if ( parsed.message ) {
-							cleanMessage = parsed.message;
-						}
-					}
-				} catch {
-					// Ignore parse errors
-				}
-			}
-
 			// Only server responses can mean the session is gone.
 			if ( error.originalResponse && tusUpload.url ) {
 				forgetUploadIfGone( tusUpload );
 			}
 
-			callbacks.onError( new Error( cleanMessage, { cause: error } ) );
+			callbacks.onError(
+				new Error(
+					getErrorMessage( error.originalResponse?.getBody() ),
+					{ cause: error }
+				)
+			);
 		},
 	} );
 
