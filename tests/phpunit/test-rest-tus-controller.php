@@ -1632,6 +1632,15 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 			$this->markTestSkipped( 'Multisite only.' );
 		}
 
+		// The test network is installed from a single site, which disables the quota.
+		update_site_option( 'upload_space_check_disabled', 0 );
+
+		// Lift the size limit so the quota pre-flight check is what rejects the upload.
+		$max_size_callback = function () {
+			return PHP_INT_MAX;
+		};
+		add_filter( 'uploads_unleashed_max_upload_size', $max_size_callback );
+
 		// Mock quota: 10 MB allowed, 9.5 MB used.
 		$space_used_callback = function () {
 			return 9.5;
@@ -1649,6 +1658,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 
 		$response = rest_get_server()->dispatch( $request );
 
+		remove_filter( 'uploads_unleashed_max_upload_size', $max_size_callback );
 		remove_filter( 'pre_get_space_used', $space_used_callback );
 		remove_filter( 'get_space_allowed', $space_allowed_callback );
 
