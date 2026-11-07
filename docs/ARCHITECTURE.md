@@ -17,16 +17,15 @@ The plugin enables resumable, chunked file uploads in WordPress by:
 ┌─────────────────────────────────────────────────────────────────┐
 │                             Frontend                            │
 ├─────────────────────────────────────────────────────────────────┤
-│  ┌───────────────┐   ┌───────────────┐   ┌───────────────────┐  │
-│  │ tus-client.js │   │  plupload.js  │   │  block-editor.js  │  │
-│  │  (TUS Client) │   │(Media Library)│   │   (Block Editor)  │  │
-│  └───────┬───────┘   └───────┬───────┘   └─────────┬─────────┘  │
-│          │                   │                     │            │
-│          └───────────────────┼─────────────────────┘            │
-│                              │                                  │
-│  ┌───────────────────────────┴───────────────────────────────┐  │
-│  │                        resume-ui.js                       │  │
-│  │                    (Pending Uploads UI)                   │  │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │   plupload.js   │  │ block-editor.js │  │   resume-ui.js  │  │
+│  │ (Media Library) │  │  (Block Editor) │  │(Pending Uploads)│  │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
+│           │                    │                    │           │
+│           ▼                    ▼                    ▼           │
+│  ┌────────┴────────────────────┴────────────────────┴────────┐  │
+│  │                       tus-client.js                       │  │
+│  │             (TUS Client, wraps tus-js-client)             │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
                                  │
@@ -181,8 +180,9 @@ Manages physical chunk files on disk:
 1. Client sends POST /wp/v2/media
    Headers: Upload-Length, Upload-Metadata
 
-2. uploads_unleashed_intercept_tus_creation() → Uploads_Unleashed_TUS_Controller::create_item()
-   - Validates permissions
+2. uploads_unleashed_intercept_tus_creation()
+   - Validates permissions (create_item_permissions_check())
+   Uploads_Unleashed_TUS_Controller::create_item()
    - Parses metadata (filename, filetype)
    - Creates Uploads_Unleashed_TUS_Upload_Session
 

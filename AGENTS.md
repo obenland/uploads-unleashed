@@ -9,6 +9,7 @@ npm run build          # webpack (src/ → build/) plus the minified tus-js-clie
 npm run lint           # phpcs, ESLint, package.json lint
 npm run test:js        # Vitest
 npm run start:tests && npm test   # PHPUnit in the wp-env tests environment (port 8889)
+npm run test:e2e:install          # once, installs Chromium
 npm run start && npm run test:e2e # Playwright against wp-env (port 8888)
 ```
 
@@ -20,8 +21,8 @@ The plugin `require`s the generated `build/*.asset.php` files, so run `npm run b
 
 - `uploads-unleashed.php`: bootstrap, script registration, and the `rest_pre_dispatch` filter that turns a `POST /wp/v2/media` with an `Upload-Length` header into a TUS upload.
 - `includes/`: REST controller (`wp/v2/media/<uuid>`), upload session (transients), chunk storage (`uploads/.tus-chunks/`), WP-CLI `wp tus` command.
-- `src/`: `tus-client.js` (upload API), `plupload.js` (media library and `media-new.php`), `block-editor.js` (`apiFetch` middleware), `resume-ui.js` (interrupted-uploads UI). Plain JS, built with `@wordpress/scripts`.
-- `webpack.config.js` externalizes both `tus-js-client` (the vendored `src/vendor/tus.js`, shipped as `build/tus.min.js` and exposed as `window.tus`) and `@uploads-unleashed/tus-client` (exposed as `window.uploadsUnleashed.tusClient`), so each is loaded once as its own registered script. Update the version in `uploads-unleashed.php` when replacing the vendored file.
+- `src/`: `tus-client.js` (upload API), `plupload.js` (media library and `media-new.php`), `block-editor.js` (`apiFetch` middleware), `resume-ui.js` and `resume-ui.css` (interrupted-uploads UI). Plain JS, built with `@wordpress/scripts`.
+- `webpack.config.js` externalizes both `tus-js-client` (the vendored `src/vendor/tus.js`, shipped as `build/tus.min.js` and exposed as `window.tus`) and `@uploads-unleashed/tus-client` (exposed as `window.uploadsUnleashed.tusClient`), so each is loaded once as its own registered script. When replacing the vendored file, update its script version (`4.3.1`) in `uploads-unleashed.php`.
 - `tests/phpunit`, `tests/js` (Vitest), `tests/e2e` (Playwright, TypeScript).
 
 ## Conventions
@@ -29,12 +30,12 @@ The plugin `require`s the generated `build/*.asset.php` files, so run `npm run b
 - WordPress coding standards; `phpcs` and ESLint must pass with no errors or warnings.
 - New PHP files declare `declare( strict_types = 1 );` after the file docblock and type every parameter and return. Existing files stay as they are.
 - PHP must run on 7.4 (CI tests 7.4 and 8.4).
-- New functions, classes, and hooks get `@since` set to the next release version (latest tag plus one).
+- New functions, classes, and hooks get `@since` set to the next minor version (`1.2.0` after `1.1.0`).
 - New filters and actions are documented in `docs/hooks.md` and the Extension Points tables in `docs/ARCHITECTURE.md`.
 - Comments: `/** */` docblocks on every function, class, property and constant; `/* */` for multi-line comments in a function body; never stack `//` lines.
 - JS tests use Vitest, not Jest. WordPress packages and the TUS client are mocked through aliases in `vitest.config.mjs`; tests that need a fresh module call `vi.resetModules()` and re-`import()` it.
 - New top-level files or directories that shouldn't ship to WordPress.org go in `.distignore`.
-- The default branch is `trunk`. Releases are cut by pushing an `X.Y.Z` tag; `release.yml` bumps versions and the changelog itself, so don't edit version strings by hand.
+- The default branch is `trunk`. Releases are cut by pushing an `X.Y.Z` tag; `release.yml` bumps the plugin version and the changelog itself, so don't edit the plugin version by hand.
 
 ## CI
 

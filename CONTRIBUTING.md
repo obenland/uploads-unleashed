@@ -169,6 +169,7 @@ uploads-unleashed/
 │   ├── plupload.js         # Media Library integration
 │   ├── block-editor.js     # Block Editor integration
 │   ├── resume-ui.js        # Pending uploads UI
+│   ├── resume-ui.css       # Pending uploads UI styles
 │   └── vendor/tus.js       # Vendored tus-js-client
 ├── tests/
 │   ├── phpunit/            # PHP unit tests
@@ -191,7 +192,7 @@ uploads-unleashed/
 
 3. Add or update tests as needed
 
-4. Run the test suite to ensure everything passes:
+4. Run the test suite to ensure everything passes (see [Running Tests](#running-tests) for the environments each suite needs):
    ```bash
    npm test
    npm run test:js
