@@ -36,7 +36,7 @@ The plugin `require`s the generated `build/*.asset.php` files, so run `npm run b
 - JS tests use Vitest, not Jest. WordPress packages and the TUS client are mocked through aliases in `vitest.config.mjs`; tests that need a fresh module call `vi.resetModules()` and re-`import()` it.
 - New top-level files or directories that shouldn't ship to WordPress.org go in `.distignore`.
 - The default branch is `trunk`. Releases are cut by pushing an `X.Y.Z` tag; `release.yml` bumps the plugin version and the changelog itself, so don't edit the plugin version by hand.
-- Every PR gets exactly one changelog label: `enhancement`, `bug`, `documentation`, or `maintenance` (CI, tests, tooling). The release notes are built from these labels, and an unlabeled PR lands on the `**Full Changelog**` line, which drops it from the README changelog. Never leave a PR uncategorized. Dependabot PRs are the exception: their `dependencies` label is in `ignore_labels` in `.github/changelog_configuration.json`, which keeps them out of the changelog.
+- Every PR gets exactly one changelog label: `enhancement`, `bug`, `documentation`, or `maintenance` (CI, tests, tooling). The release notes are built from these labels, and an unlabeled PR lands on the `**Full Changelog**` line, which drops it from the README changelog. The `Changelog label` check fails until a PR has exactly one. Dependabot PRs are the exception: their `dependencies` label is in `ignore_labels` in `.github/changelog_configuration.json`, which keeps them out of the changelog.
 
 ## CI
 

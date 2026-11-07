@@ -1,0 +1,43 @@
+name: Changelog Label
+
+on:
+    pull_request:
+        branches: [trunk]
+        types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+    contents: read
+
+jobs:
+    changelog-label:
+        name: Changelog label
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+                  sparse-checkout: .github/changelog_configuration.json
+                  sparse-checkout-cone-mode: false
+
+            # Release notes are built from these labels; an unlabeled PR falls out of the README changelog.
+            - name: Require exactly one changelog category label
+              env:
+                  PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+              run: |
+                  set -euo pipefail
+                  config=.github/changelog_configuration.json
+
+                  ignored=$(jq -r --argjson pr "$PR_LABELS" '[.ignore_labels[] | select(. as $l | $pr | index($l))] | join(", ")' "$config")
+                  if [ -n "$ignored" ]; then
+                      echo "Left out of the changelog by: $ignored"
+                      exit 0
+                  fi
+
+                  matched=$(jq -r --argjson pr "$PR_LABELS" '[.categories[].labels[] | select(. as $l | $pr | index($l))] | unique' "$config")
+                  allowed=$(jq -r '[.categories[].labels[]] | join(", ")' "$config")
+
+                  case $(jq length <<< "$matched") in
+                      1) echo "Changelog label: $(jq -r '.[0]' <<< "$matched")" ;;
+                      0) echo "::error::Add one changelog label: $allowed."; exit 1 ;;
+                      *) echo "::error::Use only one changelog label, not $(jq -r 'join(", ")' <<< "$matched")."; exit 1 ;;
+                  esac
