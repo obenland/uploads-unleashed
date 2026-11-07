@@ -44,7 +44,7 @@ function createMockFile( nativeFile ) {
 	};
 }
 
-// Mock wp.media.attachment model
+// Mock wp.media.model.Attachment model
 let mockAttachmentModel;
 function createMockAttachmentModel( legacyData ) {
 	mockAttachmentModel = {
@@ -61,21 +61,25 @@ beforeAll( async () => {
 			this.uploader = createMockUploader();
 		} ),
 		media: {
-			attachment: vi.fn( () =>
-				createMockAttachmentModel( {
-					id: 123,
-					title: 'Test',
-					url: 'http://example.com/test.txt',
-					icon: 'http://example.com/icon.png',
-					sizes: {
-						full: {
-							url: 'http://example.com/test.txt',
-							width: 100,
-							height: 100,
+			// Core's memoized Attachment.get(), which uploads must not go through.
+			attachment: vi.fn(),
+			model: {
+				Attachment: vi.fn( function () {
+					return createMockAttachmentModel( {
+						id: 123,
+						title: 'Test',
+						url: 'http://example.com/test.txt',
+						icon: 'http://example.com/icon.png',
+						sizes: {
+							full: {
+								url: 'http://example.com/test.txt',
+								width: 100,
+								height: 100,
+							},
 						},
-					},
-				} )
-			),
+					} );
+				} ),
+			},
 		},
 	};
 
@@ -261,7 +265,7 @@ describe( 'handleBeforeUpload', () => {
 	} );
 
 	describe( 'upload success', () => {
-		it( 'fetches legacy attachment data via wp.media.attachment', async () => {
+		it( 'fetches legacy attachment data without caching the model', async () => {
 			const nativeFile = new File( [ 'test' ], 'test.txt', {
 				type: 'text/plain',
 			} );
@@ -274,8 +278,16 @@ describe( 'handleBeforeUpload', () => {
 			// Wait for the promise chain
 			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 
-			expect( window.wp.media.attachment ).toHaveBeenCalledWith( 456 );
+			expect( window.wp.media.model.Attachment ).toHaveBeenCalledWith( {
+				id: 456,
+			} );
 			expect( mockAttachmentModel.fetch ).toHaveBeenCalled();
+
+			/*
+			 * Attachment.get() caches by ID. A model cached here would win over
+			 * the grid's model when core calls Attachment.get( id, file.attachment ).
+			 */
+			expect( window.wp.media.attachment ).not.toHaveBeenCalled();
 		} );
 
 		it( 'triggers FileUploaded with legacy format data', async () => {
@@ -296,8 +308,10 @@ describe( 'handleBeforeUpload', () => {
 				},
 			};
 
-			window.wp.media.attachment.mockReturnValue(
-				createMockAttachmentModel( legacyData )
+			window.wp.media.model.Attachment.mockImplementationOnce(
+				function () {
+					return createMockAttachmentModel( legacyData );
+				}
 			);
 
 			upload.mockResolvedValue( { id: 123 } );
