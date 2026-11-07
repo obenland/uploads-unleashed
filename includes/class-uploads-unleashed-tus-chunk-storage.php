@@ -389,6 +389,102 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Returns the number of bytes pending uploads have yet to receive.
+	 *
+	 * Unlike get_total_pending_size(), this leaves out bytes already
+	 * written to chunk files, for limits based on space that already
+	 * accounts for them, like free disk space.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return int Total bytes still to be received, in bytes.
+	 */
+	public function get_total_remaining_size(): int {
+		$total_size = 0;
+
+		foreach ( self::list_active_sessions() as $data ) {
+			$total_size += max( 0, (int) $data['length'] - (int) $data['offset'] );
+		}
+
+		return $total_size;
+	}
+
+	/**
+	 * Excludes the chunk directory from directory size calculations on multisite.
+	 *
+	 * Hooked to `pre_recurse_dirsize`. Pending uploads reserve their full
+	 * length against the site quota, so counting their chunk files in
+	 * get_space_used() as well would count every upload twice.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int|false $size      The directory size, or false to calculate it.
+	 * @param string    $directory Full path of the directory.
+	 * @return int|false 0 for the chunk directory, the unchanged size otherwise.
+	 */
+	public static function exclude_from_dirsize( $size, $directory ) {
+		if ( ! is_multisite() || ! is_string( $directory ) || self::get_dirsize_key() !== wp_normalize_path( $directory ) ) {
+			return $size;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Drops a stale cached size of the chunk directory on multisite.
+	 *
+	 * Hooked to `transient_dirsize_cache`. Core never invalidates the cached
+	 * size of the chunk directory, which may have been cached before it was
+	 * excluded, or while the plugin was inactive. With a persistent object
+	 * cache that size never expires. Removing it and the sizes of its parent
+	 * directories makes core recalculate them, which excludes the chunks.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param mixed $directory_cache Cached directory sizes, keyed by path.
+	 * @return mixed The cache without a non-zero size for the chunk directory.
+	 */
+	public static function drop_stale_dirsize( $directory_cache ) {
+		if ( ! is_multisite() || ! is_array( $directory_cache ) ) {
+			return $directory_cache;
+		}
+
+		$chunks_dir = self::get_dirsize_key();
+
+		foreach ( $directory_cache as $path => $size ) {
+			if ( 0 === $size || wp_normalize_path( (string) $path ) !== $chunks_dir ) {
+				continue;
+			}
+
+			// Same traversal as core's clean_dirsize_cache().
+			$last_path = null;
+			unset( $directory_cache[ $path ] );
+
+			while ( $last_path !== $path && DIRECTORY_SEPARATOR !== $path && '.' !== $path && '..' !== $path ) {
+				$last_path = $path;
+				$path      = dirname( $path );
+				unset( $directory_cache[ $path ] );
+			}
+		}
+
+		return $directory_cache;
+	}
+
+	/**
+	 * Returns the chunk directory in the form used to compare directory size paths.
+	 *
+	 * Resolved on every call, so it follows the configured chunk directory
+	 * and the current site.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return string Normalized chunk directory path without a trailing slash.
+	 */
+	private static function get_dirsize_key(): string {
+		return wp_normalize_path( untrailingslashit( self::get_chunk_dir() ) );
+	}
+
+	/**
 	 * Lists all active upload sessions by scanning chunk files on disk.
 	 *
 	 * Uses get_transient() for each session lookup so it works regardless

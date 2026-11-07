@@ -178,6 +178,8 @@ Manages physical chunk files on disk:
 - `delete()` - Remove chunk file and lock file
 - `lock()` / `unlock()` - Exclusive, non-blocking finalization lock (`{id}.lock`, released by the OS if PHP dies)
 - `get_total_pending_size()` - Bytes held by in-progress uploads (multisite quota)
+- `get_total_remaining_size()` - Bytes in-progress uploads have yet to receive (single-site disk space)
+- `exclude_from_dirsize()`, `drop_stale_dirsize()` - Keep chunk files out of the multisite space used (`pre_recurse_dirsize`, `transient_dirsize_cache`), since pending uploads already reserve their full length
 - `list_active_sessions()` - Active uploads (used by `wp tus list`)
 - `get_upload_ids()` - IDs of all uploads with a chunk file (uninstall)
 - `cleanup_expired()` - Cron job for old files

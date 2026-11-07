@@ -149,6 +149,38 @@ class Test_Upload_Size_Limit extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that only the bytes a pending upload hasn't received yet are subtracted.
+	 *
+	 * Received bytes are already on disk, so disk_free_space() accounts for them.
+	 */
+	public function test_pending_uploads_subtract_only_remaining_bytes() {
+		if ( is_multisite() ) {
+			$this->markTestSkipped( 'This test is for single-site only.' );
+		}
+
+		$upload_dir = wp_upload_dir();
+		if ( false === disk_free_space( $upload_dir['basedir'] ) ) {
+			$this->markTestSkipped( 'disk_free_space() not available on this system.' );
+		}
+
+		$upload_id = $this->create_upload_session(
+			array(
+				'length' => 20 * MB_IN_BYTES,
+			)
+		);
+
+		// Receive the first half of the upload.
+		$offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, str_repeat( 'a', 10 * MB_IN_BYTES ), 0 );
+		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $offset );
+
+		$expected_space = disk_free_space( $upload_dir['basedir'] );
+		$result         = uploads_unleashed_filter_upload_size_limit( PHP_INT_MAX );
+
+		// Allow 1 MB tolerance for disk space fluctuation.
+		$this->assertEqualsWithDelta( $expected_space - ( 10 * MB_IN_BYTES ), $result, MB_IN_BYTES );
+	}
+
+	/**
 	 * Test that multiple pending uploads are all subtracted.
 	 */
 	public function test_multiple_pending_uploads_subtracted() {

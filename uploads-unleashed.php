@@ -425,7 +425,7 @@ add_action( 'uploads_unleashed_cleanup', 'uploads_unleashed_cleanup' );
  * @return int Adjusted upload size limit in bytes.
  */
 function uploads_unleashed_filter_upload_size_limit( int $size ): int {
-	$pending_size = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_total_pending_size();
+	$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
 
 	if ( is_multisite() ) {
 		/*
@@ -439,7 +439,12 @@ function uploads_unleashed_filter_upload_size_limit( int $size ): int {
 			return $max_file_size;
 		}
 
-		return max( 0, min( $max_file_size, (int) get_upload_space_available() - $pending_size ) );
+		/*
+		 * Chunk files don't count toward space used (see
+		 * Uploads_Unleashed_TUS_Chunk_Storage::exclude_from_dirsize()), so
+		 * pending uploads reserve their full length.
+		 */
+		return max( 0, min( $max_file_size, (int) get_upload_space_available() - $storage->get_total_pending_size() ) );
 	}
 
 	// On single-site, use available disk space.
@@ -452,9 +457,14 @@ function uploads_unleashed_filter_upload_size_limit( int $size ): int {
 		return $size;
 	}
 
-	return max( 0, (int) $available - $pending_size );
+	// Free disk space already reflects bytes written to chunk files.
+	return max( 0, (int) $available - $storage->get_total_remaining_size() );
 }
 add_filter( 'upload_size_limit', 'uploads_unleashed_filter_upload_size_limit', 20 );
+
+// Keep chunk files out of the multisite space used.
+add_filter( 'pre_recurse_dirsize', array( 'Uploads_Unleashed_TUS_Chunk_Storage', 'exclude_from_dirsize' ), 10, 2 );
+add_filter( 'transient_dirsize_cache', array( 'Uploads_Unleashed_TUS_Chunk_Storage', 'drop_stale_dirsize' ) );
 
 /**
  * Clears the scheduled cleanup event on plugin deactivation.
