@@ -45,10 +45,11 @@ if ( typeof global.DataTransfer === 'undefined' ) {
 }
 
 const ENDPOINT = '/wp-json/wp/v2/media';
+const LAST_MODIFIED = 1234567890;
 
 function createPendingUploadEntry( filename, size ) {
 	const encodedName = encodeURIComponent( filename );
-	const fingerprint = `tus-br|${ encodedName }|${ size }|1234567890|${ ENDPOINT }`;
+	const fingerprint = `tus-br|${ encodedName }|${ size }|${ LAST_MODIFIED }|${ ENDPOINT }|1|1`;
 	const expiresAt = Date.now() + 86400000;
 	const key = `tus::${ fingerprint }::${ expiresAt }::upload-${ Math.random() }`;
 
@@ -57,6 +58,7 @@ function createPendingUploadEntry( filename, size ) {
 		uploadUrl: `${ ENDPOINT }/upload-id`,
 		filename,
 		size,
+		lastModified: LAST_MODIFIED,
 		bytesUploaded: 0,
 	};
 }
@@ -451,6 +453,7 @@ describe( 'resume button', () => {
 
 		const file = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
 			type: 'image/jpeg',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( file );
 
@@ -512,6 +515,7 @@ describe( 'resume button', () => {
 				el.click = () => {
 					const file = new File( [ 'x'.repeat( size ) ], 'doc.txt', {
 						type: 'text/plain',
+						lastModified: LAST_MODIFIED,
 					} );
 					Object.defineProperty( el, 'files', {
 						value: [ file ],
@@ -543,6 +547,7 @@ describe( 'resume button', () => {
 		// Wrong file (different name).
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
@@ -566,6 +571,34 @@ describe( 'resume button', () => {
 		alertSpy.mockRestore();
 	} );
 
+	it( 'shows inline error for a modified file and keeps item', async () => {
+		setupDOM();
+		const input = setupMoxieShim();
+
+		const size = 1024;
+		const pending = createPendingUploadEntry( 'photo.jpg', size );
+		await importModule( [ pending ] );
+
+		// Same name and size, but edited since the upload started.
+		const modifiedFile = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
+			type: 'image/jpeg',
+			lastModified: LAST_MODIFIED + 1000,
+		} );
+		mockShowOpenFilePicker( modifiedFile );
+
+		document.querySelector( '.resume-upload' ).click();
+
+		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		const errorEl = document.querySelector( '.uploads-unleashed-error' );
+		expect( errorEl.style.display ).toBe( 'block' );
+		expect( errorEl.textContent ).toContain( 'photo.jpg' );
+		expect( input.files ).toBeNull();
+
+		const list = document.querySelector( '.uploads-unleashed-list' );
+		expect( list.children.length ).toBe( 1 );
+	} );
+
 	it( 'keeps item when no moxie-shim input exists', async () => {
 		setupDOM();
 		// No setupMoxieShim — no .moxie-shim input.
@@ -576,6 +609,7 @@ describe( 'resume button', () => {
 
 		const file = new File( [ 'x'.repeat( size ) ], 'test.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( file );
 
@@ -677,6 +711,7 @@ describe( 'resume file selection UX', () => {
 
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
@@ -708,6 +743,7 @@ describe( 'resume file selection UX', () => {
 		// First attempt: wrong file
 		const wrongFile = new File( [ 'x' ], 'wrong.txt', {
 			type: 'text/plain',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( wrongFile );
 
@@ -720,6 +756,7 @@ describe( 'resume file selection UX', () => {
 		// Second attempt: right file
 		const rightFile = new File( [ 'x'.repeat( size ) ], 'photo.jpg', {
 			type: 'image/jpeg',
+			lastModified: LAST_MODIFIED,
 		} );
 		mockShowOpenFilePicker( rightFile );
 
@@ -955,6 +992,7 @@ describe( 'accessibility', () => {
 
 		const file = new File( [ 'x'.repeat( size ) ], 'video.mp4', {
 			type: 'video/mp4',
+			lastModified: LAST_MODIFIED,
 		} );
 		window.showOpenFilePicker = vi.fn( () =>
 			Promise.resolve( [ { getFile: () => Promise.resolve( file ) } ] )
