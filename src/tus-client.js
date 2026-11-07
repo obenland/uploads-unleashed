@@ -277,7 +277,19 @@ function createTusUpload( file, callbacks ) {
 				// Ignore parse errors
 			}
 
-			callbacks.onSuccess( attachment );
+			if ( attachment ) {
+				callbacks.onSuccess( attachment );
+				return;
+			}
+
+			/*
+			 * A resumed upload the server already received in full ends on a
+			 * HEAD response, which has no body. Fetch the attachment instead.
+			 */
+			fetchAttachment(
+				tusUpload.url,
+				payload.lastResponse.getHeader?.( 'X-WP-Upload-Attachment-ID' )
+			).then( callbacks.onSuccess );
 		},
 		onError: ( error ) => {
 			// Extract a clean error message from TUS errors
@@ -308,6 +320,66 @@ function createTusUpload( file, callbacks ) {
 	} );
 
 	return tusUpload;
+}
+
+/**
+ * Builds the REST URL of an attachment from the media endpoint.
+ *
+ * @param {number|string} attachmentId The attachment ID.
+ * @return {string} The attachment URL with `context=edit`.
+ */
+function getAttachmentUrl( attachmentId ) {
+	const url = new URL( getEndpoint(), window.location.href );
+	const route = url.searchParams.get( 'rest_route' );
+
+	// Plain permalinks carry the route in the query string.
+	if ( route ) {
+		url.searchParams.set( 'rest_route', `${ route }/${ attachmentId }` );
+	} else {
+		url.pathname = `${ url.pathname.replace( /\/$/, '' ) }/${ attachmentId }`;
+	}
+	url.searchParams.set( 'context', 'edit' );
+
+	return url.toString();
+}
+
+/**
+ * Fetches the attachment of a finished upload.
+ *
+ * Tries the upload URL first, which returns the same data as the final
+ * PATCH, then the attachment named by the `X-WP-Upload-Attachment-ID` header.
+ *
+ * @param {string|null}      uploadUrl    The TUS upload URL.
+ * @param {string|undefined} attachmentId The attachment ID header value, if any.
+ * @return {Promise<Object|null>} The attachment data, or null if it can't be fetched.
+ */
+async function fetchAttachment( uploadUrl, attachmentId ) {
+	const urls = [];
+	if ( uploadUrl ) {
+		urls.push( uploadUrl );
+	}
+	if ( attachmentId ) {
+		urls.push( getAttachmentUrl( attachmentId ) );
+	}
+
+	for ( const url of urls ) {
+		try {
+			const response = await fetch( url, {
+				headers: { 'X-WP-Nonce': getNonce() },
+			} );
+
+			if ( response.ok ) {
+				const attachment = await response.json();
+				if ( attachment?.id ) {
+					return attachment;
+				}
+			}
+		} catch {
+			// Try the next source.
+		}
+	}
+
+	return null;
 }
 
 /**
