@@ -97,6 +97,23 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Helper method to send a PATCH request with chunk data.
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @param int    $offset    The Upload-Offset header value.
+	 * @param string $body      The chunk data.
+	 * @return WP_REST_Response The response.
+	 */
+	protected function send_chunk( string $upload_id, int $offset, string $body ): WP_REST_Response {
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', (string) $offset );
+		$request->set_body( $body );
+
+		return rest_get_server()->dispatch( $request );
+	}
+
+	/**
 	 * Test route registration.
 	 */
 	public function test_register_routes() {
@@ -1026,14 +1043,73 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
-	 * Test metadata parsing handles empty header.
+	 * Test creation without Upload-Metadata is rejected, because there is no filename.
 	 */
-	public function test_create_handles_empty_metadata() {
+	public function test_create_rejects_missing_metadata() {
 		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
 		$request->set_header( 'Upload-Length', '1024' );
 		// No Upload-Metadata header.
 
 		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_upload_filename_required', $response, 400 );
+	}
+
+	/**
+	 * Test creation with metadata but no filename is rejected.
+	 */
+	public function test_create_rejects_missing_filename() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filetype ' . base64_encode( 'text/plain' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_upload_filename_required', $response, 400 );
+	}
+
+	/**
+	 * Test creation rejects a file type that isn't allowed, before any bytes are uploaded.
+	 */
+	public function test_create_rejects_disallowed_file_type() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'setup.exe' ) . ',filetype ' . base64_encode( 'application/x-msdownload' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_file_type', $response, 400 );
+	}
+
+	/**
+	 * Test creation rejects a filename without an extension.
+	 */
+	public function test_create_rejects_filename_without_extension() {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'README' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_file_type', $response, 400 );
+	}
+
+	/**
+	 * Test creation allows any file type for users with the unfiltered_upload capability.
+	 */
+	public function test_create_allows_disallowed_file_type_with_unfiltered_upload() {
+		$cap_callback = function ( $caps, $cap ) {
+			return 'unfiltered_upload' === $cap ? array( 'upload_files' ) : $caps;
+		};
+		add_filter( 'map_meta_cap', $cap_callback, 10, 2 );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$request->set_header( 'Upload-Length', '1024' );
+		$request->set_header( 'Upload-Metadata', 'filename ' . base64_encode( 'setup.exe' ) );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'map_meta_cap', $cap_callback, 10 );
 
 		$this->assertSame( 201, $response->get_status() );
 	}
@@ -1250,6 +1326,84 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	}
 
 	/**
+	 * Test HEAD reports the bytes on disk when the session offset lags behind.
+	 *
+	 * Simulates PHP being killed after a chunk was written but before the
+	 * session offset was updated.
+	 */
+	public function test_head_reports_bytes_on_disk_when_session_offset_lags() {
+		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+
+		$response = $this->send_chunk( $upload_id, 0, 'aaaaa' );
+		$this->assertSame( 204, $response->get_status() );
+
+		// Bytes that reached the disk without the session being updated.
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'bb', 5 );
+
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/' . $upload_id );
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( '7', (string) $response->get_headers()['Upload-Offset'] );
+
+		// The session is reconciled from the file.
+		$upload = ( new Uploads_Unleashed_TUS_Upload_Session() )->get( $upload_id );
+		$this->assertSame( 7, (int) $upload['offset'] );
+	}
+
+	/**
+	 * Test PATCH resumes at the bytes on disk when the session offset lags behind.
+	 */
+	public function test_patch_resumes_at_bytes_on_disk_when_session_offset_lags() {
+		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+
+		$this->send_chunk( $upload_id, 0, 'aaaaa' );
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'bb', 5 );
+
+		// The stale session offset is rejected without touching the file.
+		$response = $this->send_chunk( $upload_id, 5, 'bbccc' );
+		$this->assertErrorResponse( 'rest_offset_mismatch', $response, 409 );
+
+		$response = $this->send_chunk( $upload_id, 7, 'ccc' );
+		$this->assertSame( 200, $response->get_status() );
+
+		$attachment_id = $response->get_data()['id'];
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading file in test.
+		$this->assertSame( 'aaaaabbccc', file_get_contents( get_attached_file( $attachment_id ) ) );
+
+		wp_delete_attachment( $attachment_id, true );
+	}
+
+	/**
+	 * Test an upload stays resumable when the session offset fails to save.
+	 */
+	public function test_upload_resumes_when_session_offset_update_fails() {
+		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+
+		// Keep the stored value unchanged, so set_transient() returns false.
+		$block_update = static function ( $value, $old_value ) {
+			return $old_value;
+		};
+		add_filter( 'pre_update_option__transient_tus_upload_' . $upload_id, $block_update, 10, 2 );
+
+		$response = $this->send_chunk( $upload_id, 0, 'aaaaa' );
+
+		remove_filter( 'pre_update_option__transient_tus_upload_' . $upload_id, $block_update );
+
+		$this->assertSame( 204, $response->get_status() );
+		$this->assertSame( '5', (string) $response->get_headers()['Upload-Offset'] );
+
+		$request  = new WP_REST_Request( 'HEAD', '/wp/v2/media/' . $upload_id );
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( '5', (string) $response->get_headers()['Upload-Offset'] );
+
+		$response = $this->send_chunk( $upload_id, 5, 'bbbbb' );
+		$this->assertSame( 200, $response->get_status() );
+
+		wp_delete_attachment( $response->get_data()['id'], true );
+	}
+
+	/**
 	 * Test create upload rejects zero Upload-Length.
 	 */
 	public function test_create_upload_rejects_zero_length() {
@@ -1419,7 +1573,10 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test image MIME validation rejects non-image content with image extension.
 	 */
 	public function test_validate_file_rejects_invalid_image_content() {
-		// Create a session claiming to be a JPEG.
+		if ( ! extension_loaded( 'fileinfo' ) ) {
+			$this->markTestSkipped( 'wp_check_filetype_and_ext() needs fileinfo to check non-image content.' );
+		}
+
 		$fake_jpeg_content = 'This is not a JPEG image at all';
 		$upload_id         = $this->create_upload_session(
 			array(
@@ -1429,8 +1586,29 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 			)
 		);
 
-		// Force wp_check_filetype_and_ext to return image/jpeg so we reach
-		// the wp_get_image_mime() check on lines 667-676.
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $fake_jpeg_content );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertErrorResponse( 'rest_invalid_file_type', $response, 400 );
+	}
+
+	/**
+	 * Test image MIME validation rejects non-image content that a filter labelled as an image.
+	 */
+	public function test_validate_file_rejects_filtered_non_image_content() {
+		$fake_jpeg_content = '<?php echo "not an image"; ?>';
+		$upload_id         = $this->create_upload_session(
+			array(
+				'filename' => 'fake.jpg',
+				'filetype' => 'image/jpeg',
+				'length'   => strlen( $fake_jpeg_content ),
+			)
+		);
+
 		$filter_callback = function ( $data ) {
 			$data['ext']  = 'jpg';
 			$data['type'] = 'image/jpeg';
@@ -1447,9 +1625,135 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 
 		remove_filter( 'wp_check_filetype_and_ext', $filter_callback );
 
-		$this->assertSame( 400, $response->get_status() );
+		$this->assertErrorResponse( 'rest_invalid_image', $response, 400 );
+	}
+
+	/**
+	 * Test image MIME validation rejects image content that doesn't match the validated type.
+	 */
+	public function test_validate_file_rejects_mismatched_image_content() {
+		// A 1x1 PNG.
+		$png_content = base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNk/P8PAAUAAQFrH4qPAAAAAElFTkSuQmCC' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Test fixture.
+		$upload_id   = $this->create_upload_session(
+			array(
+				'filename' => 'photo.jpg',
+				'filetype' => 'image/jpeg',
+				'length'   => strlen( $png_content ),
+			)
+		);
+
+		// Force wp_check_filetype_and_ext to return image/jpeg so we reach the wp_get_image_mime() check.
+		$filter_callback = function ( $data ) {
+			$data['ext']  = 'jpg';
+			$data['type'] = 'image/jpeg';
+			return $data;
+		};
+		add_filter( 'wp_check_filetype_and_ext', $filter_callback );
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $png_content );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'wp_check_filetype_and_ext', $filter_callback );
+
+		$this->assertErrorResponse( 'rest_invalid_image', $response, 400 );
+	}
+
+	/**
+	 * Test an image type that wp_get_image_mime() can't read (SVG) is accepted when allowed.
+	 */
+	public function test_validate_file_accepts_allowed_svg() {
+		$mimes_callback = function ( $mimes ) {
+			$mimes['svg'] = 'image/svg+xml';
+			return $mimes;
+		};
+		add_filter( 'upload_mimes', $mimes_callback );
+
+		// Older fileinfo versions don't detect SVG; SVG plugins correct the result like this.
+		$filetype_callback = function ( $data, $file, $filename ) {
+			if ( 'svg' === pathinfo( $filename, PATHINFO_EXTENSION ) ) {
+				$data['ext']  = 'svg';
+				$data['type'] = 'image/svg+xml';
+			}
+			return $data;
+		};
+		add_filter( 'wp_check_filetype_and_ext', $filetype_callback, 10, 3 );
+
+		// SVG plugins provide dimensions, which core's REST response expects for image/* types.
+		$metadata_callback = function ( $metadata ) {
+			return array_merge(
+				$metadata,
+				array(
+					'width'  => 1,
+					'height' => 1,
+				)
+			);
+		};
+		add_filter( 'wp_generate_attachment_metadata', $metadata_callback );
+
+		// No width/height, so getimagesize() can't read it on PHP 8.5+ either.
+		$svg_content = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>';
+		$upload_id   = $this->create_upload_session(
+			array(
+				'filename' => 'icon.svg',
+				'filetype' => 'image/svg+xml',
+				'length'   => strlen( $svg_content ),
+			)
+		);
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $svg_content );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'upload_mimes', $mimes_callback );
+		remove_filter( 'wp_check_filetype_and_ext', $filetype_callback, 10 );
+		remove_filter( 'wp_generate_attachment_metadata', $metadata_callback );
+
+		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
-		$this->assertSame( 'rest_invalid_image', $data['code'] );
+		$this->assertSame( 'image/svg+xml', get_post_mime_type( $data['id'] ) );
+
+		wp_delete_attachment( $data['id'], true );
+	}
+
+	/**
+	 * Test users with unfiltered_upload can finalize a file type that isn't allowed.
+	 */
+	public function test_validate_file_allows_unknown_type_with_unfiltered_upload() {
+		$cap_callback = function ( $caps, $cap ) {
+			return 'unfiltered_upload' === $cap ? array( 'upload_files' ) : $caps;
+		};
+		add_filter( 'map_meta_cap', $cap_callback, 10, 2 );
+
+		$content   = 'custom data';
+		$upload_id = $this->create_upload_session(
+			array(
+				'filename' => 'data.custom',
+				'filetype' => 'application/x-custom',
+				'length'   => strlen( $content ),
+			)
+		);
+
+		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
+		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
+		$request->set_header( 'Upload-Offset', '0' );
+		$request->set_body( $content );
+
+		$response = rest_get_server()->dispatch( $request );
+
+		remove_filter( 'map_meta_cap', $cap_callback, 10 );
+
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( 'application/x-custom', get_post_mime_type( $data['id'] ) );
+
+		wp_delete_attachment( $data['id'], true );
 	}
 
 	/**
