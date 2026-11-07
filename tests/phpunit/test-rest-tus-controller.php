@@ -396,12 +396,12 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test complete upload creates attachment.
 	 */
 	public function test_complete_upload_creates_attachment() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
-		$request->set_body( 'test data' );
+		$request->set_body( 'test data 123' );
 
 		$response = rest_get_server()->dispatch( $request );
 
@@ -427,12 +427,12 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * not wp_prepare_attachment_for_js() format.
 	 */
 	public function test_complete_upload_returns_rest_api_format() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
-		$request->set_body( 'test data' );
+		$request->set_body( 'test data 123' );
 
 		$response = rest_get_server()->dispatch( $request );
 		$data     = $response->get_data();
@@ -1100,7 +1100,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test upload_complete action is fired.
 	 */
 	public function test_upload_complete_action_fires() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
 		$action_fired = false;
 		$action_args  = array();
@@ -1117,7 +1117,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
-		$request->set_body( 'test data' );
+		$request->set_body( 'test data 123' );
 
 		$response = rest_get_server()->dispatch( $request );
 
@@ -1253,7 +1253,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test attachment data filter is applied.
 	 */
 	public function test_attachment_data_filter_applied() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
 		$filter_callback = function ( $data ) {
 			$data['filtered'] = true;
@@ -1264,7 +1264,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
-		$request->set_body( 'test data' );
+		$request->set_body( 'test data 123' );
 
 		$response = rest_get_server()->dispatch( $request );
 
@@ -1362,17 +1362,17 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test PATCH replayed at full offset after completion returns the same attachment.
 	 */
 	public function test_patch_replayed_after_completion_returns_same_attachment() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
-		$response = $this->send_chunk( $upload_id, 0, 'test data' );
+		$response = $this->send_chunk( $upload_id, 0, 'test data 123' );
 		$this->assertSame( 200, $response->get_status() );
 		$attachment_id = $response->get_data()['id'];
 
 		// A stale offset is still rejected.
-		$response = $this->send_chunk( $upload_id, 0, 'test data' );
+		$response = $this->send_chunk( $upload_id, 0, 'test data 123' );
 		$this->assertErrorResponse( 'rest_offset_mismatch', $response, 409 );
 
-		$response = $this->send_chunk( $upload_id, 9, 'test data' );
+		$response = $this->send_chunk( $upload_id, 13, 'test data 123' );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( $attachment_id, $response->get_data()['id'] );
 		$this->assertSame( 1, $this->count_attachments() );
@@ -1384,9 +1384,9 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test the completing PATCH sends the attachment ID header.
 	 */
 	public function test_complete_upload_sends_attachment_id_header() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
-		$response      = $this->send_chunk( $upload_id, 0, 'test data' );
+		$response      = $this->send_chunk( $upload_id, 0, 'test data 123' );
 		$attachment_id = $response->get_data()['id'];
 
 		$this->assertSame( (string) $attachment_id, (string) $response->get_headers()['X-WP-Upload-Attachment-ID'] );
@@ -1401,17 +1401,17 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * timeout) starts a new upload and creates a duplicate attachment.
 	 */
 	public function test_head_after_completion_returns_attachment() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
-		$response      = $this->send_chunk( $upload_id, 0, 'test data' );
+		$response      = $this->send_chunk( $upload_id, 0, 'test data 123' );
 		$attachment_id = $response->get_data()['id'];
 
 		$response = $this->send_head( $upload_id );
 		$headers  = $response->get_headers();
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( '9', (string) $headers['Upload-Offset'] );
-		$this->assertSame( '9', (string) $headers['Upload-Length'] );
+		$this->assertSame( '13', (string) $headers['Upload-Offset'] );
+		$this->assertSame( '13', (string) $headers['Upload-Length'] );
 		$this->assertSame( (string) $attachment_id, (string) $headers['X-WP-Upload-Attachment-ID'] );
 
 		$response = $this->send_head( $upload_id, 'GET' );
@@ -1428,14 +1428,14 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * upload done, and no attachment is ever created.
 	 */
 	public function test_head_finalizes_upload_with_all_bytes_received() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
-		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'test data', 0 );
+		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'test data 123', 0 );
 
 		$response = $this->send_head( $upload_id );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( '9', (string) $response->get_headers()['Upload-Offset'] );
+		$this->assertSame( '13', (string) $response->get_headers()['Upload-Offset'] );
 		$this->assertArrayHasKey( 'X-WP-Upload-Attachment-ID', $response->get_headers() );
 		$attachment_id = (int) $response->get_headers()['X-WP-Upload-Attachment-ID'];
 		$this->assertSame( 'attachment', get_post_type( $attachment_id ) );
@@ -1447,7 +1447,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test finalization resumes when PHP died before the file was moved.
 	 */
 	public function test_finalize_resumes_after_crash_before_move() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
 		$crash = static function () {
 			throw new RuntimeException( 'Simulated timeout' );
@@ -1455,7 +1455,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		add_filter( 'wp_handle_sideload_prefilter', $crash );
 
 		try {
-			$this->send_chunk( $upload_id, 0, 'test data' );
+			$this->send_chunk( $upload_id, 0, 'test data 123' );
 			$this->fail( 'Expected the simulated timeout.' );
 		} catch ( RuntimeException $e ) {
 			$this->assertSame( 'Simulated timeout', $e->getMessage() );
@@ -1469,7 +1469,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$this->assertArrayHasKey( 'id', (array) $response->get_data() );
 		$attachment_id = $response->get_data()['id'];
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading file in test.
-		$this->assertSame( 'test data', file_get_contents( get_attached_file( $attachment_id ) ) );
+		$this->assertSame( 'test data 123', file_get_contents( get_attached_file( $attachment_id ) ) );
 		$this->assertSame( 1, $this->count_attachments() );
 
 		wp_delete_attachment( $attachment_id, true );
@@ -1523,9 +1523,9 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test a request returns 423 while another request is finalizing the upload.
 	 */
 	public function test_finalize_returns_423_while_locked() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 		$storage   = new Uploads_Unleashed_TUS_Chunk_Storage();
-		$storage->append( $upload_id, 'test data', 0 );
+		$storage->append( $upload_id, 'test data 123', 0 );
 
 		$lock = $storage->lock( $upload_id );
 		$this->assertNotFalse( $lock );
@@ -1547,13 +1547,13 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test the chunk file is moved into place rather than copied.
 	 */
 	public function test_complete_upload_moves_chunk_file() {
-		$upload_id  = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id  = $this->create_upload_session( array( 'length' => 13 ) );
 		$chunk_path = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_path( $upload_id );
 
 		$this->send_chunk( $upload_id, 0, 'test' );
 		$inode = fileinode( $chunk_path );
 
-		$response      = $this->send_chunk( $upload_id, 4, ' data' );
+		$response      = $this->send_chunk( $upload_id, 4, ' data 123' );
 		$attachment_id = $response->get_data()['id'];
 
 		$this->assertSame( $inode, fileinode( get_attached_file( $attachment_id ) ) );
@@ -1572,10 +1572,12 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 			/**
 			 * Fails like a database error would.
 			 *
-			 * @param array $upload_result The upload result.
+			 * @param array  $upload_result The upload result.
+			 * @param string $upload_id     The upload ID.
+			 * @param array  $params        The upload params.
 			 * @return WP_Error Always.
 			 */
-			protected function create_attachment( array $upload_result ) {
+			protected function create_attachment( array $upload_result, string $upload_id = '', array $params = array() ) {
 				return new WP_Error( 'db_insert_error', 'Could not insert post into the database.', array( 'status' => 500 ) );
 			}
 		};
@@ -1607,9 +1609,9 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test DELETE after completion removes the tombstone but keeps the attachment.
 	 */
 	public function test_delete_after_completion_keeps_attachment() {
-		$upload_id = $this->create_upload_session( array( 'length' => 9 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 13 ) );
 
-		$attachment_id = $this->send_chunk( $upload_id, 0, 'test data' )->get_data()['id'];
+		$attachment_id = $this->send_chunk( $upload_id, 0, 'test data 123' )->get_data()['id'];
 
 		$response = rest_get_server()->dispatch( new WP_REST_Request( 'DELETE', '/wp/v2/media/' . $upload_id ) );
 		$this->assertSame( 204, $response->get_status() );
@@ -1677,7 +1679,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test PATCH resumes at the bytes on disk when the session offset lags behind.
 	 */
 	public function test_patch_resumes_at_bytes_on_disk_when_session_offset_lags() {
-		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 16 ) );
 
 		$this->send_chunk( $upload_id, 0, 'aaaaa' );
 		( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'bb', 5 );
@@ -1686,12 +1688,12 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$response = $this->send_chunk( $upload_id, 5, 'bbccc' );
 		$this->assertErrorResponse( 'rest_offset_mismatch', $response, 409 );
 
-		$response = $this->send_chunk( $upload_id, 7, 'ccc' );
+		$response = $this->send_chunk( $upload_id, 7, 'ccccccccc' );
 		$this->assertSame( 200, $response->get_status() );
 
 		$attachment_id = $response->get_data()['id'];
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading file in test.
-		$this->assertSame( 'aaaaabbccc', file_get_contents( get_attached_file( $attachment_id ) ) );
+		$this->assertSame( 'aaaaabbccccccccc', file_get_contents( get_attached_file( $attachment_id ) ) );
 
 		wp_delete_attachment( $attachment_id, true );
 	}
@@ -1700,7 +1702,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test an upload stays resumable when the session offset fails to save.
 	 */
 	public function test_upload_resumes_when_session_offset_update_fails() {
-		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 16 ) );
 
 		// Keep the stored value unchanged, so set_transient() returns false.
 		$block_update = static function ( $value, $old_value ) {
@@ -1719,7 +1721,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$response = rest_get_server()->dispatch( $request );
 		$this->assertSame( '5', (string) $response->get_headers()['Upload-Offset'] );
 
-		$response = $this->send_chunk( $upload_id, 5, 'bbbbb' );
+		$response = $this->send_chunk( $upload_id, 5, 'bbbbbbbbbbb' );
 		$this->assertSame( 200, $response->get_status() );
 
 		wp_delete_attachment( $response->get_data()['id'], true );
@@ -1774,9 +1776,9 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 	 * Test PATCH truncates chunk data exceeding declared Upload-Length.
 	 */
 	public function test_patch_truncates_oversized_chunk() {
-		$upload_id = $this->create_upload_session( array( 'length' => 10 ) );
+		$upload_id = $this->create_upload_session( array( 'length' => 16 ) );
 
-		// Send 20 bytes when only 10 are expected.
+		// Send 20 bytes when only 16 are expected.
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
@@ -1784,10 +1786,10 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 
 		$response = rest_get_server()->dispatch( $request );
 
-		// Upload should complete at exactly 10 bytes.
+		// Upload should complete at exactly 16 bytes.
 		$this->assertSame( 200, $response->get_status() );
 		$headers = $response->get_headers();
-		$this->assertSame( '10', (string) $headers['Upload-Offset'] );
+		$this->assertSame( '16', (string) $headers['Upload-Offset'] );
 
 		// Cleanup.
 		$data = $response->get_data();
@@ -2038,7 +2040,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		};
 		add_filter( 'map_meta_cap', $cap_callback, 10, 2 );
 
-		$content   = 'custom data';
+		$content   = 'custom data file';
 		$upload_id = $this->create_upload_session(
 			array(
 				'filename' => 'data.custom',
@@ -2071,7 +2073,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 			array(
 				'filename' => 'test.txt',
 				'filetype' => 'text/plain',
-				'length'   => 9,
+				'length'   => 13,
 			)
 		);
 
@@ -2087,7 +2089,7 @@ class Test_Uploads_Unleashed_TUS_Controller extends WP_Test_REST_Controller_Test
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
-		$request->set_body( 'test data' );
+		$request->set_body( 'test data 123' );
 
 		$response = rest_get_server()->dispatch( $request );
 

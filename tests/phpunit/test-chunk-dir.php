@@ -187,7 +187,7 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 		add_filter( 'upload_dir', $this->upload_dir_filter );
 		add_filter( 'uploads_unleashed_chunk_dir', $this->chunk_dir_filter );
 
-		$response = rest_get_server()->dispatch( $this->create_request( 9 ) );
+		$response = rest_get_server()->dispatch( $this->create_request( 14 ) );
 		$this->assertSame( 201, $response->get_status(), wp_json_encode( $response->get_data() ) );
 
 		$upload_id = basename( $response->get_headers()['Location'] );
@@ -195,7 +195,7 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 		$request = new WP_REST_Request( 'PATCH', '/wp/v2/media/' . $upload_id );
 		$request->set_header( 'Content-Type', 'application/offset+octet-stream' );
 		$request->set_header( 'Upload-Offset', '0' );
-		$request->set_body( 'test data' );
+		$request->set_body( 'test data file' );
 
 		$response = rest_get_server()->dispatch( $request );
 
@@ -203,7 +203,7 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 
 		$file = get_attached_file( $response->get_data()['id'] );
 		$this->assertStringStartsWith( 'uutest://uploads/', $file );
-		$this->assertSame( 'test data', file_get_contents( Uploads_Unleashed_Test_Stream_Wrapper::local_path( $file ) ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$this->assertSame( 'test data file', file_get_contents( Uploads_Unleashed_Test_Stream_Wrapper::local_path( $file ) ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		$this->assertFalse( ( new Uploads_Unleashed_TUS_Chunk_Storage() )->exists( $upload_id ) );
 	}
 

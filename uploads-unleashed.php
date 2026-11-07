@@ -28,6 +28,7 @@ define( 'UPLOADS_UNLEASHED_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-tus-upload-session.php';
 require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-tus-chunk-storage.php';
 require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-tus-controller.php';
+require_once UPLOADS_UNLEASHED_PLUGIN_DIR . 'includes/class-uploads-unleashed-tus-attachments-controller.php';
 
 /**
  * Initializes the plugin.

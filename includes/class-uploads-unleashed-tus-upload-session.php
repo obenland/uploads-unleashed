@@ -88,6 +88,7 @@ class Uploads_Unleashed_TUS_Upload_Session {
 	 *     @type string $filename The filename.
 	 *     @type string $filetype The MIME type.
 	 *     @type int    $length   The total file size in bytes.
+	 *     @type array  $params   Params of POST /wp/v2/media to apply when finalizing.
 	 * }
 	 * @param WP_REST_Request $request The REST request object.
 	 * @return string|WP_Error The upload ID on success, WP_Error on failure.
@@ -103,6 +104,7 @@ class Uploads_Unleashed_TUS_Upload_Session {
 			'length'     => (int) ( $data['length'] ?? 0 ),
 			'offset'     => 0,
 			'status'     => self::STATUS_UPLOADING,
+			'params'     => $data['params'] ?? array(),
 			'created_at' => $now,
 			'expires_at' => $now + $expiration,
 		);

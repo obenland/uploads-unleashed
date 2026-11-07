@@ -148,6 +148,7 @@ const tusMiddleware = async ( options, next ) => {
 		// Try TUS upload
 		return await upload( file, {
 			signal: options.signal,
+			params: Object.fromEntries( options.body ),
 		} );
 	} catch ( error ) {
 		// The server answered and turned the upload down: show its message.

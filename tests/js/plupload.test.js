@@ -208,6 +208,18 @@ describe( 'handleBeforeUpload', () => {
 		);
 	} );
 
+	it( 'passes the post the media modal uploads to', () => {
+		const nativeFile = new File( [ 'test' ], 'test.txt' );
+		uploader.settings = { multipart_params: { post_id: 42 } };
+
+		beforeUploadHandler( uploader, createMockFile( nativeFile ) );
+
+		expect( upload ).toHaveBeenCalledWith(
+			nativeFile,
+			expect.objectContaining( { params: { post: 42 } } )
+		);
+	} );
+
 	describe( 'onProgress callback', () => {
 		it( 'updates file.attachment model when present', async () => {
 			const nativeFile = new File( [ 'test' ], 'test.txt', {

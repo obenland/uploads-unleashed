@@ -187,8 +187,8 @@ class Test_Uploads_Unleashed_Multisite_Upload_Limits extends WP_UnitTestCase {
 		add_filter( 'get_space_allowed', $space_allowed );
 		add_filter( 'pre_get_space_used', $space_used );
 
-		$upload_id = $this->get_upload_id( $this->create_upload( 9 ) );
-		$response  = $this->patch_upload( $upload_id, 'test data' );
+		$upload_id = $this->get_upload_id( $this->create_upload( 14 ) );
+		$response  = $this->patch_upload( $upload_id, 'test data file' );
 		$this->track_attachment( $response );
 
 		remove_filter( 'get_space_allowed', $space_allowed );

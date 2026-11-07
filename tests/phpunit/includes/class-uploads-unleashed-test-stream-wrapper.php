@@ -161,6 +161,30 @@ class Uploads_Unleashed_Test_Stream_Wrapper {
 	}
 
 	/**
+	 * Moves the file pointer, like remote wrappers do for reads.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int $offset The offset.
+	 * @param int $whence SEEK_SET, SEEK_CUR or SEEK_END.
+	 * @return bool Whether the pointer moved.
+	 */
+	public function stream_seek( int $offset, int $whence = SEEK_SET ): bool {
+		return 0 === fseek( $this->handle, $offset, $whence );
+	}
+
+	/**
+	 * Returns the position of the file pointer.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return int The position.
+	 */
+	public function stream_tell(): int {
+		return (int) ftell( $this->handle );
+	}
+
+	/**
 	 * Returns information about the open file.
 	 *
 	 * @since 1.2.0

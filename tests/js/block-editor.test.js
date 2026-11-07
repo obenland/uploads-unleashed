@@ -321,9 +321,35 @@ describe( 'tusMiddleware', () => {
 
 			await tusMiddleware( options, next );
 
-			expect( upload ).toHaveBeenCalledWith( file, {
-				signal: controller.signal,
-			} );
+			expect( upload ).toHaveBeenCalledWith(
+				file,
+				expect.objectContaining( { signal: controller.signal } )
+			);
+		} );
+
+		it( 'passes the form fields to upload as params', async () => {
+			const file = new File( [ 'test' ], 'test.txt' );
+			const formData = new FormData();
+			formData.append( 'file', file );
+			formData.append( 'post', '42' );
+			formData.append( 'alt_text', 'A test file' );
+
+			upload.mockResolvedValue( { id: 123 } );
+
+			await tusMiddleware(
+				{ path: '/wp/v2/media', method: 'POST', body: formData },
+				next
+			);
+
+			expect( upload ).toHaveBeenCalledWith(
+				file,
+				expect.objectContaining( {
+					params: expect.objectContaining( {
+						post: '42',
+						alt_text: 'A test file',
+					} ),
+				} )
+			);
 		} );
 
 		it( 'returns attachment data on successful upload', async () => {

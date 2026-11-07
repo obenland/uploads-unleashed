@@ -123,6 +123,8 @@ The main REST API controller implementing TUS 1.0.0:
 - Checksum verification (SHA256, SHA1, MD5)
 - Expiration (24 hours after creation or the last chunk, filterable with `uploads_unleashed_upload_expiration`)
 
+**Upload context:** `Upload-Metadata` also carries the params of core's `POST /wp/v2/media` that the block editor and media library send: `post`, `title`, `caption`, `description`, `alt_text`, `generate_sub_sizes` and `convert_format`. Creation requires `edit_post` on `post`, as core does. Finalization creates the attachment with `Uploads_Unleashed_TUS_Attachments_Controller`, a subclass of core's attachments controller that runs core's `create_item()` on the moved file, so the params, EXIF/IPTC defaults and insert hooks behave exactly as in core.
+
 **Security:**
 - User authentication required
 - Ownership verification
@@ -151,6 +153,7 @@ Manages upload session metadata using WordPress transients:
     'length'     => 5242880,
     'offset'     => 0,
     'status'     => 'uploading', // 'finalizing', then 'finalized'.
+    'params'     => [ 'post' => 42 ], // Upload context from Upload-Metadata.
     'created_at' => 1700000000,
     'expires_at' => 1700086400,
 ]

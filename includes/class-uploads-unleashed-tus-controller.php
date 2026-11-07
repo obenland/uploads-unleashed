@@ -181,6 +181,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_cannot_create_upload', __( 'Sorry, you are not allowed to upload files.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
+		// Attaching media to a post requires the ability to edit it, as in core.
+		$params = $this->get_upload_params( $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) ) );
+		if ( ! empty( $params['post'] ) && ! current_user_can( 'edit_post', $params['post'] ) ) {
+			return new WP_Error( 'rest_cannot_edit', __( 'Sorry, you are not allowed to upload media to this post.', 'uploads-unleashed' ), array( 'status' => rest_authorization_required_code() ) );
+		}
+
 		return true;
 	}
 
@@ -376,6 +382,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 				'filename' => $filename,
 				'filetype' => $metadata['filetype'] ?? 'application/octet-stream',
 				'length'   => $upload_length,
+				'params'   => $this->get_upload_params( $metadata ),
 			),
 			$request
 		);
@@ -742,7 +749,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$creating = empty( $upload_data['attachment_id'] );
 
 		if ( $creating ) {
-			$attachment_id = $this->create_attachment( $upload_data['file'] );
+			$attachment_id = $this->create_attachment( $upload_data['file'], $upload_id, $upload_data['params'] ?? array() );
 
 			if ( is_wp_error( $attachment_id ) ) {
 				// The file was already moved out of the chunk directory.
@@ -753,20 +760,14 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			}
 
 			$upload_data['attachment_id'] = $attachment_id;
-			$session->update( $upload_id, array( 'attachment_id' => $attachment_id ) );
-
-			/*
-			 * Like core, send the attachment ID before the slow part, so a client
-			 * whose request dies during metadata generation still learns it.
-			 */
-			if ( defined( 'REST_REQUEST' ) && REST_REQUEST && ! headers_sent() ) {
-				header( 'X-WP-Upload-Attachment-ID: ' . $attachment_id );
-			}
 		}
 
 		$attachment_id = (int) $upload_data['attachment_id'];
 
-		$this->generate_attachment_metadata( $attachment_id, $upload_data['file']['file'], $creating );
+		// Core's create_item() generated the metadata unless this resumes an interrupted run.
+		if ( ! $creating ) {
+			$this->generate_attachment_metadata( $attachment_id, $upload_data['file']['file'], $creating, $upload_data['params'] ?? array() );
+		}
 
 		$this->mark_finalized( $upload_id, array( 'attachment_id' => $attachment_id ) );
 
@@ -1034,31 +1035,44 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Creates the WordPress attachment post.
 	 *
-	 * @since 0.1.0
-	 * @since 1.2.0 No longer generates the attachment metadata, see generate_attachment_metadata().
+	 * Runs core's POST /wp/v2/media handler on the moved file, so the
+	 * upload's params, EXIF/IPTC defaults, core's insert hooks and
+	 * metadata generation all work as for core's own uploads. The
+	 * attachment ID is saved in the session as soon as the post exists,
+	 * so an interrupted metadata generation can resume.
 	 *
-	 * @param array $upload_result The upload result from sideload_to_uploads().
+	 * @since 0.1.0
+	 * @since 1.2.0 Creates the attachment through core's attachments controller. Added `$upload_id` and `$params`.
+	 *
+	 * @param array  $upload_result The upload result from sideload_to_uploads().
+	 * @param string $upload_id     Optional. The upload ID. Default empty.
+	 * @param array  $params        Optional. Params of POST /wp/v2/media from Upload-Metadata. Default empty.
 	 * @return int|WP_Error Attachment ID on success, WP_Error on failure.
 	 */
-	protected function create_attachment( array $upload_result ) {
-		$filename = basename( $upload_result['file'] );
-
-		$attachment = array(
-			'post_mime_type' => $upload_result['type'],
-			'post_title'     => preg_replace( '/\.[^.]+$/', '', $filename ),
-			'post_status'    => 'inherit',
-			'guid'           => $upload_result['url'],
-		);
-
-		$attachment_id = wp_insert_attachment( $attachment, $upload_result['file'] );
-
-		if ( is_wp_error( $attachment_id ) ) {
-			wp_delete_file( $upload_result['file'] );
-
-			return $attachment_id;
+	protected function create_attachment( array $upload_result, string $upload_id = '', array $params = array() ) {
+		$request = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		foreach ( $params as $key => $value ) {
+			$request->set_param( $key, $value );
 		}
 
-		return $attachment_id;
+		$record_attachment = static function ( WP_Post $attachment, WP_REST_Request $insert_request ) use ( $request, $upload_id ): void {
+			if ( $insert_request === $request ) {
+				( new Uploads_Unleashed_TUS_Upload_Session() )->update( $upload_id, array( 'attachment_id' => $attachment->ID ) );
+			}
+		};
+		add_action( 'rest_insert_attachment', $record_attachment, PHP_INT_MIN, 2 );
+
+		$response = ( new Uploads_Unleashed_TUS_Attachments_Controller( $upload_result ) )->create_item( $request );
+
+		remove_action( 'rest_insert_attachment', $record_attachment, PHP_INT_MIN );
+
+		if ( is_wp_error( $response ) ) {
+			wp_delete_file( $upload_result['file'] );
+
+			return $response;
+		}
+
+		return (int) $response->get_data()['id'];
 	}
 
 	/**
@@ -1068,23 +1082,45 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 * sub-sizes are created, like core's REST API does when it retries
 	 * post-processing.
 	 *
+	 * Honors `generate_sub_sizes` and `convert_format` with the same
+	 * filters core's create_item() uses.
+	 *
 	 * @since 1.2.0
 	 *
 	 * @param int    $attachment_id The attachment ID.
 	 * @param string $file          Path to the attachment file.
 	 * @param bool   $creating      Whether the attachment was created in this request.
+	 * @param array  $params        Optional. Params of POST /wp/v2/media from Upload-Metadata. Default empty.
 	 */
-	protected function generate_attachment_metadata( int $attachment_id, string $file, bool $creating ): void {
+	protected function generate_attachment_metadata( int $attachment_id, string $file, bool $creating, array $params = array() ): void {
 		require_once ABSPATH . 'wp-admin/includes/image.php';
 		require_once ABSPATH . 'wp-admin/includes/media.php';
 
-		if ( ! $creating && wp_attachment_is_image( $attachment_id ) ) {
-			wp_update_image_subsizes( $attachment_id );
-
-			return;
+		$filters = array();
+		if ( false === ( $params['generate_sub_sizes'] ?? null ) ) {
+			$filters = array(
+				'intermediate_image_sizes_advanced' => '__return_empty_array',
+				'fallback_intermediate_image_sizes' => '__return_empty_array',
+				'wp_image_maybe_exif_rotate'        => '__return_false',
+				'big_image_size_threshold'          => '__return_false',
+			);
+		}
+		if ( false === ( $params['convert_format'] ?? null ) ) {
+			$filters['image_editor_output_format'] = '__return_empty_array';
+		}
+		foreach ( $filters as $hook => $callback ) {
+			add_filter( $hook, $callback, 100 );
 		}
 
-		wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $file ) );
+		if ( ! $creating && wp_attachment_is_image( $attachment_id ) ) {
+			wp_update_image_subsizes( $attachment_id );
+		} else {
+			wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $file ) );
+		}
+
+		foreach ( $filters as $hook => $callback ) {
+			remove_filter( $hook, $callback, 100 );
+		}
 	}
 
 	/**
@@ -1352,6 +1388,30 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		return $response;
+	}
+
+	/**
+	 * Extracts the params of core's POST /wp/v2/media from Upload-Metadata.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param array $metadata Parsed Upload-Metadata.
+	 * @return array The parent `post` (int), the text fields, and the `generate_sub_sizes` and `convert_format` flags (bool).
+	 */
+	private function get_upload_params( array $metadata ): array {
+		$params = array_intersect_key( $metadata, array_flip( array( 'title', 'caption', 'description', 'alt_text' ) ) );
+
+		if ( ! empty( $metadata['post'] ) ) {
+			$params['post'] = absint( $metadata['post'] );
+		}
+
+		foreach ( array( 'generate_sub_sizes', 'convert_format' ) as $flag ) {
+			if ( isset( $metadata[ $flag ] ) ) {
+				$params[ $flag ] = rest_sanitize_boolean( $metadata[ $flag ] );
+			}
+		}
+
+		return $params;
 	}
 
 	/**

@@ -94,6 +94,34 @@ describe( 'upload', () => {
 		);
 	} );
 
+	it( 'carries upload params in the metadata', () => {
+		const file = new File( [ 'test' ], 'test.txt', {
+			type: 'text/plain',
+		} );
+
+		upload( file, {
+			params: {
+				file,
+				post: 42,
+				title: 'Title',
+				caption: '',
+				alt_text: 'Alt',
+				generate_sub_sizes: false,
+				status: 'publish',
+				filename: 'evil.php',
+			},
+		} );
+
+		expect( tus.Upload.mock.calls[ 0 ][ 1 ].metadata ).toEqual( {
+			post: '42',
+			title: 'Title',
+			alt_text: 'Alt',
+			generate_sub_sizes: 'false',
+			filename: 'test.txt',
+			filetype: 'text/plain',
+		} );
+	} );
+
 	it( 'uses fixed 5MB chunk size', () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
