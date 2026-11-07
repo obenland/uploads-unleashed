@@ -1,5 +1,5 @@
 {
-	"template": "#{{CHANGELOG}}\n\n#{{UNCATEGORIZED}}\n\n**Full Changelog**: #{{RELEASE_DIFF}}",
+	"template": "#{{CHANGELOG}}\n\n**Full Changelog**: #{{UNCATEGORIZED}}",
 	"pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
 	"empty_template": "- no changes",
 	"categories": [
