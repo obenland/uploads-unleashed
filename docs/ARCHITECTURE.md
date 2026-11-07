@@ -121,7 +121,7 @@ The main REST API controller implementing TUS 1.0.0:
 - Creation
 - Termination
 - Checksum verification (SHA256, SHA1, MD5)
-- Expiration (24 hours)
+- Expiration (24 hours after creation or the last chunk, filterable with `uploads_unleashed_upload_expiration`)
 
 **Security:**
 - User authentication required
@@ -203,7 +203,7 @@ Manages physical chunk files on disk:
    - Creates an empty chunk file, which reserves the upload's length
 
 3. Response: 201 Created
-   Headers: Location, Upload-Offset: 0
+   Headers: Location, Upload-Expires
 ```
 
 ### Chunk Upload
@@ -227,7 +227,8 @@ Manages physical chunk files on disk:
 
 3. If offset < length:
    Response: 204 No Content
-   Headers: Upload-Offset: {new_offset}
+   Headers: Upload-Offset: {new_offset}, Upload-Expires
+   (each chunk moves the expiration forward)
 
 4. If offset == length (complete):
    - finalize_upload() called under the upload's lock (423 if held)
@@ -269,6 +270,7 @@ Manages physical chunk files on disk:
 |--------|---------|
 | `uploads_unleashed_max_upload_size` | Modify max file size |
 | `uploads_unleashed_max_chunk_size` | Modify max chunk size per PATCH |
+| `uploads_unleashed_upload_expiration` | Modify how long an idle upload lives |
 | `uploads_unleashed_chunk_dir` | Move the chunk directory (required for S3/VIP uploads) |
 | `uploads_unleashed_session_data` | Add custom session data |
 | `uploads_unleashed_pre_finalize` | Validate before finalizing |

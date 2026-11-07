@@ -1540,6 +1540,28 @@ describe( 'ExpiringUrlStorage', () => {
 				expectedExpiration + 1000
 			);
 		} );
+
+		it( 'uses the upload expiration localized from the server', async () => {
+			// wp_localize_script() passes scalars as strings.
+			window.uploadsUnleashed.uploadExpiration = '3600';
+
+			const file = new File( [ 'test' ], 'test.txt' );
+			upload( file );
+
+			const urlStorage = tus.Upload.mock.calls[ 0 ][ 1 ].urlStorage;
+			const now = Date.now();
+
+			const key = await urlStorage.addUpload( 'fingerprint', {
+				uploadUrl: '/test',
+			} );
+
+			const expiresAt = parseInt( key.split( '::' )[ 2 ], 10 );
+
+			expect( expiresAt - now ).toBeGreaterThanOrEqual(
+				3600 * 1000 - 1000
+			);
+			expect( expiresAt - now ).toBeLessThanOrEqual( 3600 * 1000 + 1000 );
+		} );
 	} );
 
 	describe( 'storage failures', () => {

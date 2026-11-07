@@ -51,6 +51,29 @@ add_filter( 'uploads_unleashed_max_chunk_size', function( $max_chunk_size, $requ
 
 ---
 
+### `uploads_unleashed_upload_expiration`
+
+Override how long an upload session lives, in seconds.
+
+The session expires this long after it was created or last received a chunk, so an upload that keeps making progress doesn't expire. The resulting time is sent in `Upload-Expires`. The value is also passed to the browser, which keeps its record of an upload for that long after creating it. Values below 1 fall back to the default.
+
+**Since:** 1.2.0
+
+**Parameters:**
+- `$expiration` (int) - The lifetime in seconds. Default `DAY_IN_SECONDS`.
+
+**Return:** int - The lifetime in seconds.
+
+**Example:**
+```php
+add_filter( 'uploads_unleashed_upload_expiration', function( $expiration ) {
+    // Keep interrupted uploads resumable for a week.
+    return WEEK_IN_SECONDS;
+} );
+```
+
+---
+
 ### `uploads_unleashed_chunk_dir`
 
 Override the directory that holds in-progress upload chunks until the upload completes. The default is `.tus-chunks` in the uploads directory.

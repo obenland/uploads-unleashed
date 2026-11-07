@@ -338,6 +338,74 @@ class Test_Uploads_Unleashed_TUS_Upload_Session extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that update_offset moves the expiration forward, so active uploads don't expire.
+	 */
+	public function test_update_offset_slides_expiration() {
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$upload_id = $this->session->create(
+			array(
+				'filename' => 'test.txt',
+				'length'   => 1024,
+			),
+			$request
+		);
+
+		// Pretend the upload was created almost a day ago.
+		$data               = $this->session->get( $upload_id );
+		$data['expires_at'] = time() + MINUTE_IN_SECONDS;
+		set_transient( 'tus_upload_' . $upload_id, $data, MINUTE_IN_SECONDS );
+
+		$this->session->update_offset( $upload_id, 512 );
+
+		$this->assertGreaterThanOrEqual( time() + DAY_IN_SECONDS - 5, $this->session->get( $upload_id )['expires_at'] );
+	}
+
+	/**
+	 * Tests that the uploads_unleashed_upload_expiration filter sets the session lifetime.
+	 */
+	public function test_upload_expiration_filter_sets_lifetime() {
+		$filter_callback = function () {
+			return HOUR_IN_SECONDS;
+		};
+		add_filter( 'uploads_unleashed_upload_expiration', $filter_callback );
+
+		$request   = new WP_REST_Request( 'POST', '/wp/v2/media' );
+		$upload_id = $this->session->create(
+			array(
+				'filename' => 'test.txt',
+				'length'   => 1024,
+			),
+			$request
+		);
+		$created   = $this->session->get( $upload_id );
+
+		$this->session->update_offset( $upload_id, 512 );
+		$updated = $this->session->get( $upload_id );
+
+		remove_filter( 'uploads_unleashed_upload_expiration', $filter_callback );
+
+		$this->assertSame( $created['created_at'] + HOUR_IN_SECONDS, $created['expires_at'] );
+		$this->assertLessThanOrEqual( time() + HOUR_IN_SECONDS, $updated['expires_at'] );
+		$this->assertGreaterThanOrEqual( time() + HOUR_IN_SECONDS - 5, $updated['expires_at'] );
+	}
+
+	/**
+	 * Tests that an invalid expiration from the filter falls back to the default.
+	 */
+	public function test_upload_expiration_filter_ignores_invalid_values() {
+		$filter_callback = function () {
+			return 0;
+		};
+		add_filter( 'uploads_unleashed_upload_expiration', $filter_callback );
+
+		$expiration = Uploads_Unleashed_TUS_Upload_Session::get_expiration();
+
+		remove_filter( 'uploads_unleashed_upload_expiration', $filter_callback );
+
+		$this->assertSame( DAY_IN_SECONDS, $expiration );
+	}
+
+	/**
 	 * Tests that create handles missing filetype gracefully.
 	 */
 	public function test_create_handles_missing_filetype() {
