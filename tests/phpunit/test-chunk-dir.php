@@ -42,6 +42,14 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	private string $custom_dir = '';
 
 	/**
+	 * Files, symlinks, and directories a test created outside the chunk directory.
+	 *
+	 * @since 1.2.0
+	 * @var string[]
+	 */
+	private array $cleanup_paths = array();
+
+	/**
 	 * Filter callback that points the uploads directory at the stream wrapper.
 	 *
 	 * @since 1.2.0
@@ -105,6 +113,14 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 	 * @since 1.2.0
 	 */
 	public function tear_down(): void {
+		foreach ( $this->cleanup_paths as $path ) {
+			if ( is_link( $path ) || is_file( $path ) ) {
+				unlink( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+			} else {
+				$this->delete_tree( $path );
+			}
+		}
+
 		Uploads_Unleashed_TUS_Chunk_Storage::delete_all();
 
 		remove_filter( 'upload_dir', $this->upload_dir_filter );
@@ -345,6 +361,127 @@ class Test_Uploads_Unleashed_Chunk_Dir extends WP_UnitTestCase {
 		new Uploads_Unleashed_TUS_Chunk_Storage();
 
 		$this->assertStringContainsString( 'Require all denied', file_get_contents( $htaccess_file ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+	}
+
+	/**
+	 * Tests that the temp chunk directory's name can't be derived from public information.
+	 *
+	 * @since 1.2.0
+	 */
+	public function test_temp_chunk_dir_name_is_not_predictable(): void {
+		add_filter( 'upload_dir', $this->upload_dir_filter );
+
+		$chunk_dir = Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir();
+
+		$this->assertStringNotContainsString( md5( 'uutest://uploads' ), $chunk_dir );
+		$this->assertStringNotContainsString( md5( 'uutest://uploads/' ), $chunk_dir );
+	}
+
+	/**
+	 * Tests that a temp chunk directory someone else could access is refused.
+	 *
+	 * Simulates another local user creating the directory first.
+	 *
+	 * @since 1.2.0
+	 */
+	public function test_pre_existing_shared_temp_chunk_dir_is_refused(): void {
+		$this->skip_without_posix_permissions();
+		add_filter( 'upload_dir', $this->upload_dir_filter );
+
+		$chunk_dir             = untrailingslashit( Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() );
+		$this->cleanup_paths[] = $chunk_dir;
+		mkdir( $chunk_dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
+		chmod( $chunk_dir, 0777 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod
+
+		$upload_id = wp_generate_uuid4();
+		$result    = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'secret', 0 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'tus_chunk_dir_unsafe', $result->get_error_code() );
+		$this->assertFileDoesNotExist( $chunk_dir . '/' . $upload_id . '.part' );
+	}
+
+	/**
+	 * Tests that a temp chunk directory planted as a symlink is refused.
+	 *
+	 * @since 1.2.0
+	 */
+	public function test_symlinked_temp_chunk_dir_is_refused(): void {
+		$this->skip_without_posix_permissions();
+		add_filter( 'upload_dir', $this->upload_dir_filter );
+
+		$chunk_dir = untrailingslashit( Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir() );
+		$target    = $this->custom_dir;
+		mkdir( $target, 0700 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_mkdir
+		symlink( $target, $chunk_dir );
+		$this->cleanup_paths[] = $chunk_dir;
+
+		$upload_id = wp_generate_uuid4();
+		$result    = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->append( $upload_id, 'secret', 0 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'tus_chunk_dir_unsafe', $result->get_error_code() );
+		$this->assertFileDoesNotExist( $target . '/' . $upload_id . '.part' );
+	}
+
+	/**
+	 * Tests that a chunk file planted as a symlink isn't written through.
+	 *
+	 * @since 1.2.0
+	 */
+	public function test_symlinked_chunk_file_is_refused(): void {
+		$this->skip_without_posix_permissions();
+
+		$storage   = new Uploads_Unleashed_TUS_Chunk_Storage();
+		$upload_id = wp_generate_uuid4();
+		$target    = $this->custom_dir . '.target';
+		file_put_contents( $target, '' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		$this->cleanup_paths[] = $target;
+		symlink( $target, $storage->get_path( $upload_id ) );
+		$this->cleanup_paths[] = $storage->get_path( $upload_id );
+
+		$result = $storage->append( $upload_id, 'secret', 0 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'tus_chunk_unsafe_path', $result->get_error_code() );
+		$this->assertSame( '', file_get_contents( $target ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+	}
+
+	/**
+	 * Tests that protection files planted as symlinks aren't written through.
+	 *
+	 * @since 1.2.0
+	 */
+	public function test_symlinked_protection_files_are_not_written_through(): void {
+		$this->skip_without_posix_permissions();
+
+		new Uploads_Unleashed_TUS_Chunk_Storage();
+		$chunk_dir = Uploads_Unleashed_TUS_Chunk_Storage::get_chunk_dir();
+		$target    = $this->custom_dir . '.target';
+		file_put_contents( $target, 'untouched' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+
+		foreach ( array( '.htaccess', 'index.php' ) as $file ) {
+			wp_delete_file( $chunk_dir . $file );
+			symlink( $target, $chunk_dir . $file );
+			$this->cleanup_paths[] = $chunk_dir . $file;
+		}
+		$this->cleanup_paths[] = $target;
+
+		$this->reset_cached_chunk_dir();
+		new Uploads_Unleashed_TUS_Chunk_Storage();
+
+		$this->assertSame( 'untouched', file_get_contents( $target ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+	}
+
+	/**
+	 * Skips the test where symlinks and POSIX permissions aren't available.
+	 *
+	 * @since 1.2.0
+	 */
+	private function skip_without_posix_permissions(): void {
+		if ( 'WIN' === strtoupper( substr( PHP_OS, 0, 3 ) ) ) {
+			$this->markTestSkipped( 'Symlinks and POSIX permissions are not reliably available on Windows.' );
+		}
 	}
 
 	/**
