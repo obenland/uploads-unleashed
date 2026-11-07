@@ -357,6 +357,18 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test that the client gets an endpoint to refresh an expired REST nonce.
+	 */
+	public function test_register_scripts_localizes_nonce_endpoint() {
+		$data = wp_scripts()->get_data( 'uploads-unleashed', 'data' );
+
+		$this->assertStringContainsString(
+			'"nonceEndpoint":"' . admin_url( 'admin-ajax.php?action=rest-nonce' ) . '"',
+			$data
+		);
+	}
+
+	/**
 	 * Test that style is registered after register_scripts runs.
 	 */
 	public function test_register_scripts_registers_style() {
