@@ -3,37 +3,8 @@ name: E2E Tests
 on:
     push:
         branches: [trunk]
-        paths:
-            - 'src/**'
-            - 'includes/**'
-            - 'build/**'
-            - 'tests/e2e/**'
-            - 'uploads-unleashed.php'
-            - 'composer.json'
-            - 'composer.lock'
-            - 'playwright.config.ts'
-            - '.wp-env.json'
-            - '.wp-env.tests.json'
-            - 'package.json'
-            - 'package-lock.json'
-            - '.github/workflows/test-e2e.yml'
     pull_request:
         branches: [trunk]
-        paths:
-            - 'src/**'
-            - 'includes/**'
-            - 'build/**'
-            - 'tests/e2e/**'
-            - 'uploads-unleashed.php'
-            - 'composer.json'
-            - 'composer.lock'
-            - 'playwright.config.ts'
-            - '.wp-env.json'
-            - '.wp-env.tests.json'
-            - 'package.json'
-            - 'package-lock.json'
-            - '.github/workflows/test-e2e.yml'
-            - 'README.md'
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

@@ -33,6 +33,7 @@ webpack.config.js
 .eslintrc.json
 .prettierignore
 tests
+/bin
 phpcs.xml.dist
 phpunit.xml.dist
 playwright.config.ts

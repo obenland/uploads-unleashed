@@ -14,21 +14,24 @@ jobs:
             matrix:
                 php: ['7.4', '8.4']
 
+        env:
+            WP_CORE_DIR: /tmp/wordpress
+            WP_TESTS_DIR: /tmp/wordpress-tests-lib
+
         steps:
             - name: Checkout
               uses: actions/checkout@v7
+
+            # The runner image ships MySQL (root/root); starting it beats pulling a service container.
+            - name: Start MySQL
+              run: sudo systemctl start mysql.service
 
             - name: Setup PHP
               uses: shivammathur/setup-php@v2
               with:
                   php-version: ${{ matrix.php }}
-                  extensions: dom, curl, libxml, mbstring, zip
+                  extensions: dom, curl, libxml, mbstring, mysqli, zip
                   coverage: none
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v7
-              with:
-                  node-version-file: '.nvmrc'
 
             - name: Cache Composer dependencies
               uses: actions/cache@v6
@@ -41,23 +44,67 @@ jobs:
               if: steps.composer-cache.outputs.cache-hit != 'true'
               run: composer install --prefer-dist --no-progress
 
+            # The plugin requires build/*.asset.php on init, so tests need built assets.
+            - name: Cache built assets
+              uses: actions/cache@v6
+              id: build-cache
+              with:
+                  path: build
+                  key: build-${{ hashFiles('src/**', 'package.json', 'package-lock.json', 'webpack.config.js', '.nvmrc') }}
+
+            - name: Setup Node.js
+              if: steps.build-cache.outputs.cache-hit != 'true'
+              uses: actions/setup-node@v7
+              with:
+                  node-version-file: '.nvmrc'
+
             - name: Cache npm downloads
+              if: steps.build-cache.outputs.cache-hit != 'true'
               uses: actions/cache@v6
               with:
                   path: ~/.npm
                   key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
                   restore-keys: npm-${{ runner.os }}-
 
-            - name: Install Node dependencies
-              run: npm ci --prefer-offline --no-audit --no-fund
-
             - name: Build assets
-              run: npm run build
+              if: steps.build-cache.outputs.cache-hit != 'true'
+              run: |
+                  npm ci --prefer-offline --no-audit --no-fund
+                  npm run build
 
-            - name: Start WordPress environment
-              run: npm run start:tests
+            - name: Resolve latest WordPress version
+              id: wp
+              run: |
+                  version=$(curl -fsSL https://api.wordpress.org/core/version-check/1.7/ | jq -r '.offers[0].version')
+                  if ! [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+                      echo "Unexpected WordPress version: '$version'" >&2
+                      exit 1
+                  fi
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+
+            - name: Restore WordPress and test library
+              uses: actions/cache/restore@v6
+              id: wp-cache
+              with:
+                  path: |
+                      ${{ env.WP_CORE_DIR }}
+                      ${{ env.WP_TESTS_DIR }}
+                  key: wp-${{ steps.wp.outputs.version }}-${{ hashFiles('bin/install-wp-tests.sh') }}
+
+            - name: Install WordPress test environment
+              run: bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 "$WP_VERSION"
               env:
-                  WP_ENV_PHP_VERSION: ${{ matrix.php }}
+                  WP_VERSION: ${{ steps.wp.outputs.version }}
+
+            # Saved before the tests run, so test uploads don't end up in the cache.
+            - name: Save WordPress and test library
+              if: steps.wp-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v6
+              with:
+                  path: |
+                      ${{ env.WP_CORE_DIR }}
+                      ${{ env.WP_TESTS_DIR }}
+                  key: ${{ steps.wp-cache.outputs.cache-primary-key }}
 
             - name: Run PHPUnit tests
-              run: npm test
+              run: vendor/bin/phpunit

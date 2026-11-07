@@ -28,7 +28,7 @@ class Test_Plugin_Init extends WP_UnitTestCase {
 		$this->assertTrue( defined( 'UPLOADS_UNLEASHED_PLUGIN_DIR' ) );
 		$this->assertTrue( defined( 'UPLOADS_UNLEASHED_PLUGIN_URL' ) );
 
-		$plugin_data = get_plugin_data( WP_PLUGIN_DIR . '/uploads-unleashed/uploads-unleashed.php' );
+		$plugin_data = get_plugin_data( UPLOADS_UNLEASHED_PLUGIN_DIR . 'uploads-unleashed.php' );
 		$this->assertSame( $plugin_data['Version'], UPLOADS_UNLEASHED_VERSION );
 	}
 
