@@ -319,4 +319,45 @@ test.describe( 'Uploads Unleashed', () => {
 		await expect.poll( isSameAsCache, { timeout: 15000 } ).not.toBeNull();
 		expect( await isSameAsCache() ).toBe( true );
 	} );
+
+	test( 'refreshes an expired REST nonce during an upload', async ( {
+		page,
+	} ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/upload.php?mode=grid' );
+		await page.locator( '.page-title-action' ).click();
+
+		// Stands in for a nonce from a page that stayed open overnight.
+		await page.evaluate( () => {
+			const stale = '0123456789';
+			const win = window as unknown as {
+				uploadsUnleashed: { nonce: string };
+				wp?: { apiFetch?: { nonceMiddleware?: { nonce: string } } };
+			};
+			win.uploadsUnleashed.nonce = stale;
+			if ( win.wp?.apiFetch?.nonceMiddleware ) {
+				win.wp.apiFetch.nonceMiddleware.nonce = stale;
+			}
+		} );
+
+		const name = `nonce-${ Date.now() }`;
+		await page
+			.locator( '.moxie-shim input[type="file"]' )
+			.first()
+			.setInputFiles( {
+				name: `${ name }.png`,
+				mimeType: 'image/png',
+				buffer: await fs.readFile(
+					path.resolve( __dirname, 'fixtures/test-image.png' )
+				),
+			} );
+
+		// The grid may not show the upload yet, so wait for the attachment itself.
+		await expect
+			.poll( async () => ( await findAttachments( page, name ) ).length, {
+				timeout: 30000,
+			} )
+			.toBe( 1 );
+		await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
+	} );
 } );
