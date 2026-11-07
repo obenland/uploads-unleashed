@@ -617,7 +617,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Default finalization pipeline.
-		$validated = $this->validate_file( $chunk_path, $upload_data['filename'] );
+		$validated = $this->validate_file( $chunk_path, $upload_data['filename'], $upload_data['filetype'] ?? '' );
 		if ( is_wp_error( $validated ) ) {
 			$this->delete_upload( $upload_id );
 
@@ -674,15 +674,21 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 * to prevent PHP-in-image attacks.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Added the `$filetype` parameter. Users with the `unfiltered_upload`
+	 *              capability may upload any type, as in core.
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The original filename.
+	 * @param string $filetype  Optional. The MIME type the client declared, used when the
+	 *                          type can't be determined and the user can `unfiltered_upload`.
 	 * @return array|WP_Error Array with 'type' and 'filename' on success, WP_Error on failure.
 	 */
-	protected function validate_file( string $file_path, string $filename ) {
+	protected function validate_file( string $file_path, string $filename, string $filetype = '' ) {
 		$validated = wp_check_filetype_and_ext( $file_path, $filename );
+		$type      = $validated['type'];
 
-		if ( ! $validated['type'] ) {
+		// Same rule as _wp_handle_upload().
+		if ( ( ! $type || ! $validated['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
 			return new WP_Error(
 				'rest_invalid_file_type',
 				__( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ),
@@ -690,10 +696,17 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// For images, verify actual image data (prevents PHP-in-image attacks).
-		if ( 0 === strpos( $validated['type'], 'image/' ) ) {
+		if ( ! $type ) {
+			$type = '' !== $filetype ? $filetype : 'application/octet-stream';
+		} elseif ( 0 === strpos( $type, 'image/' ) ) {
+			/*
+			 * For images, verify actual image data (prevents PHP-in-image attacks).
+			 * wp_check_filetype_and_ext() has already checked the content; this
+			 * guards against that check being filtered. SVG is the one allowed image
+			 * type wp_get_image_mime() can't read, so it's left to that check.
+			 */
 			$actual_mime = wp_get_image_mime( $file_path );
-			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
+			if ( 'image/svg+xml' !== $type && $actual_mime !== $type ) {
 				return new WP_Error(
 					'rest_invalid_image',
 					__( 'File is not a valid image.', 'uploads-unleashed' ),
@@ -709,7 +722,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		return array(
-			'type'     => $validated['type'],
+			'type'     => $type,
 			'filename' => sanitize_file_name( $final_filename ),
 		);
 	}
