@@ -262,22 +262,33 @@ describe( 'tusMiddleware', () => {
 		} );
 
 		it.each( [ 'generate_sub_sizes', 'convert_format' ] )(
-			'passes through uploads with %s=false, which TUS cannot honor',
+			'intercepts uploads with %s=false and passes the flag on',
 			async ( field ) => {
+				const file = new File( [ 'test' ], 'image.png' );
 				const formData = new FormData();
-				formData.append( 'file', new File( [ 'test' ], 'image.png' ) );
+				formData.append( 'file', file );
 				formData.append( field, 'false' );
 
-				const options = {
-					path: '/wp/v2/media?_embed=wp:featuredmedia',
-					method: 'POST',
-					body: formData,
-				};
+				upload.mockResolvedValue( { id: 123 } );
 
-				await tusMiddleware( options, next );
+				await tusMiddleware(
+					{
+						path: '/wp/v2/media?_embed=wp:featuredmedia',
+						method: 'POST',
+						body: formData,
+					},
+					next
+				);
 
-				expect( next ).toHaveBeenCalledWith( options );
-				expect( upload ).not.toHaveBeenCalled();
+				expect( upload ).toHaveBeenCalledWith(
+					file,
+					expect.objectContaining( {
+						params: expect.objectContaining( {
+							[ field ]: 'false',
+						} ),
+					} )
+				);
+				expect( next ).not.toHaveBeenCalled();
 			}
 		);
 
