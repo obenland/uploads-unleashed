@@ -14,6 +14,8 @@ npm run start && npm run test:e2e # Playwright against wp-env (port 8888)
 
 CI doesn't use wp-env: `bin/install-wp-tests.sh` (PHPUnit) and `bin/start-e2e-wordpress.sh` (e2e) set up WordPress against a plain MySQL server, and work locally too (see CONTRIBUTING.md).
 
+The plugin `require`s the generated `build/*.asset.php` files, so run `npm run build` before PHPUnit, the e2e tests, or loading the site from a fresh clone or worktree; otherwise it fatals.
+
 ## Layout
 
 - `uploads-unleashed.php`: bootstrap, script registration, and the `rest_pre_dispatch` filter that turns a `POST /wp/v2/media` with an `Upload-Length` header into a TUS upload.
@@ -27,6 +29,8 @@ CI doesn't use wp-env: `bin/install-wp-tests.sh` (PHPUnit) and `bin/start-e2e-wo
 - WordPress coding standards; `phpcs` and ESLint must pass with no errors or warnings.
 - New PHP files declare `declare( strict_types = 1 );` after the file docblock and type every parameter and return. Existing files stay as they are.
 - PHP must run on 7.4 (CI tests 7.4 and 8.4).
+- New functions, classes, and hooks get `@since` set to the next release version (latest tag plus one).
+- New filters and actions are documented in `docs/hooks.md` and the Extension Points tables in `docs/ARCHITECTURE.md`.
 - Comments: `/** */` docblocks on every function, class, property and constant; `/* */` for multi-line comments in a function body; never stack `//` lines.
 - JS tests use Vitest, not Jest. WordPress packages and the TUS client are mocked through aliases in `vitest.config.mjs`; tests that need a fresh module call `vi.resetModules()` and re-`import()` it.
 - New top-level files or directories that shouldn't ship to WordPress.org go in `.distignore`.
