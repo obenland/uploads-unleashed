@@ -156,6 +156,26 @@ class Test_Uploads_Unleashed_TUS_Chunk_Storage extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that delete returns false when a filter prevents the file's deletion.
+	 */
+	public function test_delete_returns_false_when_deletion_is_prevented() {
+		$upload_id = wp_generate_uuid4();
+		$this->storage->append( $upload_id, 'test data', 0 );
+
+		$prevent = static function () {
+			return '';
+		};
+		add_filter( 'wp_delete_file', $prevent );
+		$result = $this->storage->delete( $upload_id );
+		remove_filter( 'wp_delete_file', $prevent );
+
+		$this->assertFalse( $result );
+		$this->assertTrue( $this->storage->exists( $upload_id ) );
+
+		$this->storage->delete( $upload_id );
+	}
+
+	/**
 	 * Tests that get_size returns 0 for non-existent file.
 	 */
 	public function test_get_size_returns_zero_for_nonexistent_file() {
