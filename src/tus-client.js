@@ -8,6 +8,7 @@
 
 import * as tus from 'tus-js-client';
 import { addFilter } from '@wordpress/hooks';
+import { __ } from '@wordpress/i18n';
 
 /**
  * Default upload expiration in seconds (24 hours), used if the server
@@ -46,9 +47,129 @@ function getNonce() {
 	return window.uploadsUnleashed?.nonce || '';
 }
 
+/**
+ * Get the ID of the current site, to scope stored uploads to it.
+ *
+ * @since 1.2.0
+ *
+ * @return {string} Blog ID.
+ */
+function getBlogId() {
+	return String( window.uploadsUnleashed?.blogId ?? '' );
+}
+
+/**
+ * Get the ID of the current user, to scope stored uploads to them.
+ *
+ * @since 1.2.0
+ *
+ * @return {string} User ID.
+ */
+function getUserId() {
+	return String( window.uploadsUnleashed?.userId ?? '' );
+}
+
 // ============================================================================
 // Storage
 // ============================================================================
+
+/**
+ * localStorage access that never throws.
+ *
+ * Storage can be full or blocked by the browser. Uploads still work then,
+ * they just can't be resumed.
+ *
+ * @since 1.2.0
+ */
+const storage = {
+	/**
+	 * Reads a value.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param {string} key Storage key.
+	 * @return {string|null} The value, or null if absent or unreadable.
+	 */
+	get( key ) {
+		try {
+			return window.localStorage.getItem( key );
+		} catch {
+			return null;
+		}
+	},
+
+	/**
+	 * Writes a value.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param {string} key   Storage key.
+	 * @param {string} value The value.
+	 * @return {boolean} Whether the value was stored.
+	 */
+	set( key, value ) {
+		try {
+			window.localStorage.setItem( key, value );
+			return true;
+		} catch {
+			return false;
+		}
+	},
+
+	/**
+	 * Removes a value.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param {string} key Storage key.
+	 */
+	remove( key ) {
+		try {
+			window.localStorage.removeItem( key );
+		} catch {
+			// Storage is blocked, so there is nothing to remove.
+		}
+	},
+
+	/**
+	 * Lists all keys, as a snapshot that's safe to remove keys while iterating.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return {Array<string>} Storage keys.
+	 */
+	keys() {
+		try {
+			const keys = [];
+			for ( let i = 0; i < window.localStorage.length; i++ ) {
+				keys.push( window.localStorage.key( i ) );
+			}
+			return keys;
+		} catch {
+			return [];
+		}
+	},
+};
+
+/**
+ * Removes a stored upload together with its progress.
+ *
+ * @since 1.2.0
+ *
+ * @param {string} key The localStorage key of the upload.
+ */
+function removeStoredUpload( key ) {
+	try {
+		const { uploadUrl } = JSON.parse( storage.get( key ) || '' );
+		if ( uploadUrl ) {
+			removeUploadProgress( uploadUrl );
+		}
+	} catch {
+		// Malformed entries have no progress to remove.
+	}
+
+	storage.remove( key );
+}
 
 /**
  * TUS URL storage that embeds expiration timestamp in localStorage keys.
@@ -61,16 +182,17 @@ class ExpiringUrlStorage {
 	 *
 	 * @param {string} uploadFingerprint Unique identifier for the file.
 	 * @param {Object} previousUpload    Upload state to persist.
-	 * @return {Promise<string>} The localStorage key.
+	 * @return {Promise<string|null>} The localStorage key, or null if storage is unavailable.
 	 */
 	addUpload( uploadFingerprint, previousUpload ) {
 		const id = Math.round( Math.random() * 1e12 );
 		const expiresAt = Date.now() + getUploadExpirationMs();
 		const key = `tus::${ uploadFingerprint }::${ expiresAt }::${ id }`;
 
-		localStorage.setItem( key, JSON.stringify( previousUpload ) );
+		// Without storage, tus uploads the file without remembering it for resuming.
+		const stored = storage.set( key, JSON.stringify( previousUpload ) );
 
-		return Promise.resolve( key );
+		return Promise.resolve( stored ? key : null );
 	}
 
 	/**
@@ -101,7 +223,7 @@ class ExpiringUrlStorage {
 	 * @return {Promise<void>}
 	 */
 	removeUpload( urlStorageKey ) {
-		localStorage.removeItem( urlStorageKey );
+		removeStoredUpload( urlStorageKey );
 
 		return Promise.resolve();
 	}
@@ -115,9 +237,7 @@ class ExpiringUrlStorage {
 	_findEntries( prefix ) {
 		const results = [];
 
-		// Iterate backwards to safely remove items during iteration
-		for ( let i = localStorage.length - 1; i >= 0; i-- ) {
-			const key = localStorage.key( i );
+		for ( const key of storage.keys() ) {
 			if ( ! key?.startsWith( prefix ) ) {
 				continue;
 			}
@@ -126,26 +246,24 @@ class ExpiringUrlStorage {
 			const parts = key.split( '::' );
 			if ( parts.length < 4 ) {
 				// Clean up malformed entries
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 			const expiresAt = parseInt( parts[ 2 ], 10 );
 
 			// Skip and clean up expired or invalid entries
 			if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 
 			try {
-				const storedUpload = JSON.parse(
-					localStorage.getItem( key ) || ''
-				);
+				const storedUpload = JSON.parse( storage.get( key ) || '' );
 				storedUpload.urlStorageKey = key;
 				results.push( storedUpload );
 			} catch {
 				// Clean up malformed JSON entries
-				localStorage.removeItem( key );
+				storage.remove( key );
 			}
 		}
 
@@ -164,11 +282,8 @@ class ExpiringUrlStorage {
  * @param {number} bytesUploaded Bytes uploaded so far.
  */
 function saveUploadProgress( uploadUrl, bytesUploaded ) {
-	try {
-		localStorage.setItem( `tus-progress::${ uploadUrl }`, bytesUploaded );
-	} catch {
-		// Storage full or unavailable — progress display is non-critical.
-	}
+	// Progress display is non-critical, so a full or blocked storage is fine.
+	storage.set( `tus-progress::${ uploadUrl }`, bytesUploaded );
 }
 
 /**
@@ -178,12 +293,7 @@ function saveUploadProgress( uploadUrl, bytesUploaded ) {
  * @return {number} Bytes uploaded, or 0 if absent.
  */
 function getUploadProgress( uploadUrl ) {
-	return (
-		parseInt(
-			localStorage.getItem( `tus-progress::${ uploadUrl }` ),
-			10
-		) || 0
-	);
+	return parseInt( storage.get( `tus-progress::${ uploadUrl }` ), 10 ) || 0;
 }
 
 /**
@@ -192,7 +302,7 @@ function getUploadProgress( uploadUrl ) {
  * @param {string} uploadUrl The TUS upload URL.
  */
 function removeUploadProgress( uploadUrl ) {
-	localStorage.removeItem( `tus-progress::${ uploadUrl }` );
+	storage.remove( `tus-progress::${ uploadUrl }` );
 }
 
 // ============================================================================
@@ -201,6 +311,9 @@ function removeUploadProgress( uploadUrl ) {
 
 /**
  * Generates a fingerprint for resumable uploads.
+ *
+ * Includes the site and user, so another user of the same browser can't see
+ * or resume the upload.
  *
  * @param {File}   file    The file to fingerprint.
  * @param {Object} options TUS upload options.
@@ -214,16 +327,59 @@ function fingerprint( file, options ) {
 			file.size,
 			file.lastModified,
 			options.endpoint,
+			getBlogId(),
+			getUserId(),
 		].join( '|' )
 	);
 }
 
 /**
+ * Waits until the browser reports a network connection.
+ *
+ * @since 1.2.0
+ *
+ * @return {Promise<void>} Resolves right away while online, otherwise on the next `online` event.
+ */
+function waitForOnline() {
+	if ( false !== window.navigator.onLine ) {
+		return Promise.resolve();
+	}
+
+	return new Promise( ( resolve ) => {
+		window.addEventListener( 'online', () => resolve(), { once: true } );
+	} );
+}
+
+/**
+ * Decides whether tus retries a failed request.
+ *
+ * Unlike tus's default, this also retries while the browser is offline:
+ * the retried request waits for the connection in `onBeforeRequest`.
+ *
+ * @since 1.2.0
+ *
+ * @param {Error} error The error of the failed request.
+ * @return {boolean} Whether to retry.
+ */
+function shouldRetry( error ) {
+	const status = error.originalResponse?.getStatus() || 0;
+
+	// Everything but client errors, except offset conflicts and locked uploads.
+	return status < 400 || status >= 500 || 409 === status || 423 === status;
+}
+
+/**
  * Default options for the TUS uploader.
+ *
+ * The retry counter resets whenever a chunk gets through, so the delays,
+ * capped at a minute, only run out after about four minutes without progress.
  */
 const DEFAULT_TUS_OPTIONS = {
 	chunkSize: 5 * 1024 * 1024, // 5MB chunks
-	retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
+	retryDelays: [
+		0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000, 60000,
+	],
+	onShouldRetry: shouldRetry,
 	removeFingerprintOnSuccess: true,
 	fingerprint,
 	urlStorage: new ExpiringUrlStorage(),
@@ -251,6 +407,17 @@ function createTusUpload( file, callbacks ) {
 			filename: file.name,
 			filetype: file.type || 'application/octet-stream',
 		},
+		onBeforeRequest: async ( req ) => {
+			await waitForOnline();
+
+			/*
+			 * tus can't cancel a request that is still waiting here, so drop it if the
+			 * upload was aborted meanwhile. The termination request still goes out.
+			 */
+			if ( tusUpload._aborted && 'DELETE' !== req.getMethod() ) {
+				throw new Error( __( 'Upload aborted', 'uploads-unleashed' ) );
+			}
+		},
 		onProgress: ( bytesUploaded, bytesTotal ) => {
 			if ( tusUpload.url ) {
 				saveUploadProgress( tusUpload.url, bytesUploaded );
@@ -267,7 +434,7 @@ function createTusUpload( file, callbacks ) {
 
 			// Check if the server returned an error status.
 			if ( status >= 400 ) {
-				let errorMessage = 'Upload failed';
+				let errorMessage = __( 'Upload failed', 'uploads-unleashed' );
 				try {
 					if ( body ) {
 						const parsed = JSON.parse( body );
@@ -294,7 +461,8 @@ function createTusUpload( file, callbacks ) {
 		},
 		onError: ( error ) => {
 			// Extract a clean error message from TUS errors
-			let cleanMessage = error.message || 'Upload failed';
+			let cleanMessage =
+				error.message || __( 'Upload failed', 'uploads-unleashed' );
 
 			// Try to extract WordPress error message from response body
 			if ( 'originalResponse' in error && error.originalResponse ) {
@@ -316,7 +484,7 @@ function createTusUpload( file, callbacks ) {
 				forgetUploadIfGone( tusUpload );
 			}
 
-			callbacks.onError( new Error( cleanMessage ) );
+			callbacks.onError( new Error( cleanMessage, { cause: error } ) );
 		},
 	} );
 
@@ -364,6 +532,87 @@ async function forgetUploadIfGone( tusUpload ) {
 	);
 }
 
+/**
+ * Number of uploads that run at once unless PHP localizes another limit.
+ */
+const DEFAULT_MAX_CONCURRENT_UPLOADS = 3;
+
+/**
+ * Number of uploads currently running.
+ */
+let activeUploads = 0;
+
+/**
+ * Uploads waiting for a free slot, in the order they were requested.
+ *
+ * @type {Array<() => void>}
+ */
+const uploadQueue = [];
+
+/**
+ * Returns how many uploads may run at once.
+ *
+ * Shared hosts often have only a few PHP workers, so uploading every
+ * queued file at once leads to 503s. The limit comes from the
+ * `uploads_unleashed_max_concurrent_uploads` PHP filter.
+ *
+ * @return {number} The limit, at least 1.
+ */
+function getMaxConcurrentUploads() {
+	const limit = parseInt( window.uploadsUnleashed?.maxConcurrentUploads, 10 );
+
+	return limit >= 1 ? limit : DEFAULT_MAX_CONCURRENT_UPLOADS;
+}
+
+/**
+ * Starts queued uploads while slots are free.
+ */
+function startQueuedUploads() {
+	while ( activeUploads < getMaxConcurrentUploads() && uploadQueue.length ) {
+		uploadQueue.shift()();
+	}
+}
+
+/**
+ * Runs a task once an upload slot is free, and frees the slot when it settles.
+ *
+ * Starts the task synchronously when a slot is free. A queued task whose
+ * signal aborts is rejected and never runs.
+ *
+ * @param {() => Promise<Object>} task     Starts the upload.
+ * @param {AbortSignal}           [signal] AbortSignal for cancellation.
+ * @return {Promise<Object>} Settles like the task.
+ */
+function withUploadSlot( task, signal ) {
+	return new Promise( ( resolve, reject ) => {
+		const onAbort = () => {
+			const index = uploadQueue.indexOf( run );
+			if ( -1 !== index ) {
+				uploadQueue.splice( index, 1 );
+				reject(
+					new Error( __( 'Upload aborted', 'uploads-unleashed' ) )
+				);
+			}
+		};
+
+		const run = () => {
+			signal?.removeEventListener( 'abort', onAbort );
+			activeUploads++;
+
+			task()
+				.finally( () => {
+					activeUploads--;
+					startQueuedUploads();
+				} )
+				.then( resolve, reject );
+		};
+
+		signal?.addEventListener( 'abort', onAbort );
+		uploadQueue.push( run );
+		startQueuedUploads();
+	} );
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -376,6 +625,7 @@ async function forgetUploadIfGone( tusUpload ) {
  * - Automatic resume of interrupted uploads.
  * - Progress callbacks.
  * - AbortSignal for cancellation.
+ * - A limit on parallel uploads; further uploads wait for a free slot.
  *
  * @param {File}                                                                 file                 The file to upload.
  * @param {Object}                                                               [options]            Upload options.
@@ -394,10 +644,25 @@ async function forgetUploadIfGone( tusUpload ) {
  * ```
  */
 export async function upload( file, options = {} ) {
+	if ( options.signal?.aborted ) {
+		throw new Error( __( 'Upload aborted', 'uploads-unleashed' ) );
+	}
+
+	return withUploadSlot( () => startUpload( file, options ), options.signal );
+}
+
+/**
+ * Uploads a file once it has an upload slot.
+ *
+ * @param {File}   file    The file to upload.
+ * @param {Object} options Upload options, see upload().
+ * @return {Promise<Object>} Resolves with WordPress attachment data.
+ */
+function startUpload( file, options ) {
 	return new Promise( ( resolve, reject ) => {
 		// Handle already-aborted signal before creating upload
 		if ( options.signal?.aborted ) {
-			reject( new Error( 'Upload aborted' ) );
+			reject( new Error( __( 'Upload aborted', 'uploads-unleashed' ) ) );
 			return;
 		}
 
@@ -415,7 +680,10 @@ export async function upload( file, options = {} ) {
 				} else {
 					reject(
 						new Error(
-							'Upload completed but no attachment data received'
+							__(
+								'Upload completed but no attachment data received',
+								'uploads-unleashed'
+							)
 						)
 					);
 				}
@@ -435,7 +703,9 @@ export async function upload( file, options = {} ) {
 				if ( ! settled ) {
 					settled = true;
 					tusUpload.abort( true );
-					reject( new Error( 'Upload aborted' ) );
+					reject(
+						new Error( __( 'Upload aborted', 'uploads-unleashed' ) )
+					);
 				}
 			} );
 		}
@@ -463,18 +733,16 @@ export function abort( tusUpload ) {
 /**
  * Get all pending (resumable) uploads from localStorage.
  *
- * Returns uploads that match the current TUS endpoint and haven't expired.
- * Use this to display a "Resume upload" UI to users.
+ * Returns uploads of the current user and site that match the current TUS
+ * endpoint and haven't expired. Use this to display a "Resume upload" UI to users.
  *
- * @return {Array<Object>} Array of pending upload objects with key, uploadUrl, filename, size, bytesUploaded.
+ * @return {Array<Object>} Array of pending upload objects with key, uploadUrl, filename, size, lastModified, bytesUploaded.
  */
 export function getPendingUploads() {
 	const endpoint = getEndpoint();
 	const pending = [];
 
-	// Iterate backwards to safely remove items during iteration
-	for ( let i = localStorage.length - 1; i >= 0; i-- ) {
-		const key = localStorage.key( i );
+	for ( const key of storage.keys() ) {
 		if ( ! key?.startsWith( 'tus::tus-br|' ) ) {
 			continue;
 		}
@@ -486,23 +754,31 @@ export function getPendingUploads() {
 			// Parse key: tus::{fingerprint}::{expiresAt}::{id}
 			const keyParts = key.split( '::' );
 			if ( keyParts.length < 4 ) {
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 
 			// Check expiration
 			const expiresAt = parseInt( keyParts[ 2 ], 10 );
 			if ( isNaN( expiresAt ) || Date.now() > expiresAt ) {
-				localStorage.removeItem( key );
+				removeStoredUpload( key );
 				continue;
 			}
 
-			const data = JSON.parse( localStorage.getItem( key ) || '' );
+			const data = JSON.parse( storage.get( key ) || '' );
 
-			// Parse fingerprint: tus-br|{filename}|{size}|{lastModified}|{endpoint}
+			// Parse fingerprint: tus-br|{filename}|{size}|{lastModified}|{endpoint}|{blogId}|{userId}
 			const fingerprintParts = keyParts[ 1 ].split( '|' );
-			if ( fingerprintParts.length !== 5 ) {
-				localStorage.removeItem( key );
+			if ( fingerprintParts.length !== 7 ) {
+				removeStoredUpload( key );
+				continue;
+			}
+
+			// Leave other users' uploads alone, they may come back to them.
+			if (
+				fingerprintParts[ 5 ] !== getBlogId() ||
+				fingerprintParts[ 6 ] !== getUserId()
+			) {
 				continue;
 			}
 
@@ -511,11 +787,12 @@ export function getPendingUploads() {
 				uploadUrl: data.uploadUrl,
 				filename: decodeURIComponent( fingerprintParts[ 1 ] ),
 				size: parseInt( fingerprintParts[ 2 ], 10 ),
+				lastModified: parseInt( fingerprintParts[ 3 ], 10 ),
 				bytesUploaded: getUploadProgress( data.uploadUrl ),
 			} );
 		} catch {
 			// Clean up malformed entries
-			localStorage.removeItem( key );
+			storage.remove( key );
 		}
 	}
 
@@ -543,7 +820,7 @@ export async function discardPendingUpload( pendingUpload ) {
 	}
 
 	// Remove from localStorage
-	localStorage.removeItem( pendingUpload.key );
+	removeStoredUpload( pendingUpload.key );
 	removeUploadProgress( pendingUpload.uploadUrl );
 }
 

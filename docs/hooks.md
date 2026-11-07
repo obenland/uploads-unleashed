@@ -33,6 +33,8 @@ Override the maximum allowed chunk size per PATCH request.
 
 Controls how large each individual PATCH request body can be. The default is 10 MB. The return value is clamped to a minimum of 1 MB.
 
+The filter also runs on `parse_request`, before the REST server reads the body, so that a PATCH whose `Content-Length` exceeds the limit is rejected with 413 without being loaded into memory. In that call, `$request` carries the route and headers but no body.
+
 **Parameters:**
 - `$max_chunk_size` (int) - The maximum chunk size in bytes. Default `10 * MB_IN_BYTES`.
 - `$request` (WP_REST_Request) - The REST request object.
@@ -67,6 +69,40 @@ The session expires this long after it was created or last received a chunk, so 
 add_filter( 'uploads_unleashed_upload_expiration', function( $expiration ) {
     // Keep interrupted uploads resumable for a week.
     return WEEK_IN_SECONDS;
+} );
+```
+
+---
+
+### `uploads_unleashed_chunk_dir`
+
+Override the directory that holds in-progress upload chunks until the upload completes. The default is `.tus-chunks` in the uploads directory.
+
+**Sites whose uploads directory is a stream wrapper must set this filter.** That includes S3-Uploads (`s3://`) and WordPress VIP (`vip://`). Chunks are written with `flock()` and listed with `glob()`, and neither works on stream wrappers. Without the filter, creating an upload fails with `tus_chunk_dir_not_local`. When an upload completes, the file is copied from the chunk directory into the uploads directory as usual.
+
+The directory must:
+
+- Be a local or mounted path, not a stream wrapper, and be writable. Otherwise uploads fail at creation with `tus_chunk_dir_not_local` or `tus_chunk_dir_not_writable`.
+- Support `flock()`. Check that a network mount (NFS, EFS) supports locking.
+- Be shared by every web server when a load balancer can send the requests of one upload to different servers (unless sessions are sticky).
+- Not be served by the web server. The plugin writes an `.htaccess` that denies access on Apache, but nginx ignores it, so prefer a directory outside the web root.
+- Be separate for each site on multisite. Cleanup deletes chunk files that have no upload session on the current site.
+
+Cleanup and uninstall use the filtered path too, so add the filter from a must-use plugin, which keeps it active when they run.
+
+**Since:** 1.2.0
+
+**Parameters:**
+- `$chunk_dir` (string) - Absolute path to the chunk directory.
+
+**Return:** string - Absolute path to the chunk directory.
+
+**Example:**
+```php
+// wp-content/mu-plugins/uploads-unleashed-chunk-dir.php
+add_filter( 'uploads_unleashed_chunk_dir', function( $chunk_dir ) {
+    // S3/VIP uploads: keep chunks on a local (or shared) disk outside the web root, one directory per site.
+    return '/srv/uploads-unleashed-chunks/' . get_current_blog_id();
 } );
 ```
 
@@ -205,6 +241,29 @@ add_filter( 'uploads_unleashed_attachment_data', function( $data, $attachment_id
     }
     return $data;
 }, 10, 3 );
+```
+
+---
+
+### `uploads_unleashed_max_concurrent_uploads`
+
+Override how many uploads run in parallel in the browser. Further files wait until an upload finishes. The limit applies to every upload that goes through the TUS client, in the Media Library, the block editor, and `media-new.php`.
+
+Each running upload keeps a PHP worker busy with its current chunk. On hosts with only a few PHP workers, too many parallel uploads lead to 503 errors, so lower the limit there. Raise it on servers with many workers to upload batches of small files faster. The value is clamped to a minimum of 1.
+
+**Since:** 1.2.0
+
+**Parameters:**
+- `$max_concurrent_uploads` (int) - Maximum number of parallel uploads. Default `3`.
+
+**Return:** int - Maximum number of parallel uploads.
+
+**Example:**
+```php
+add_filter( 'uploads_unleashed_max_concurrent_uploads', function() {
+    // Shared host with two PHP workers: upload one file at a time.
+    return 1;
+} );
 ```
 
 ---

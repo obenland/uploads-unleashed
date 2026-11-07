@@ -143,6 +143,32 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Returns the maximum allowed chunk size for a PATCH request.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param WP_REST_Request $request The request object.
+	 * @return int Maximum chunk size in bytes, at least 1 MB.
+	 */
+	public static function get_max_chunk_size( WP_REST_Request $request ): int {
+		/**
+		 * Filters the maximum allowed chunk size.
+		 *
+		 * Controls how large each individual PATCH request body can be.
+		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
+		 * is clamped to a minimum of 1 MB.
+		 *
+		 * @since 1.0.0
+		 *
+		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
+		 * @param WP_REST_Request $request        The request object.
+		 */
+		$max_chunk_size = (int) apply_filters( 'uploads_unleashed_max_chunk_size', self::DEFAULT_MAX_CHUNK_SIZE, $request );
+
+		return max( $max_chunk_size, MB_IN_BYTES );
+	}
+
+	/**
 	 * Checks if a given request has access to create uploads.
 	 *
 	 * @since 0.1.0
@@ -292,6 +318,28 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_upload_length_invalid', __( 'Upload-Length must be a positive integer.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
+		// Enforce the network's "Max upload file size" setting.
+		$file_size_check = $this->check_network_max_file_size( $upload_length );
+		if ( is_wp_error( $file_size_check ) ) {
+			return $file_size_check;
+		}
+
+		/*
+		 * Reject file types that would fail at finalize now, before the client
+		 * sends any bytes. Mirrors the check in _wp_handle_upload().
+		 */
+		$metadata = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
+		$filename = sanitize_file_name( $metadata['filename'] ?? '' );
+
+		if ( '' === $filename ) {
+			return new WP_Error( 'rest_upload_filename_required', __( 'A filename is required in the Upload-Metadata header.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
+		$filetype = wp_check_filetype( $filename );
+		if ( ( ! $filetype['type'] || ! $filetype['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
+			return new WP_Error( 'rest_invalid_file_type', __( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
 		/** This filter is documented in includes/class-uploads-unleashed-tus-controller.php */
 		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
 
@@ -316,12 +364,16 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// Parse metadata and create upload session.
-		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
+		// Fail now, not on the first chunk, when chunks can't be stored.
+		$chunk_dir_check = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->check_directory();
+		if ( is_wp_error( $chunk_dir_check ) ) {
+			return $chunk_dir_check;
+		}
+
 		$session   = new Uploads_Unleashed_TUS_Upload_Session();
 		$upload_id = $session->create(
 			array(
-				'filename' => $metadata['filename'] ?? 'unnamed',
+				'filename' => $filename,
 				'filetype' => $metadata['filetype'] ?? 'application/octet-stream',
 				'length'   => $upload_length,
 			),
@@ -330,6 +382,13 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 		if ( is_wp_error( $upload_id ) ) {
 			return $upload_id;
+		}
+
+		// Reserve the upload's space right away, not only once its first chunk arrives.
+		if ( ! ( new Uploads_Unleashed_TUS_Chunk_Storage() )->create( $upload_id ) ) {
+			$session->delete( $upload_id );
+
+			return new WP_Error( 'tus_chunk_create_failed', __( 'Could not create chunk file.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
 		$upload = $session->get( $upload_id );
@@ -363,7 +422,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 */
 	public function get_item_offset( WP_REST_Request $request ): WP_REST_Response {
 		$response = new WP_REST_Response( null, 200 );
-		$response->header( 'Upload-Offset', $this->current_upload['offset'] );
+		$response->header( 'Upload-Offset', $this->get_upload_offset( $request->get_param( 'id' ) ) );
 		$response->header( 'Upload-Length', $this->current_upload['length'] );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
 		// CRITICAL: Prevent proxy caching of offset.
@@ -396,7 +455,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$client_offset = (int) $client_offset;
-		$server_offset = (int) $this->current_upload['offset'];
+		$server_offset = $this->get_upload_offset( $upload_id );
 
 		// 409 Conflict: Do NOT store any data on offset mismatch.
 		if ( $client_offset !== $server_offset ) {
@@ -405,21 +464,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 
 		// Validate chunk size against server limit.
 		$content_length = $request->get_header( 'Content-Length' );
-
-		/**
-		 * Filters the maximum allowed chunk size.
-		 *
-		 * Controls how large each individual PATCH request body can be.
-		 * The default is 10 MB (DEFAULT_MAX_CHUNK_SIZE). Return value
-		 * is clamped to a minimum of 1 MB.
-		 *
-		 * @since 1.0.0
-		 *
-		 * @param int             $max_chunk_size Maximum chunk size in bytes. Default 10 MB.
-		 * @param WP_REST_Request $request        The request object.
-		 */
-		$max_chunk_size = (int) apply_filters( 'uploads_unleashed_max_chunk_size', self::DEFAULT_MAX_CHUNK_SIZE, $request );
-		$max_chunk_size = max( $max_chunk_size, MB_IN_BYTES );
+		$max_chunk_size = self::get_max_chunk_size( $request );
 
 		if ( null !== $content_length && (int) $content_length > $max_chunk_size ) {
 			return $this->chunk_too_large_error( $max_chunk_size );
@@ -457,9 +502,13 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return $new_offset;
 		}
 
-		// Update session.
+		/*
+		 * Update the session. The chunk file is the source of truth for the
+		 * offset, so a failed update is corrected on the next request.
+		 */
 		$session = new Uploads_Unleashed_TUS_Upload_Session();
 		$session->update_offset( $upload_id, $new_offset );
+		$this->current_upload['offset'] = $new_offset;
 
 		/**
 		 * Fires after a chunk is received and stored.
@@ -606,7 +655,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Default finalization pipeline.
-		$validated = $this->validate_file( $chunk_path, $upload_data['filename'] );
+		$validated = $this->validate_file( $chunk_path, $upload_data['filename'], $upload_data['filetype'] ?? '' );
 		if ( is_wp_error( $validated ) ) {
 			$this->delete_upload( $upload_id );
 
@@ -663,15 +712,21 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 * to prevent PHP-in-image attacks.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Added the `$filetype` parameter. Users with the `unfiltered_upload`
+	 *              capability may upload any type, as in core.
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The original filename.
+	 * @param string $filetype  Optional. The MIME type the client declared, used when the
+	 *                          type can't be determined and the user can `unfiltered_upload`.
 	 * @return array|WP_Error Array with 'type' and 'filename' on success, WP_Error on failure.
 	 */
-	protected function validate_file( string $file_path, string $filename ) {
+	protected function validate_file( string $file_path, string $filename, string $filetype = '' ) {
 		$validated = wp_check_filetype_and_ext( $file_path, $filename );
+		$type      = $validated['type'];
 
-		if ( ! $validated['type'] ) {
+		// Same rule as _wp_handle_upload().
+		if ( ( ! $type || ! $validated['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
 			return new WP_Error(
 				'rest_invalid_file_type',
 				__( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ),
@@ -679,10 +734,17 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// For images, verify actual image data (prevents PHP-in-image attacks).
-		if ( 0 === strpos( $validated['type'], 'image/' ) ) {
+		if ( ! $type ) {
+			$type = '' !== $filetype ? $filetype : 'application/octet-stream';
+		} elseif ( 0 === strpos( $type, 'image/' ) ) {
+			/*
+			 * For images, verify actual image data (prevents PHP-in-image attacks).
+			 * wp_check_filetype_and_ext() has already checked the content; this
+			 * guards against that check being filtered. SVG is the one allowed image
+			 * type wp_get_image_mime() can't read, so it's left to that check.
+			 */
 			$actual_mime = wp_get_image_mime( $file_path );
-			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
+			if ( 'image/svg+xml' !== $type && $actual_mime !== $type ) {
 				return new WP_Error(
 					'rest_invalid_image',
 					__( 'File is not a valid image.', 'uploads-unleashed' ),
@@ -698,7 +760,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		return array(
-			'type'     => $validated['type'],
+			'type'     => $type,
 			'filename' => sanitize_file_name( $final_filename ),
 		);
 	}
@@ -721,12 +783,51 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_file_unreadable', __( 'Could not determine file size for quota check.', 'uploads-unleashed' ), array( 'status' => 500 ) );
 		}
 
+		// The setting can change while the upload is in progress.
+		$file_size_check = $this->check_network_max_file_size( $file_size );
+		if ( is_wp_error( $file_size_check ) ) {
+			return $file_size_check;
+		}
+
 		$space_used    = get_space_used();
 		$space_allowed = get_space_allowed();
 		$file_size_mb  = $file_size / MB_IN_BYTES;
 
 		if ( $space_used + $file_size_mb > $space_allowed ) {
 			return new WP_Error( 'rest_quota_exceeded', __( 'You have used your space quota.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Checks a file size against the network's "Max upload file size" setting.
+	 *
+	 * Mirrors the per-file check in core's check_upload_size(), which
+	 * wp_handle_sideload() does not run.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int $file_size File size in bytes.
+	 * @return true|WP_Error True if the file is within the limit or not on multisite, WP_Error otherwise.
+	 */
+	protected function check_network_max_file_size( int $file_size ) {
+		if ( ! is_multisite() ) {
+			return true;
+		}
+
+		$fileupload_maxk = (int) get_site_option( 'fileupload_maxk', 1500 );
+
+		if ( $file_size > KB_IN_BYTES * $fileupload_maxk ) {
+			return new WP_Error(
+				'rest_upload_file_too_big',
+				sprintf(
+					/* translators: %s: Maximum allowed file size in kilobytes. */
+					__( 'This file is too big. Files must be less than %s KB in size.', 'uploads-unleashed' ),
+					number_format_i18n( $fileupload_maxk )
+				),
+				array( 'status' => 413 )
+			);
 		}
 
 		return true;
@@ -1005,6 +1106,30 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$this->current_upload = $upload;
 
 		return true;
+	}
+
+	/**
+	 * Returns the number of bytes received for an upload.
+	 *
+	 * The chunk file is the source of truth: the session offset is saved
+	 * after the chunk is written, so it lags behind when PHP is killed in
+	 * between or the session fails to save. Reconciles the session from the
+	 * file when they differ.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return int The upload offset in bytes.
+	 */
+	private function get_upload_offset( string $upload_id ): int {
+		$offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_size( $upload_id );
+
+		if ( (int) $this->current_upload['offset'] !== $offset ) {
+			( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $offset );
+			$this->current_upload['offset'] = $offset;
+		}
+
+		return $offset;
 	}
 
 	/**
