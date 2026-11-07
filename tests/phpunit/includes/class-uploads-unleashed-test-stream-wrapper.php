@@ -12,10 +12,10 @@ declare( strict_types = 1 );
 /**
  * Stream wrapper that maps `uutest://` URLs onto a local directory.
  *
- * Behaves like a remote stream wrapper such as S3-Uploads (`s3://`) or VIP
- * (`vip://`): files can be read, written, copied, and listed with opendir(),
- * but flock() fails because stream_lock() refuses every lock, and glob()
- * finds nothing because it only supports the local filesystem.
+ * Stands in for a remote stream wrapper such as S3-Uploads (`s3://`) or VIP
+ * (`vip://`): wp_is_stream() recognizes it, and it implements just enough for
+ * wp_handle_sideload() to copy a file into it. Like those wrappers, it can't
+ * lock files, and glob() can't list it.
  *
  * @since 1.2.0
  */
@@ -161,41 +161,6 @@ class Uploads_Unleashed_Test_Stream_Wrapper {
 	}
 
 	/**
-	 * Flushes output.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @return bool Whether the flush succeeded.
-	 */
-	public function stream_flush(): bool {
-		return fflush( $this->handle );
-	}
-
-	/**
-	 * Seeks within the file.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @param int $offset The offset.
-	 * @param int $whence SEEK_SET, SEEK_CUR, or SEEK_END.
-	 * @return bool Whether the seek succeeded.
-	 */
-	public function stream_seek( int $offset, int $whence = SEEK_SET ): bool {
-		return 0 === fseek( $this->handle, $offset, $whence );
-	}
-
-	/**
-	 * Returns the pointer position.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @return int The position.
-	 */
-	public function stream_tell(): int {
-		return (int) ftell( $this->handle );
-	}
-
-	/**
 	 * Returns information about the open file.
 	 *
 	 * @since 1.2.0
@@ -204,32 +169,6 @@ class Uploads_Unleashed_Test_Stream_Wrapper {
 	 */
 	public function stream_stat() {
 		return fstat( $this->handle );
-	}
-
-	/**
-	 * Refuses every lock, like remote stream wrappers do.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @param int $operation The flock() operation.
-	 * @return bool Always false.
-	 */
-	public function stream_lock( int $operation ): bool {
-		return false;
-	}
-
-	/**
-	 * Sets stream options.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @param int $option Option.
-	 * @param int $arg1   First argument.
-	 * @param int $arg2   Second argument.
-	 * @return bool Always false: no options are supported.
-	 */
-	public function stream_set_option( int $option, int $arg1, int $arg2 ): bool {
-		return false;
 	}
 
 	/**
@@ -287,19 +226,6 @@ class Uploads_Unleashed_Test_Stream_Wrapper {
 	}
 
 	/**
-	 * Renames a file.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @param string $path_from The source URL.
-	 * @param string $path_to   The target URL.
-	 * @return bool Whether the file was renamed.
-	 */
-	public function rename( string $path_from, string $path_to ): bool {
-		return @rename( self::local_path( $path_from ), self::local_path( $path_to ) );
-	}
-
-	/**
 	 * Creates a directory.
 	 *
 	 * @since 1.2.0
@@ -311,19 +237,6 @@ class Uploads_Unleashed_Test_Stream_Wrapper {
 	 */
 	public function mkdir( string $path, int $mode, int $options ): bool {
 		return @mkdir( self::local_path( $path ), $mode, (bool) ( $options & STREAM_MKDIR_RECURSIVE ) );
-	}
-
-	/**
-	 * Removes a directory.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @param string $path    The wrapper URL.
-	 * @param int    $options Unused.
-	 * @return bool Whether the directory was removed.
-	 */
-	public function rmdir( string $path, int $options ): bool {
-		return @rmdir( self::local_path( $path ) );
 	}
 
 	/**
@@ -350,19 +263,6 @@ class Uploads_Unleashed_Test_Stream_Wrapper {
 	 */
 	public function dir_readdir() {
 		return readdir( $this->dir_handle );
-	}
-
-	/**
-	 * Rewinds the directory handle.
-	 *
-	 * @since 1.2.0
-	 *
-	 * @return bool Always true.
-	 */
-	public function dir_rewinddir(): bool {
-		rewinddir( $this->dir_handle );
-
-		return true;
 	}
 
 	/**

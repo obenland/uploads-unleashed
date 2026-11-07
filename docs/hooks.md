@@ -51,18 +51,19 @@ add_filter( 'uploads_unleashed_max_chunk_size', function( $max_chunk_size, $requ
 
 ### `uploads_unleashed_chunk_dir`
 
-Override the directory that holds in-progress upload chunks until the upload completes.
+Override the directory that holds in-progress upload chunks until the upload completes. The default is `.tus-chunks` in the uploads directory.
 
-The default is `.tus-chunks` in the uploads directory. When the uploads directory is a stream wrapper, such as S3-Uploads (`s3://`) or WordPress VIP (`vip://`), the default is a per-site directory in `get_temp_dir()` instead, because chunks are written with `flock()` and listed with `glob()`, which don't work on stream wrappers. Other users on the server can write to the temp directory, so its name is derived from the site's salts, it's created with `0700` permissions, and uploads fail with `tus_chunk_dir_unsafe` if it's a symlink, belongs to another user, or is accessible to the group or others.
+**Sites whose uploads directory is a stream wrapper must set this filter.** That includes S3-Uploads (`s3://`) and WordPress VIP (`vip://`). Chunks are written with `flock()` and listed with `glob()`, and neither works on stream wrappers. Without the filter, creating an upload fails with `tus_chunk_dir_not_local`. When an upload completes, the file is copied from the chunk directory into the uploads directory as usual.
 
 The directory must:
 
-- Be a local or mounted path, not a stream wrapper.
-- Support `flock()`. Check that a network mount (NFS, EFS) supports locking; without it, two requests for the same upload can write to the file at once.
+- Be a local or mounted path, not a stream wrapper, and be writable. Otherwise uploads fail at creation with `tus_chunk_dir_not_local` or `tus_chunk_dir_not_writable`.
+- Support `flock()`. Check that a network mount (NFS, EFS) supports locking.
 - Be shared by every web server when a load balancer can send the requests of one upload to different servers (unless sessions are sticky).
 - Not be served by the web server. The plugin writes an `.htaccess` that denies access on Apache, but nginx ignores it, so prefer a directory outside the web root.
+- Be separate for each site on multisite. Cleanup deletes chunk files that have no upload session on the current site.
 
-Cleanup and uninstall use the filtered path too, so make sure the filter is also active when they run (e.g. add it from a must-use plugin).
+Cleanup and uninstall use the filtered path too, so add the filter from a must-use plugin, which keeps it active when they run.
 
 **Since:** 1.2.0
 
@@ -73,9 +74,10 @@ Cleanup and uninstall use the filtered path too, so make sure the filter is also
 
 **Example:**
 ```php
+// wp-content/mu-plugins/uploads-unleashed-chunk-dir.php
 add_filter( 'uploads_unleashed_chunk_dir', function( $chunk_dir ) {
-    // Keep chunks outside the web root, on storage every web server shares.
-    return '/mnt/shared/uploads-unleashed-chunks/' . get_current_blog_id();
+    // S3/VIP uploads: keep chunks on a local (or shared) disk outside the web root, one directory per site.
+    return '/srv/uploads-unleashed-chunks/' . get_current_blog_id();
 } );
 ```
 
