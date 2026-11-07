@@ -521,6 +521,54 @@ describe( 'tusMiddleware', () => {
 			}
 		);
 
+		it( 'rethrows without fallback when the upload was cancelled', async () => {
+			const controller = new AbortController();
+			const error = tusError(
+				'tus: failed to create upload',
+				'POST',
+				null
+			);
+			upload.mockImplementation( () => {
+				controller.abort();
+				return Promise.reject( error );
+			} );
+			const options = {
+				...uploadRequest(),
+				signal: controller.signal,
+			};
+
+			await expect( tusMiddleware( options, next ) ).rejects.toBe(
+				error
+			);
+
+			expect( next ).not.toHaveBeenCalled();
+			expect( createWarningNotice ).not.toHaveBeenCalled();
+			expect( consoleWarn ).not.toHaveBeenCalled();
+			expect( applyFilters ).not.toHaveBeenCalledWith(
+				'uploadsUnleashed.allowFallback',
+				expect.anything(),
+				expect.anything(),
+				expect.anything()
+			);
+		} );
+
+		it( 'rethrows an AbortError without fallback', async () => {
+			const error = tusError(
+				'The user aborted a request.',
+				'POST',
+				null
+			);
+			error.name = 'AbortError';
+			upload.mockRejectedValue( error );
+
+			await expect( tusMiddleware( uploadRequest(), next ) ).rejects.toBe(
+				error
+			);
+
+			expect( next ).not.toHaveBeenCalled();
+			expect( createWarningNotice ).not.toHaveBeenCalled();
+		} );
+
 		it( 'rethrows errors without a TUS request', async () => {
 			const error = new Error(
 				'Upload completed but no attachment data received'

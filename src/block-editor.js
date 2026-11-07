@@ -132,6 +132,11 @@ const tusMiddleware = async ( options, next ) => {
 			params: Object.fromEntries( options.body ),
 		} );
 	} catch ( error ) {
+		// A cancelled upload must stay cancelled, without a notice.
+		if ( options.signal?.aborted || 'AbortError' === error?.name ) {
+			throw error;
+		}
+
 		// The server answered and turned the upload down: show its message.
 		if ( ! isTusUnavailable( error ) ) {
 			throw error;
