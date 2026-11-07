@@ -70,6 +70,8 @@ bin/install-wp-tests.sh wordpress_test <db-user> <db-pass> [db-host] [wp-version
 WP_TESTS_DIR="${TMPDIR:-/tmp}/wordpress-tests-lib" vendor/bin/phpunit
 ```
 
+`wp-version` is `latest` (the default), `nightly`, a branch such as `6.4` (its newest release) or an exact release. Set `WP_MULTISITE=1` when running PHPUnit to run the suite as multisite, including the `ms-required` tests.
+
 ### JavaScript Tests
 
 Vitest tests run locally:
