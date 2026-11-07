@@ -186,6 +186,29 @@ add_filter( 'uploads_unleashed_attachment_data', function( $data, $attachment_id
 
 ---
 
+### `uploads_unleashed_max_concurrent_uploads`
+
+Override how many uploads run in parallel in the browser. Further files wait until an upload finishes. The limit applies to every upload that goes through the TUS client, in the Media Library, the block editor, and `media-new.php`.
+
+Each running upload keeps a PHP worker busy with its current chunk. On hosts with only a few PHP workers, too many parallel uploads lead to 503 errors, so lower the limit there. Raise it on servers with many workers to upload batches of small files faster. The value is clamped to a minimum of 1.
+
+**Since:** 1.2.0
+
+**Parameters:**
+- `$max_concurrent_uploads` (int) - Maximum number of parallel uploads. Default `3`.
+
+**Return:** int - Maximum number of parallel uploads.
+
+**Example:**
+```php
+add_filter( 'uploads_unleashed_max_concurrent_uploads', function() {
+    // Shared host with two PHP workers: upload one file at a time.
+    return 1;
+} );
+```
+
+---
+
 ## Actions
 
 ### `uploads_unleashed_upload_created`

@@ -61,13 +61,27 @@ function uploads_unleashed_register_scripts() {
 		$tus_client_asset['version'],
 		true
 	);
+	/**
+	 * Filters how many uploads run in parallel in the browser.
+	 *
+	 * Further files wait until an upload finishes. Each running upload keeps a
+	 * PHP worker busy with its current chunk, so hosts with few workers answer
+	 * too many parallel uploads with 503 errors. Clamped to a minimum of 1.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param int $max_concurrent_uploads Maximum number of parallel uploads. Default 3.
+	 */
+	$max_concurrent_uploads = max( 1, (int) apply_filters( 'uploads_unleashed_max_concurrent_uploads', 3 ) );
+
 	wp_localize_script(
 		'uploads-unleashed',
 		'uploadsUnleashed',
 		array(
-			'endpoint'    => rest_url( 'wp/v2/media' ),
-			'nonce'       => wp_create_nonce( 'wp_rest' ),
-			'mediaNewUrl' => admin_url( 'media-new.php' ),
+			'endpoint'             => rest_url( 'wp/v2/media' ),
+			'nonce'                => wp_create_nonce( 'wp_rest' ),
+			'mediaNewUrl'          => admin_url( 'media-new.php' ),
+			'maxConcurrentUploads' => $max_concurrent_uploads,
 		)
 	);
 
