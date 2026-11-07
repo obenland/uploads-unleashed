@@ -190,6 +190,97 @@ const tusMiddleware = async ( options, next ) => {
 apiFetch.use( tusMiddleware );
 
 /**
+ * Resumes an interrupted upload with the file the user picked.
+ *
+ * @since 1.2.0
+ *
+ * @param {File}          file    The picked file.
+ * @param {Array<Object>} pending Pending uploads from getPendingUploads().
+ */
+function resumeFile( file, pending ) {
+	const notices = dispatch( noticesStore );
+	const id = 'uploads-unleashed-resume-' + file.name;
+
+	// The upload fingerprint covers name, size and modification time.
+	const isOriginal = pending.some(
+		( item ) =>
+			item.filename === file.name &&
+			item.size === file.size &&
+			item.lastModified === file.lastModified
+	);
+
+	if ( ! isOriginal ) {
+		notices.createWarningNotice(
+			sprintf(
+				/* translators: 1: picked filename, 2: comma-separated filenames of interrupted uploads */
+				__(
+					'%1$s does not match an interrupted upload. Pick the original, unchanged file: %2$s',
+					'uploads-unleashed'
+				),
+				file.name,
+				pending.map( ( item ) => item.filename ).join( ', ' )
+			),
+			{ id, isDismissible: true, type: 'snackbar' }
+		);
+		return;
+	}
+
+	notices.createInfoNotice(
+		sprintf(
+			/* translators: 1: filename */
+			__( 'Resuming upload of %1$s…', 'uploads-unleashed' ),
+			file.name
+		),
+		{ id, type: 'snackbar' }
+	);
+
+	upload( file )
+		.then( () => {
+			notices.createSuccessNotice(
+				sprintf(
+					/* translators: 1: filename */
+					__(
+						'%1$s was uploaded to the media library.',
+						'uploads-unleashed'
+					),
+					file.name
+				),
+				{ id, isDismissible: true, type: 'snackbar' }
+			);
+		} )
+		.catch( ( error ) => {
+			notices.createErrorNotice(
+				sprintf(
+					/* translators: 1: filename, 2: error message */
+					__( 'Could not upload %1$s: %2$s', 'uploads-unleashed' ),
+					file.name,
+					error.message
+				),
+				{ id, isDismissible: true, type: 'snackbar' }
+			);
+		} );
+}
+
+/**
+ * Lets the user pick the files of interrupted uploads, without leaving the editor.
+ *
+ * @since 1.2.0
+ *
+ * @param {Array<Object>} pending Pending uploads from getPendingUploads().
+ */
+function pickFilesToResume( pending ) {
+	const input = document.createElement( 'input' );
+	input.type = 'file';
+	input.multiple = true;
+	input.addEventListener( 'change', () => {
+		Array.from( input.files ).forEach( ( file ) =>
+			resumeFile( file, pending )
+		);
+	} );
+	input.click();
+}
+
+/**
  * Shows a snackbar notice if there are pending uploads.
  */
 function showPendingUploadsNotice() {
@@ -215,7 +306,7 @@ function showPendingUploadsNotice() {
 			type: 'snackbar',
 			actions: [
 				{
-					url: window.uploadsUnleashed?.mediaNewUrl,
+					onClick: () => pickFilesToResume( pending ),
 					label: __( 'Resume uploads', 'uploads-unleashed' ),
 				},
 			],

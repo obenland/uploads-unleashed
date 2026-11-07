@@ -685,3 +685,121 @@ describe( 'pending uploads notice', () => {
 		expect( mockCreateInfoNotice ).not.toHaveBeenCalled();
 	} );
 } );
+
+describe( 'resuming in the editor', () => {
+	const pending = {
+		key: 'k1',
+		uploadUrl: '/wp-json/wp/v2/media/abc',
+		filename: 'video.mp4',
+		size: 4,
+		lastModified: 1234567890,
+	};
+	const original = () =>
+		new File( [ 'data' ], 'video.mp4', { lastModified: 1234567890 } );
+	const flush = () => new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+	let notices;
+	let tusClient;
+	let input;
+
+	/**
+	 * Loads the module with one pending upload, then clicks the notice action and picks a file.
+	 *
+	 * @param {File|null}                    file         The file the user picks.
+	 * @param {(uploadMock: Object) => void} [mockUpload] Sets up the upload mock.
+	 */
+	async function resumeWith( file, mockUpload = () => {} ) {
+		vi.resetModules();
+		const data = await import( '@wordpress/data' );
+		tusClient = await import( '../../src/tus-client' );
+		const { default: freshApiFetch } =
+			await import( '@wordpress/api-fetch' );
+		notices = {
+			createInfoNotice: vi.fn(),
+			createSuccessNotice: vi.fn(),
+			createWarningNotice: vi.fn(),
+			createErrorNotice: vi.fn(),
+		};
+		data.dispatch.mockReturnValue( notices );
+		tusClient.getPendingUploads.mockReturnValue( [ pending ] );
+		tusClient.upload.mockReset();
+		mockUpload( tusClient.upload );
+		freshApiFetch.use = vi.fn();
+
+		const createElement = document.createElement.bind( document );
+		vi.spyOn( document, 'createElement' ).mockImplementation( ( tag ) => {
+			const element = createElement( tag );
+			if ( 'input' === tag ) {
+				input = element;
+				element.click = () => {
+					Object.defineProperty( element, 'files', {
+						value: file ? [ file ] : [],
+					} );
+					element.dispatchEvent( new Event( 'change' ) );
+				};
+			}
+			return element;
+		} );
+
+		await import( '../../src/block-editor' );
+
+		const [ , options ] = notices.createInfoNotice.mock.calls[ 0 ];
+		options.actions[ 0 ].onClick();
+		await flush();
+	}
+
+	afterEach( () => {
+		vi.restoreAllMocks();
+	} );
+
+	it( 'offers to resume without leaving the editor', async () => {
+		await resumeWith( null );
+
+		const [ , options ] = notices.createInfoNotice.mock.calls[ 0 ];
+		expect( options.actions[ 0 ].url ).toBeUndefined();
+		expect( input.type ).toBe( 'file' );
+		expect( tusClient.upload ).not.toHaveBeenCalled();
+	} );
+
+	it( 'resumes the upload of the original file and confirms it', async () => {
+		const file = original();
+
+		await resumeWith( file, ( uploadMock ) =>
+			uploadMock.mockResolvedValue( { id: 1 } )
+		);
+		await flush();
+
+		expect( tusClient.upload ).toHaveBeenCalledWith( file );
+		expect( notices.createSuccessNotice ).toHaveBeenCalledWith(
+			expect.stringContaining( 'video.mp4' ),
+			expect.objectContaining( { type: 'snackbar' } )
+		);
+	} );
+
+	it( 'shows the error when the resumed upload fails', async () => {
+		await resumeWith( original(), ( uploadMock ) =>
+			uploadMock.mockRejectedValue( new Error( 'Rejected' ) )
+		);
+		await flush();
+
+		expect( notices.createErrorNotice ).toHaveBeenCalledWith(
+			expect.stringContaining( 'Rejected' ),
+			expect.objectContaining( { type: 'snackbar' } )
+		);
+	} );
+
+	it.each( [
+		[ 'another file', () => new File( [ 'data' ], 'other.mp4' ) ],
+		[
+			'a modified file',
+			() => new File( [ 'data' ], 'video.mp4', { lastModified: 1 } ),
+		],
+	] )( 'does not upload %s', async ( label, makeFile ) => {
+		await resumeWith( makeFile() );
+
+		expect( tusClient.upload ).not.toHaveBeenCalled();
+		expect( notices.createWarningNotice ).toHaveBeenCalledWith(
+			expect.stringContaining( 'video.mp4' ),
+			expect.objectContaining( { type: 'snackbar' } )
+		);
+	} );
+} );
