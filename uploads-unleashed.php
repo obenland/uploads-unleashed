@@ -71,6 +71,8 @@ function uploads_unleashed_register_scripts() {
 		)
 	);
 
+	wp_set_script_translations( 'uploads-unleashed', 'uploads-unleashed' );
+
 	// Register and enqueue the pending uploads UI script.
 	$ui_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/resume-ui.asset.php';
 	wp_register_script(
@@ -101,6 +103,8 @@ function uploads_unleashed_register_scripts() {
 		true
 	);
 
+	wp_set_script_translations( 'uploads-unleashed-plupload', 'uploads-unleashed' );
+
 	// Register block editor integration.
 	$block_editor_asset = require UPLOADS_UNLEASHED_PLUGIN_DIR . 'build/block-editor.asset.php';
 
@@ -111,6 +115,8 @@ function uploads_unleashed_register_scripts() {
 		$block_editor_asset['version'],
 		true
 	);
+
+	wp_set_script_translations( 'uploads-unleashed-block-editor', 'uploads-unleashed' );
 }
 add_action( 'init', 'uploads_unleashed_register_scripts' );
 
