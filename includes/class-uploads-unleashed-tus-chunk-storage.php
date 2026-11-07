@@ -155,6 +155,22 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	}
 
 	/**
+	 * Creates an empty chunk file for a new upload.
+	 *
+	 * Chunk files are how pending uploads are found, so creating one up front
+	 * makes the upload count against the available space before its first chunk.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return bool True on success, false on failure.
+	 */
+	public function create( string $upload_id ): bool {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Same as append(): WP_Filesystem requires credentials, impractical for runtime.
+		return touch( $this->get_path( $upload_id ) );
+	}
+
+	/**
 	 * Appends data to a chunk file.
 	 *
 	 * @since 0.1.0
