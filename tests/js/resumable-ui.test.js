@@ -1288,7 +1288,11 @@ describe( 'resume focus management', () => {
 			createPendingUploadEntry( 'a.mp4', 100 ),
 			createPendingUploadEntry( 'b.mp4', 200 ),
 		] );
-		pickFile( new File( [ 'x'.repeat( 100 ) ], 'a.mp4' ) );
+		pickFile(
+			new File( [ 'x'.repeat( 100 ) ], 'a.mp4', {
+				lastModified: LAST_MODIFIED,
+			} )
+		);
 
 		const list = document.querySelector( '.uploads-unleashed-list' );
 		const resumeBtn = list.children[ 0 ].querySelector( '.resume-upload' );
@@ -1312,7 +1316,11 @@ describe( 'resume focus management', () => {
 		document.body.appendChild( browseBtn );
 
 		await importModule( [ createPendingUploadEntry( 'a.mp4', 100 ) ] );
-		pickFile( new File( [ 'x'.repeat( 100 ) ], 'a.mp4' ) );
+		pickFile(
+			new File( [ 'x'.repeat( 100 ) ], 'a.mp4', {
+				lastModified: LAST_MODIFIED,
+			} )
+		);
 
 		const resumeBtn = document.querySelector( '.resume-upload' );
 		resumeBtn.focus();
@@ -1372,7 +1380,9 @@ describe( 'file mismatch announcement', () => {
 
 		await importModule( [ createPendingUploadEntry( 'photo.jpg', 1024 ) ] );
 		const { speak } = await import( '@wordpress/a11y' );
-		pickFile( new File( [ 'x' ], 'wrong.jpg' ) );
+		pickFile(
+			new File( [ 'x' ], 'wrong.jpg', { lastModified: LAST_MODIFIED } )
+		);
 
 		document.querySelector( '.resume-upload' ).click();
 
@@ -1474,7 +1484,11 @@ describe( 'resumed upload progress announcements', () => {
 
 		await importModule( [ createPendingUploadEntry( 'movie.mp4', 100 ) ] );
 		const { speak } = await import( '@wordpress/a11y' );
-		pickFile( new File( [ 'x'.repeat( 100 ) ], 'movie.mp4' ) );
+		pickFile(
+			new File( [ 'x'.repeat( 100 ) ], 'movie.mp4', {
+				lastModified: LAST_MODIFIED,
+			} )
+		);
 
 		document.querySelector( '.resume-upload' ).click();
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
