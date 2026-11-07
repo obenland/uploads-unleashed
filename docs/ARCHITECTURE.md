@@ -162,6 +162,7 @@ Manages physical chunk files on disk:
 - Cleanup via WP-Cron (daily)
 
 **Methods:**
+- `create()` - Create the empty chunk file when an upload is created, so it counts as pending
 - `append()` - Write chunk data at offset
 - `get_path()` - Get sanitized file path
 - `get_size()` - Current file size
@@ -185,6 +186,7 @@ Manages physical chunk files on disk:
    Uploads_Unleashed_TUS_Controller::create_item()
    - Parses metadata (filename, filetype)
    - Creates Uploads_Unleashed_TUS_Upload_Session
+   - Creates an empty chunk file, which reserves the upload's length
 
 3. Response: 201 Created
    Headers: Location, Upload-Offset: 0
