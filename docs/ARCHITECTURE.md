@@ -168,6 +168,8 @@ Manages physical chunk files on disk:
 - `exists()` - Whether a chunk file exists
 - `delete()` - Remove chunk file
 - `get_total_pending_size()` - Bytes held by in-progress uploads (multisite quota)
+- `get_total_remaining_size()` - Bytes in-progress uploads have yet to receive (single-site disk space)
+- `exclude_from_dirsize()`, `drop_stale_dirsize()` - Keep chunk files out of the multisite space used (`pre_recurse_dirsize`, `transient_dirsize_cache`), since pending uploads already reserve their full length
 - `list_active_sessions()` - Active uploads (used by `wp tus list`)
 - `cleanup_expired()` - Cron job for old files
 - `delete_all()` - Remove the chunk directory (uninstall)
