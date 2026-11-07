@@ -146,7 +146,9 @@ describe( 'parallel upload limit', () => {
 		await flush();
 
 		instances[ 0 ].onError( new Error( 'Network error' ) );
-		await expect( first ).rejects.toThrow( 'Network error' );
+		await expect( first ).rejects.toThrow(
+			'The upload failed. Please try again.'
+		);
 		await flush();
 
 		expect( instances ).toHaveLength( 2 );

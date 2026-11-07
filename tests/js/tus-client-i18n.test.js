@@ -66,7 +66,7 @@ describe( 'translatable upload errors', () => {
 		} );
 
 		await expect( promise ).rejects.toThrow(
-			'[uploads-unleashed] Upload failed'
+			'[uploads-unleashed] The upload failed. Please try again.'
 		);
 	} );
 
@@ -76,7 +76,7 @@ describe( 'translatable upload errors', () => {
 		capturedCallbacks.onError( {} );
 
 		await expect( promise ).rejects.toThrow(
-			'[uploads-unleashed] Upload failed'
+			'[uploads-unleashed] The upload failed. Please try again.'
 		);
 	} );
 
