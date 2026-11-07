@@ -43,15 +43,21 @@ export async function findAttachments(
 	search: string
 ): Promise< unknown[] > {
 	return page.evaluate( async ( term ) => {
-		const config = (
-			window as unknown as {
-				uploadsUnleashed: { endpoint: string; nonce: string };
-			}
-		 ).uploadsUnleashed;
-		const url = new URL( config.endpoint, window.location.href );
+		const win = window as unknown as {
+			uploadsUnleashed: { endpoint: string; nonce: string };
+			wp?: { apiFetch?: { nonceMiddleware?: { nonce: string } } };
+		};
+		const url = new URL(
+			win.uploadsUnleashed.endpoint,
+			window.location.href
+		);
 		url.searchParams.set( 'search', term );
 		const response = await fetch( url, {
-			headers: { 'X-WP-Nonce': config.nonce },
+			headers: {
+				'X-WP-Nonce':
+					win.wp?.apiFetch?.nonceMiddleware?.nonce ||
+					win.uploadsUnleashed.nonce,
+			},
 		} );
 		return response.json();
 	}, search );

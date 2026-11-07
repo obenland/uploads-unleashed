@@ -86,7 +86,6 @@ describe( 'upload', () => {
 			file,
 			expect.objectContaining( {
 				endpoint: '/wp-json/wp/v2/media',
-				headers: { 'X-WP-Nonce': 'test-nonce' },
 				metadata: {
 					filename: 'test.txt',
 					filetype: 'text/plain',
@@ -186,7 +185,6 @@ describe( 'upload', () => {
 			file,
 			expect.objectContaining( {
 				endpoint: '/wp-json/wp/v2/media',
-				headers: { 'X-WP-Nonce': '' },
 			} )
 		);
 	} );
@@ -311,6 +309,121 @@ describe( 'upload', () => {
 		await expect( promise ).rejects.toThrow(
 			'Upload completed but no attachment data received'
 		);
+	} );
+
+	describe( 'success without attachment data', () => {
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		const attachmentData = { id: 123, title: { rendered: 'Test' } };
+		const flush = () =>
+			new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		// A HEAD response for an upload the server already finished.
+		const headResponse = ( attachmentId = null ) => ( {
+			lastResponse: {
+				getStatus: () => 200,
+				getBody: () => '',
+				getHeader: ( name ) =>
+					'X-WP-Upload-Attachment-ID' === name
+						? attachmentId
+						: undefined,
+			},
+		} );
+
+		const jsonResponse = ( data, ok = true ) => ( {
+			ok,
+			json: () => Promise.resolve( data ),
+		} );
+
+		afterEach( () => {
+			tus.Upload.mock.results[ 0 ].value.url = null;
+			delete global.fetch;
+		} );
+
+		it( 'fetches the attachment from the upload URL', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValue( jsonResponse( attachmentData ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse() );
+
+			await expect( promise ).resolves.toEqual( attachmentData );
+			expect( global.fetch ).toHaveBeenCalledWith( uploadUrl, {
+				headers: { 'X-WP-Nonce': 'test-nonce' },
+			} );
+		} );
+
+		it( 'falls back to the attachment ID header', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValueOnce( jsonResponse( {}, false ) )
+				.mockResolvedValueOnce( jsonResponse( attachmentData ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse( '123' ) );
+
+			await expect( promise ).resolves.toEqual( attachmentData );
+			expect( global.fetch ).toHaveBeenLastCalledWith(
+				'http://localhost:3000/wp-json/wp/v2/media/123?context=edit',
+				{ headers: { 'X-WP-Nonce': 'test-nonce' } }
+			);
+		} );
+
+		it( 'builds the attachment URL for plain permalinks', async () => {
+			window.uploadsUnleashed.endpoint =
+				'http://example.org/?rest_route=/wp/v2/media';
+			global.fetch = vi
+				.fn()
+				.mockRejectedValueOnce( new Error( 'Network' ) )
+				.mockResolvedValueOnce( jsonResponse( attachmentData ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse( '123' ) );
+
+			await expect( promise ).resolves.toEqual( attachmentData );
+			expect( global.fetch ).toHaveBeenLastCalledWith(
+				'http://example.org/?rest_route=%2Fwp%2Fv2%2Fmedia%2F123&context=edit',
+				{ headers: { 'X-WP-Nonce': 'test-nonce' } }
+			);
+		} );
+
+		it( 'rejects when the attachment cannot be fetched', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValue( jsonResponse( {}, false ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse() );
+
+			await expect( promise ).rejects.toThrow(
+				'Upload completed but no attachment data received'
+			);
+		} );
+
+		it( 'rejects when both the upload URL and the header lookup fail', async () => {
+			global.fetch = vi
+				.fn()
+				.mockResolvedValueOnce( jsonResponse( {}, false ) )
+				.mockRejectedValueOnce( new Error( 'Network' ) );
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			await flush();
+			tus.Upload.mock.results[ 0 ].value.url = uploadUrl;
+
+			capturedCallbacks.onSuccess( headResponse( '123' ) );
+
+			await expect( promise ).rejects.toThrow(
+				'Upload completed but no attachment data received'
+			);
+			expect( global.fetch ).toHaveBeenCalledTimes( 2 );
+		} );
 	} );
 
 	it( 'rejects when response body is invalid JSON', async () => {
@@ -693,7 +806,10 @@ describe( 'connection drops', () => {
 		originalRequest: {},
 		originalResponse: status ? { getStatus: () => status } : null,
 	} );
-	const request = ( method ) => ( { getMethod: () => method } );
+	const request = ( method ) => ( {
+		getMethod: () => method,
+		setHeader: vi.fn(),
+	} );
 	const getOptions = () => {
 		upload( new File( [ 'test' ], 'test.txt' ) );
 		return tus.Upload.mock.calls[ 0 ][ 1 ];
@@ -775,6 +891,247 @@ describe( 'connection drops', () => {
 		window.dispatchEvent( new Event( 'online' ) );
 
 		await expect( held ).resolves.toBeUndefined();
+	} );
+} );
+
+describe( 'REST nonce', () => {
+	const nonceEndpoint = '/wp-admin/admin-ajax.php?action=rest-nonce';
+	const flush = () => new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+	const request = ( method, nonce = 'test-nonce' ) => {
+		const headers = { 'X-WP-Nonce': nonce };
+		return {
+			getMethod: () => method,
+			getHeader: ( name ) => headers[ name ],
+			setHeader: vi.fn( ( name, value ) => {
+				headers[ name ] = value;
+			} ),
+		};
+	};
+	const response = ( status, body = '' ) => ( {
+		getStatus: () => status,
+		getBody: () => body,
+	} );
+	const invalidNonce = JSON.stringify( {
+		code: 'rest_cookie_invalid_nonce',
+		message: 'Cookie check failed',
+	} );
+	const getOptions = () => {
+		upload( new File( [ 'test' ], 'test.txt' ) );
+		return tus.Upload.mock.calls[ 0 ][ 1 ];
+	};
+	const mockNonceEndpoint = ( nonce, ok = true ) =>
+		vi.fn( async ( url ) => {
+			if ( url === nonceEndpoint ) {
+				return { ok, status: ok ? 200 : 400, text: async () => nonce };
+			}
+			throw new Error( `Unexpected request to ${ url }` );
+		} );
+
+	beforeEach( () => {
+		window.uploadsUnleashed.nonceEndpoint = nonceEndpoint;
+	} );
+
+	afterEach( () => {
+		delete global.fetch;
+		delete window.wp;
+	} );
+
+	it( 'sets the nonce on every request', async () => {
+		const { onBeforeRequest } = getOptions();
+		const req = request( 'PATCH', undefined );
+
+		await onBeforeRequest( req );
+
+		expect( req.setHeader ).toHaveBeenCalledWith(
+			'X-WP-Nonce',
+			'test-nonce'
+		);
+	} );
+
+	it( 'prefers the nonce kept fresh by apiFetch', async () => {
+		window.wp = { apiFetch: { nonceMiddleware: { nonce: 'heartbeat' } } };
+		const { onBeforeRequest } = getOptions();
+		const req = request( 'PATCH', undefined );
+
+		await onBeforeRequest( req );
+
+		expect( req.setHeader ).toHaveBeenCalledWith(
+			'X-WP-Nonce',
+			'heartbeat'
+		);
+	} );
+
+	it( 'refreshes an invalid nonce and retries the request', async () => {
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse, onBeforeRequest, onShouldRetry } =
+			getOptions();
+		const req = request( 'PATCH' );
+
+		const result = onAfterResponse( req, response( 403, invalidNonce ) );
+		await expect( result ).rejects.toThrow();
+		const error = await result.catch( ( causingError ) => causingError );
+
+		expect( global.fetch ).toHaveBeenCalledWith(
+			nonceEndpoint,
+			expect.anything()
+		);
+		expect(
+			onShouldRetry(
+				{
+					originalRequest: req,
+					originalResponse: null,
+					causingError: error,
+				},
+				0
+			)
+		).toBe( true );
+
+		const retry = request( 'PATCH', undefined );
+		await onBeforeRequest( retry );
+		expect( retry.setHeader ).toHaveBeenCalledWith(
+			'X-WP-Nonce',
+			'abcdef1234'
+		);
+	} );
+
+	it( 'updates the apiFetch nonce after a refresh', async () => {
+		window.wp = { apiFetch: { nonceMiddleware: { nonce: 'test-nonce' } } };
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse } = getOptions();
+
+		await onAfterResponse(
+			request( 'PATCH' ),
+			response( 403, invalidNonce )
+		).catch( () => {} );
+
+		expect( window.wp.apiFetch.nonceMiddleware.nonce ).toBe( 'abcdef1234' );
+	} );
+
+	it( 'refreshes on a bodiless 403 to a HEAD request', async () => {
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse( request( 'HEAD' ), response( 403 ) )
+		).rejects.toThrow();
+	} );
+
+	it( 'does not retry when the refreshed nonce is the same', async () => {
+		global.fetch = mockNonceEndpoint( 'test-nonce' );
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse( request( 'HEAD' ), response( 403 ) )
+		).resolves.toBeUndefined();
+	} );
+
+	it( 'does not retry when the refresh fails, e.g. after logging out', async () => {
+		global.fetch = mockNonceEndpoint( '0', false );
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse( request( 'PATCH' ), response( 403, invalidNonce ) )
+		).resolves.toBeUndefined();
+	} );
+
+	it( 'leaves other 403 responses alone', async () => {
+		global.fetch = vi.fn();
+		const { onAfterResponse } = getOptions();
+
+		await expect(
+			onAfterResponse(
+				request( 'PATCH' ),
+				response(
+					403,
+					JSON.stringify( { code: 'rest_cannot_view_upload' } )
+				)
+			)
+		).resolves.toBeUndefined();
+		expect( global.fetch ).not.toHaveBeenCalled();
+	} );
+
+	it( 'shares one refresh between concurrent requests', async () => {
+		global.fetch = mockNonceEndpoint( 'abcdef1234' );
+		const { onAfterResponse } = getOptions();
+
+		await Promise.allSettled( [
+			onAfterResponse(
+				request( 'PATCH' ),
+				response( 403, invalidNonce )
+			),
+			onAfterResponse(
+				request( 'PATCH' ),
+				response( 403, invalidNonce )
+			),
+		] );
+
+		expect( global.fetch ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'discards a pending upload with a refreshed nonce', async () => {
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		global.fetch = vi.fn( async ( url, options = {} ) => {
+			if ( url === nonceEndpoint ) {
+				return {
+					ok: true,
+					status: 200,
+					text: async () => 'abcdef1234',
+				};
+			}
+			return 'abcdef1234' === options.headers[ 'X-WP-Nonce' ]
+				? { ok: true, status: 204 }
+				: { ok: false, status: 403, text: async () => invalidNonce };
+		} );
+
+		await discardPendingUpload( { key: 'test-key', uploadUrl } );
+
+		expect( global.fetch ).toHaveBeenLastCalledWith( uploadUrl, {
+			method: 'DELETE',
+			headers: { 'X-WP-Nonce': 'abcdef1234' },
+		} );
+	} );
+
+	it( 'forgets a deleted session even when the nonce went stale', async () => {
+		const uploadUrl = '/wp-json/wp/v2/media/abc';
+		const storageKey = 'tus::tus-br|test.txt::9999999999999::1';
+		localStorage.clear();
+		localStorage.setItem( storageKey, '{}' );
+		global.fetch = vi.fn( async ( url, options = {} ) => {
+			if ( url === nonceEndpoint ) {
+				return {
+					ok: true,
+					status: 200,
+					text: async () => 'abcdef1234',
+				};
+			}
+			return {
+				status:
+					'abcdef1234' === options.headers[ 'X-WP-Nonce' ]
+						? 404
+						: 403,
+			};
+		} );
+
+		const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+		await flush();
+		const mockUpload = tus.Upload.mock.results[ 0 ].value;
+		mockUpload.url = uploadUrl;
+		mockUpload.findPreviousUploads.mockResolvedValueOnce( [
+			{ uploadUrl, urlStorageKey: storageKey },
+		] );
+
+		capturedCallbacks.onError( {
+			message: 'TUS error',
+			originalResponse: { getBody: () => '' },
+		} );
+		await expect( promise ).rejects.toThrow();
+		await flush();
+		await flush();
+
+		expect( localStorage.getItem( storageKey ) ).toBeNull();
+		mockUpload.url = null;
+		mockUpload.findPreviousUploads.mockReset();
+		mockUpload.findPreviousUploads.mockResolvedValue( [] );
 	} );
 } );
 

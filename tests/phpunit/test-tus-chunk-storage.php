@@ -326,6 +326,56 @@ class Test_Uploads_Unleashed_TUS_Chunk_Storage extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that lock() is exclusive and released by unlock().
+	 */
+	public function test_lock_is_exclusive_until_unlocked() {
+		$upload_id = wp_generate_uuid4();
+
+		$lock = $this->storage->lock( $upload_id );
+		$this->assertNotFalse( $lock );
+		$this->assertFalse( $this->storage->lock( $upload_id ) );
+
+		$this->storage->unlock( $lock );
+
+		$lock = $this->storage->lock( $upload_id );
+		$this->assertNotFalse( $lock );
+		$this->storage->unlock( $lock );
+		$this->storage->delete( $upload_id );
+	}
+
+	/**
+	 * Tests that delete() removes the lock file along with the chunk file.
+	 */
+	public function test_delete_removes_lock_file() {
+		$upload_id = wp_generate_uuid4();
+		$this->storage->append( $upload_id, 'data', 0 );
+		$this->storage->unlock( $this->storage->lock( $upload_id ) );
+
+		$lock_path = substr( $this->storage->get_path( $upload_id ), 0, -strlen( '.part' ) ) . '.lock';
+		$this->assertFileExists( $lock_path );
+
+		$this->storage->delete( $upload_id );
+
+		$this->assertFileDoesNotExist( $lock_path );
+		$this->assertFalse( $this->storage->exists( $upload_id ) );
+	}
+
+	/**
+	 * Tests that cleanup_expired removes lock files left behind without a session.
+	 */
+	public function test_cleanup_expired_removes_orphaned_lock_files() {
+		$upload_id = wp_generate_uuid4();
+		$this->storage->unlock( $this->storage->lock( $upload_id ) );
+
+		$lock_path = substr( $this->storage->get_path( $upload_id ), 0, -strlen( '.part' ) ) . '.lock';
+		$this->assertFileExists( $lock_path );
+
+		Uploads_Unleashed_TUS_Chunk_Storage::cleanup_expired();
+
+		$this->assertFileDoesNotExist( $lock_path );
+	}
+
+	/**
 	 * Tests that cleanup_expired returns early when no .part files exist.
 	 *
 	 * Covers line 248 (no files early return).
