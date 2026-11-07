@@ -298,6 +298,22 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return $file_size_check;
 		}
 
+		/*
+		 * Reject file types that would fail at finalize now, before the client
+		 * sends any bytes. Mirrors the check in _wp_handle_upload().
+		 */
+		$metadata = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
+		$filename = sanitize_file_name( $metadata['filename'] ?? '' );
+
+		if ( '' === $filename ) {
+			return new WP_Error( 'rest_upload_filename_required', __( 'A filename is required in the Upload-Metadata header.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
+		$filetype = wp_check_filetype( $filename );
+		if ( ( ! $filetype['type'] || ! $filetype['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
+			return new WP_Error( 'rest_invalid_file_type', __( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
 		/** This filter is documented in includes/class-uploads-unleashed-tus-controller.php */
 		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
 
@@ -322,12 +338,10 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// Parse metadata and create upload session.
-		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
 		$session   = new Uploads_Unleashed_TUS_Upload_Session();
 		$upload_id = $session->create(
 			array(
-				'filename' => $metadata['filename'] ?? 'unnamed',
+				'filename' => $filename,
 				'filetype' => $metadata['filetype'] ?? 'application/octet-stream',
 				'length'   => $upload_length,
 			),
@@ -369,7 +383,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 */
 	public function get_item_offset( WP_REST_Request $request ): WP_REST_Response {
 		$response = new WP_REST_Response( null, 200 );
-		$response->header( 'Upload-Offset', $this->current_upload['offset'] );
+		$response->header( 'Upload-Offset', $this->get_upload_offset( $request->get_param( 'id' ) ) );
 		$response->header( 'Upload-Length', $this->current_upload['length'] );
 		$response->header( 'Tus-Resumable', self::TUS_VERSION );
 		// CRITICAL: Prevent proxy caching of offset.
@@ -402,7 +416,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		$client_offset = (int) $client_offset;
-		$server_offset = (int) $this->current_upload['offset'];
+		$server_offset = $this->get_upload_offset( $upload_id );
 
 		// 409 Conflict: Do NOT store any data on offset mismatch.
 		if ( $client_offset !== $server_offset ) {
@@ -463,8 +477,12 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return $new_offset;
 		}
 
-		// Update session.
+		/*
+		 * Update the session. The chunk file is the source of truth for the
+		 * offset, so a failed update is corrected on the next request.
+		 */
 		( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $new_offset );
+		$this->current_upload['offset'] = $new_offset;
 
 		/**
 		 * Fires after a chunk is received and stored.
@@ -605,7 +623,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		// Default finalization pipeline.
-		$validated = $this->validate_file( $chunk_path, $upload_data['filename'] );
+		$validated = $this->validate_file( $chunk_path, $upload_data['filename'], $upload_data['filetype'] ?? '' );
 		if ( is_wp_error( $validated ) ) {
 			$this->delete_upload( $upload_id );
 
@@ -662,15 +680,21 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	 * to prevent PHP-in-image attacks.
 	 *
 	 * @since 0.1.0
+	 * @since 1.2.0 Added the `$filetype` parameter. Users with the `unfiltered_upload`
+	 *              capability may upload any type, as in core.
 	 *
 	 * @param string $file_path The path to the uploaded file.
 	 * @param string $filename  The original filename.
+	 * @param string $filetype  Optional. The MIME type the client declared, used when the
+	 *                          type can't be determined and the user can `unfiltered_upload`.
 	 * @return array|WP_Error Array with 'type' and 'filename' on success, WP_Error on failure.
 	 */
-	protected function validate_file( string $file_path, string $filename ) {
+	protected function validate_file( string $file_path, string $filename, string $filetype = '' ) {
 		$validated = wp_check_filetype_and_ext( $file_path, $filename );
+		$type      = $validated['type'];
 
-		if ( ! $validated['type'] ) {
+		// Same rule as _wp_handle_upload().
+		if ( ( ! $type || ! $validated['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
 			return new WP_Error(
 				'rest_invalid_file_type',
 				__( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ),
@@ -678,10 +702,17 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// For images, verify actual image data (prevents PHP-in-image attacks).
-		if ( 0 === strpos( $validated['type'], 'image/' ) ) {
+		if ( ! $type ) {
+			$type = '' !== $filetype ? $filetype : 'application/octet-stream';
+		} elseif ( 0 === strpos( $type, 'image/' ) ) {
+			/*
+			 * For images, verify actual image data (prevents PHP-in-image attacks).
+			 * wp_check_filetype_and_ext() has already checked the content; this
+			 * guards against that check being filtered. SVG is the one allowed image
+			 * type wp_get_image_mime() can't read, so it's left to that check.
+			 */
 			$actual_mime = wp_get_image_mime( $file_path );
-			if ( ! $actual_mime || $actual_mime !== $validated['type'] ) {
+			if ( 'image/svg+xml' !== $type && $actual_mime !== $type ) {
 				return new WP_Error(
 					'rest_invalid_image',
 					__( 'File is not a valid image.', 'uploads-unleashed' ),
@@ -697,7 +728,7 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		}
 
 		return array(
-			'type'     => $validated['type'],
+			'type'     => $type,
 			'filename' => sanitize_file_name( $final_filename ),
 		);
 	}
@@ -1043,6 +1074,30 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 		$this->current_upload = $upload;
 
 		return true;
+	}
+
+	/**
+	 * Returns the number of bytes received for an upload.
+	 *
+	 * The chunk file is the source of truth: the session offset is saved
+	 * after the chunk is written, so it lags behind when PHP is killed in
+	 * between or the session fails to save. Reconciles the session from the
+	 * file when they differ.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @param string $upload_id The upload ID.
+	 * @return int The upload offset in bytes.
+	 */
+	private function get_upload_offset( string $upload_id ): int {
+		$offset = ( new Uploads_Unleashed_TUS_Chunk_Storage() )->get_size( $upload_id );
+
+		if ( (int) $this->current_upload['offset'] !== $offset ) {
+			( new Uploads_Unleashed_TUS_Upload_Session() )->update_offset( $upload_id, $offset );
+			$this->current_upload['offset'] = $offset;
+		}
+
+		return $offset;
 	}
 
 	/**

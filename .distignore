@@ -31,6 +31,7 @@ webpack.config.js
 # Testing and linting
 .eslintignore
 .eslintrc.json
+eslint.config.cjs
 .prettierignore
 tests
 /bin

@@ -49,10 +49,38 @@ function extractFile( formData ) {
 }
 
 /**
+ * Checks whether a TUS upload failed because the endpoint is unavailable.
+ *
+ * Only a network error or a 404, 405 or 501 response on the creation request
+ * qualifies. Any other failure is the server's answer to this upload, such as
+ * an invalid file type or a full disk, which a standard upload would get too.
+ *
+ * @since 1.2.0
+ *
+ * @param {Error} error The error `upload()` rejected with.
+ * @return {boolean} True if a standard upload might still succeed.
+ */
+function isTusUnavailable( error ) {
+	const request = error?.cause?.originalRequest;
+
+	// The creation request is the only plain POST; others override the method.
+	if (
+		request?.getMethod() !== 'POST' ||
+		request.getHeader( 'X-HTTP-Method-Override' )
+	) {
+		return false;
+	}
+
+	const response = error.cause.originalResponse;
+
+	return ! response || [ 404, 405, 501 ].includes( response.getStatus() );
+}
+
+/**
  * TUS middleware for wp.apiFetch.
  *
  * Core-ready features:
- * - Graceful fallback to standard upload on TUS failure
+ * - Graceful fallback to standard upload when TUS is unavailable
  * - Uses `wp.hooks` for extensibility
  * - No global state pollution
  *
@@ -98,7 +126,11 @@ const tusMiddleware = async ( options, next ) => {
 			signal: options.signal,
 		} );
 	} catch ( error ) {
-		// Log for debugging
+		// The server answered and turned the upload down: show its message.
+		if ( ! isTusUnavailable( error ) ) {
+			throw error;
+		}
+
 		// eslint-disable-next-line no-console
 		console.warn(
 			'TUS upload failed, falling back to standard upload:',
@@ -106,10 +138,12 @@ const tusMiddleware = async ( options, next ) => {
 		);
 
 		/**
-		 * Filters whether to fall back to the standard upload after a TUS failure.
+		 * Filters whether to fall back to the standard upload when TUS is unavailable.
 		 *
 		 * Returning false causes the error to be re-thrown instead of
-		 * falling back to the default wp.apiFetch upload.
+		 * falling back to the default wp.apiFetch upload. Only consulted
+		 * when the upload couldn't be created, never after the server
+		 * rejected it.
 		 *
 		 * @since 1.0.0
 		 *
