@@ -292,6 +292,22 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			return new WP_Error( 'rest_upload_length_invalid', __( 'Upload-Length must be a positive integer.', 'uploads-unleashed' ), array( 'status' => 400 ) );
 		}
 
+		/*
+		 * Reject file types that would fail at finalize now, before the client
+		 * sends any bytes. Mirrors the check in _wp_handle_upload().
+		 */
+		$metadata = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
+		$filename = sanitize_file_name( $metadata['filename'] ?? '' );
+
+		if ( '' === $filename ) {
+			return new WP_Error( 'rest_upload_filename_required', __( 'A filename is required in the Upload-Metadata header.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
+		$filetype = wp_check_filetype( $filename );
+		if ( ( ! $filetype['type'] || ! $filetype['ext'] ) && ! current_user_can( 'unfiltered_upload' ) ) {
+			return new WP_Error( 'rest_invalid_file_type', __( 'Sorry, you are not allowed to upload this file type.', 'uploads-unleashed' ), array( 'status' => 400 ) );
+		}
+
 		/** This filter is documented in includes/class-uploads-unleashed-tus-controller.php */
 		$max_size = apply_filters( 'uploads_unleashed_max_upload_size', wp_max_upload_size(), $request );
 
@@ -316,12 +332,10 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 			);
 		}
 
-		// Parse metadata and create upload session.
-		$metadata  = $this->parse_upload_metadata( $request->get_header( 'Upload-Metadata' ) );
 		$session   = new Uploads_Unleashed_TUS_Upload_Session();
 		$upload_id = $session->create(
 			array(
-				'filename' => $metadata['filename'] ?? 'unnamed',
+				'filename' => $filename,
 				'filetype' => $metadata['filetype'] ?? 'application/octet-stream',
 				'length'   => $upload_length,
 			),
