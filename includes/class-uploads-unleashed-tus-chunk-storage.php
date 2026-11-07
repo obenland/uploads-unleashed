@@ -421,7 +421,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 * @return string Normalized chunk directory path without a trailing slash.
 	 */
 	private static function get_dirsize_key(): string {
-		return wp_normalize_path( untrailingslashit( self::get_base_dir_path() ) );
+		return wp_normalize_path( untrailingslashit( self::get_chunk_dir() ) );
 	}
 
 	/**
