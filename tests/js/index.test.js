@@ -26,6 +26,21 @@ vi.mock( 'tus-js-client', () => {
 	};
 
 	return {
+		DefaultHttpStack: vi.fn().mockImplementation( function () {
+			return {
+				createRequest: ( method, url ) => {
+					const headers = {};
+					return {
+						getMethod: () => method,
+						getURL: () => url,
+						getHeader: ( name ) => headers[ name ],
+						setHeader: ( name, value ) => {
+							headers[ name ] = value;
+						},
+					};
+				},
+			};
+		} ),
 		Upload: vi.fn().mockImplementation( function ( file, options ) {
 			// Capture callbacks for testing
 			capturedCallbacks = {
@@ -593,6 +608,7 @@ describe( 'upload', () => {
 			const detailedError = {
 				message: 'TUS error',
 				originalResponse: {
+					getStatus: () => 400,
 					getBody: () =>
 						JSON.stringify( {
 							message: 'WordPress error message',
@@ -637,6 +653,7 @@ describe( 'upload', () => {
 			const detailedError = {
 				message: 'TUS error',
 				originalResponse: {
+					getStatus: () => 400,
 					getBody: () => null,
 				},
 			};
@@ -656,6 +673,7 @@ describe( 'upload', () => {
 			const detailedError = {
 				message: 'TUS error',
 				originalResponse: {
+					getStatus: () => 400,
 					getBody: () => 'not json',
 				},
 			};
@@ -683,6 +701,7 @@ describe( 'upload', () => {
 			const httpError = () => ( {
 				message: 'TUS error',
 				originalResponse: {
+					getStatus: () => 400,
 					getBody: () => JSON.stringify( { message: 'Rejected' } ),
 				},
 			} );
@@ -836,6 +855,7 @@ describe( 'connection drops', () => {
 	} );
 	const request = ( method ) => ( {
 		getMethod: () => method,
+		getHeader: () => undefined,
 		setHeader: vi.fn(),
 	} );
 	const getOptions = () => {
@@ -1049,7 +1069,7 @@ describe( 'REST nonce', () => {
 		const { onAfterResponse } = getOptions();
 
 		await expect(
-			onAfterResponse( request( 'HEAD' ), response( 403 ) )
+			onAfterResponse( request( 'PATCH' ), response( 403, invalidNonce ) )
 		).resolves.toBeUndefined();
 	} );
 
@@ -1150,7 +1170,7 @@ describe( 'REST nonce', () => {
 
 		capturedCallbacks.onError( {
 			message: 'TUS error',
-			originalResponse: { getBody: () => '' },
+			originalResponse: { getStatus: () => 400, getBody: () => '' },
 		} );
 		await expect( promise ).rejects.toThrow();
 		await flush();
@@ -1160,6 +1180,243 @@ describe( 'REST nonce', () => {
 		mockUpload.url = null;
 		mockUpload.findPreviousUploads.mockReset();
 		mockUpload.findPreviousUploads.mockResolvedValue( [] );
+	} );
+} );
+
+describe( 'server limits', () => {
+	const MB = 1024 * 1024;
+
+	const request = ( method, headers = {} ) => ( {
+		getMethod: () => method,
+		getHeader: ( name ) => headers[ name ],
+		setHeader: vi.fn(),
+	} );
+	const response = ( status, body = '' ) => ( {
+		getStatus: () => status,
+		getBody: () => body,
+	} );
+	const startUpload = () => {
+		upload( new File( [ 'test' ], 'test.txt' ) );
+		const calls = tus.Upload.mock.calls;
+		const options = calls[ calls.length - 1 ][ 1 ];
+		// tus copies the options onto the upload instance.
+		tus.Upload.mock.results[ calls.length - 1 ].value.options = options;
+		return options;
+	};
+	const retries = ( options, result ) =>
+		result.then(
+			() => false,
+			( causingError ) =>
+				options.onShouldRetry(
+					{ originalRequest: {}, causingError },
+					0
+				)
+		);
+
+	beforeEach( () => {
+		global.fetch = vi.fn().mockResolvedValue( { ok: true, status: 204 } );
+	} );
+
+	afterEach( () => {
+		delete global.fetch;
+	} );
+
+	describe( 'chunk size', () => {
+		it( 'uses the maximum chunk size from the server when it is smaller', () => {
+			window.uploadsUnleashed.maxChunkSize = String( 2 * MB );
+
+			expect( startUpload().chunkSize ).toBe( 2 * MB );
+		} );
+
+		it( 'keeps 5 MB chunks when the server allows larger ones', () => {
+			window.uploadsUnleashed.maxChunkSize = String( 10 * MB );
+
+			expect( startUpload().chunkSize ).toBe( 5 * MB );
+		} );
+
+		it( 'halves the chunk size and retries after a 413', async () => {
+			const options = startUpload();
+
+			const retried = await retries(
+				options,
+				options.onAfterResponse( request( 'PATCH' ), response( 413 ) )
+			);
+
+			expect( retried ).toBe( true );
+			expect( options.chunkSize ).toBe( 2.5 * MB );
+		} );
+
+		it( 'starts later uploads with the reduced chunk size', async () => {
+			const options = startUpload();
+			await options
+				.onAfterResponse( request( 'PATCH' ), response( 413 ) )
+				.catch( () => {} );
+
+			expect( startUpload().chunkSize ).toBe( 2.5 * MB );
+		} );
+
+		it( 'gives up below 256 KB and drops the resumable entry', async () => {
+			const uploadUrl = '/wp-json/wp/v2/media/abc';
+			const storageKey = 'tus::tus-br|test.txt::9999999999999::1';
+			localStorage.clear();
+			localStorage.setItem( storageKey, '{}' );
+			localStorage.setItem( `tus-progress::${ uploadUrl }`, '4' );
+
+			const promise = upload( new File( [ 'test' ], 'test.txt' ) );
+			const calls = tus.Upload.mock.calls;
+			const options = calls[ calls.length - 1 ][ 1 ];
+			const mockUpload = tus.Upload.mock.results[ 0 ].value;
+			mockUpload.options = options;
+			options.chunkSize = 256 * 1024;
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+			mockUpload.url = uploadUrl;
+			mockUpload.findPreviousUploads.mockResolvedValueOnce( [
+				{ uploadUrl, urlStorageKey: storageKey },
+			] );
+
+			const retried = await retries(
+				options,
+				options.onAfterResponse( request( 'PATCH' ), response( 413 ) )
+			);
+			expect( retried ).toBe( false );
+
+			capturedCallbacks.onError( {
+				message: 'tus: unexpected response while uploading chunk',
+				originalRequest: request( 'PATCH' ),
+				originalResponse: response( 413, '<html>Too Large</html>' ),
+			} );
+
+			await expect( promise ).rejects.toThrow( /too large/i );
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+			expect( localStorage.getItem( storageKey ) ).toBeNull();
+			expect(
+				localStorage.getItem( `tus-progress::${ uploadUrl }` )
+			).toBeNull();
+			mockUpload.url = null;
+		} );
+	} );
+
+	describe( 'method override', () => {
+		const blockedResponses = [
+			[ 'HEAD', response( 405 ) ],
+			[ 'PATCH', response( 405, '<html>Not Allowed</html>' ) ],
+			[ 'PATCH', response( 403, '<html>Forbidden</html>' ) ],
+			[ 'DELETE', response( 403, '<html>Forbidden</html>' ) ],
+			[
+				'PATCH',
+				response(
+					400,
+					JSON.stringify( {
+						code: 'rest_empty_chunk',
+						message: 'No data received.',
+					} )
+				),
+			],
+		];
+
+		it.each( blockedResponses )(
+			'switches to POST with X-HTTP-Method-Override after a blocked %s',
+			async ( method, blocked ) => {
+				const options = startUpload();
+
+				const retried = await retries(
+					options,
+					options.onAfterResponse( request( method ), blocked )
+				);
+				expect( retried ).toBe( true );
+
+				const retry = options.httpStack.createRequest(
+					method,
+					'/wp-json/wp/v2/media/abc'
+				);
+				expect( retry.getMethod() ).toBe( 'POST' );
+				expect( retry.getHeader( 'X-HTTP-Method-Override' ) ).toBe(
+					method
+				);
+			}
+		);
+
+		it( 'sends requests unchanged until a method is blocked', () => {
+			const options = startUpload();
+
+			const req = options.httpStack.createRequest(
+				'PATCH',
+				'/wp-json/wp/v2/media/abc'
+			);
+
+			expect( req.getMethod() ).toBe( 'PATCH' );
+			expect( req.getHeader( 'X-HTTP-Method-Override' ) ).toBeUndefined();
+		} );
+
+		it( 'never overrides the creation request', async () => {
+			const options = startUpload();
+			await options
+				.onAfterResponse( request( 'PATCH' ), response( 405 ) )
+				.catch( () => {} );
+
+			const req = options.httpStack.createRequest(
+				'POST',
+				'/wp-json/wp/v2/media'
+			);
+			expect( req.getHeader( 'X-HTTP-Method-Override' ) ).toBeUndefined();
+		} );
+
+		it( 'leaves WordPress permission errors alone', async () => {
+			const options = startUpload();
+
+			const retried = await retries(
+				options,
+				options.onAfterResponse(
+					request( 'PATCH' ),
+					response(
+						403,
+						JSON.stringify( { code: 'rest_cannot_view_upload' } )
+					)
+				)
+			);
+
+			expect( retried ).toBe( false );
+			expect(
+				options.httpStack.createRequest( 'PATCH', '/x' ).getMethod()
+			).toBe( 'PATCH' );
+		} );
+
+		it( 'does not switch again once requests are overridden', async () => {
+			const options = startUpload();
+
+			const retried = await retries(
+				options,
+				options.onAfterResponse(
+					request( 'POST', { 'X-HTTP-Method-Override': 'PATCH' } ),
+					response( 405 )
+				)
+			);
+
+			expect( retried ).toBe( false );
+		} );
+
+		it( 'discards pending uploads with the override once it is active', async () => {
+			const options = startUpload();
+			await options
+				.onAfterResponse( request( 'DELETE' ), response( 405 ) )
+				.catch( () => {} );
+
+			await discardPendingUpload( {
+				key: 'test-key',
+				uploadUrl: '/wp-json/wp/v2/media/abc',
+			} );
+
+			expect( global.fetch ).toHaveBeenCalledWith(
+				'/wp-json/wp/v2/media/abc',
+				{
+					method: 'POST',
+					headers: {
+						'X-WP-Nonce': 'test-nonce',
+						'X-HTTP-Method-Override': 'DELETE',
+					},
+				}
+			);
+		} );
 	} );
 } );
 

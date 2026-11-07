@@ -33,6 +33,8 @@ Override the maximum allowed chunk size per PATCH request.
 
 Controls how large each individual PATCH request body can be. The default is 10 MB. The return value is clamped to a minimum of 1 MB.
 
+The filter also runs when the scripts are registered, to pass the limit to the browser. That request has no upload ID. The browser sends chunks of at most 5 MB, or this limit if it's lower.
+
 The filter also runs on `parse_request`, before the REST server reads the body, so that a PATCH whose `Content-Length` exceeds the limit is rejected with 413 without being loaded into memory. In that call, `$request` carries the route and headers but no body.
 
 **Parameters:**

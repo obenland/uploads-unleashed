@@ -145,9 +145,11 @@ class Uploads_Unleashed_TUS_Controller extends WP_REST_Controller {
 	/**
 	 * Returns the maximum allowed chunk size for a PATCH request.
 	 *
+	 * Also localized for the client, so it doesn't send larger chunks.
+	 *
 	 * @since 1.2.0
 	 *
-	 * @param WP_REST_Request $request The request object.
+	 * @param WP_REST_Request $request The request object. Has no upload ID when called for the client.
 	 * @return int Maximum chunk size in bytes, at least 1 MB.
 	 */
 	public static function get_max_chunk_size( WP_REST_Request $request ): int {
