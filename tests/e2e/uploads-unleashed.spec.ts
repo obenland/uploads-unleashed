@@ -1,7 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Request } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { loginAsAdmin } from './utils';
+import { findAttachments, loginAsAdmin } from './utils';
 
 /**
  * End-to-end coverage for Uploads Unleashed.
@@ -209,6 +209,69 @@ test.describe( 'Uploads Unleashed', () => {
 				)
 			)
 			.toBe( 0 );
+	} );
+
+	test( 'finishes an upload after the connection drops mid-upload', async ( {
+		page,
+		context,
+	} ) => {
+		await loginAsAdmin( page );
+		await page.goto( '/wp-admin/upload.php?mode=grid' );
+		await page.locator( '.page-title-action' ).click();
+
+		// A valid PNG padded past one 5 MB chunk, so it takes several PATCH requests.
+		const name = `offline-${ Date.now() }`;
+		const image = await fs.readFile(
+			path.resolve( __dirname, 'fixtures/test-image.png' )
+		);
+		const isChunk = ( request: Request ) =>
+			'PATCH' === request.method() &&
+			/wp\/v2\/media\/[0-9a-f-]{36}/.test(
+				decodeURIComponent( request.url() )
+			);
+
+		// Drop the connection while the second chunk is in flight.
+		let chunks = 0;
+		await page.route(
+			( url ) => /wp\/v2\/media\//.test( decodeURIComponent( url.href ) ),
+			async ( route ) => {
+				if ( isChunk( route.request() ) && 2 === ++chunks ) {
+					await context.setOffline( true );
+					await route.abort( 'internetdisconnected' );
+					return;
+				}
+				await route.fallback();
+			}
+		);
+
+		await page
+			.locator( '.moxie-shim input[type="file"]' )
+			.first()
+			.setInputFiles( {
+				name: `${ name }.png`,
+				mimeType: 'image/png',
+				buffer: Buffer.concat( [
+					image,
+					Buffer.alloc( 12 * 1024 * 1024 ),
+				] ),
+			} );
+
+		await expect.poll( () => chunks ).toBe( 2 );
+
+		// tus used to give up at once while the browser was offline.
+		await page.waitForTimeout( 3000 );
+		await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
+		await context.setOffline( false );
+
+		await expect( page.locator( '.attachment.uploading' ) ).toHaveCount(
+			0,
+			{
+				timeout: 30000,
+			}
+		);
+		await expect( page.locator( '.upload-error' ) ).toHaveCount( 0 );
+
+		expect( await findAttachments( page, name ) ).toHaveLength( 1 );
 	} );
 
 	test( 'keeps the uploaded grid item as the cached attachment model', async ( {

@@ -106,17 +106,17 @@ describe( 'upload', () => {
 		);
 	} );
 
-	it( 'sets retry delays', () => {
+	it( 'keeps retrying for minutes with a capped backoff', () => {
 		const file = new File( [ 'test' ], 'test.txt' );
 
 		upload( file );
 
-		expect( tus.Upload ).toHaveBeenCalledWith(
-			file,
-			expect.objectContaining( {
-				retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
-			} )
-		);
+		const { retryDelays } = tus.Upload.mock.calls[ 0 ][ 1 ];
+		const total = retryDelays.reduce( ( sum, delay ) => sum + delay, 0 );
+
+		expect( retryDelays[ 0 ] ).toBe( 0 );
+		expect( Math.max( ...retryDelays ) ).toBe( 60000 );
+		expect( total ).toBeGreaterThanOrEqual( 3 * 60 * 1000 );
 	} );
 
 	it( 'sets removeFingerprintOnSuccess to true', () => {
@@ -672,6 +672,102 @@ describe( 'upload', () => {
 
 			await expect( promise ).rejects.toThrow( 'Upload aborted' );
 		} );
+	} );
+} );
+
+describe( 'connection drops', () => {
+	const setOnline = ( online ) =>
+		Object.defineProperty( window.navigator, 'onLine', {
+			configurable: true,
+			get: () => online,
+		} );
+	const flush = () => new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+	const requestError = ( status ) => ( {
+		originalRequest: {},
+		originalResponse: status ? { getStatus: () => status } : null,
+	} );
+	const request = ( method ) => ( { getMethod: () => method } );
+	const getOptions = () => {
+		upload( new File( [ 'test' ], 'test.txt' ) );
+		return tus.Upload.mock.calls[ 0 ][ 1 ];
+	};
+
+	afterEach( () => {
+		setOnline( true );
+		tus.Upload.mock.results[ 0 ].value._aborted = false;
+	} );
+
+	it( 'retries a failed request while the browser is offline', () => {
+		setOnline( false );
+
+		const { onShouldRetry } = getOptions();
+
+		expect( onShouldRetry( requestError( 0 ), 0 ) ).toBe( true );
+	} );
+
+	it.each( [ 500, 502, 503, 409, 423 ] )(
+		'retries a %i response',
+		( status ) => {
+			const { onShouldRetry } = getOptions();
+
+			expect( onShouldRetry( requestError( status ), 0 ) ).toBe( true );
+		}
+	);
+
+	it.each( [ 400, 404, 410, 415 ] )(
+		'does not retry a %i response',
+		( status ) => {
+			const { onShouldRetry } = getOptions();
+
+			expect( onShouldRetry( requestError( status ), 0 ) ).toBe( false );
+		}
+	);
+
+	it( 'sends requests right away while online', async () => {
+		const { onBeforeRequest } = getOptions();
+
+		await expect(
+			onBeforeRequest( request( 'PATCH' ) )
+		).resolves.toBeUndefined();
+	} );
+
+	it( 'holds requests until the browser is back online', async () => {
+		setOnline( false );
+		const { onBeforeRequest } = getOptions();
+		const sent = vi.fn();
+
+		onBeforeRequest( request( 'PATCH' ) ).then( sent );
+		await flush();
+		expect( sent ).not.toHaveBeenCalled();
+
+		setOnline( true );
+		window.dispatchEvent( new Event( 'online' ) );
+		await flush();
+		expect( sent ).toHaveBeenCalled();
+	} );
+
+	it( 'drops a held request when the upload was aborted meanwhile', async () => {
+		setOnline( false );
+		const { onBeforeRequest } = getOptions();
+
+		const held = onBeforeRequest( request( 'PATCH' ) );
+		tus.Upload.mock.results[ 0 ].value._aborted = true;
+		setOnline( true );
+		window.dispatchEvent( new Event( 'online' ) );
+
+		await expect( held ).rejects.toThrow( 'Upload aborted' );
+	} );
+
+	it( 'still sends the termination request of an aborted upload', async () => {
+		setOnline( false );
+		const { onBeforeRequest } = getOptions();
+
+		const held = onBeforeRequest( request( 'DELETE' ) );
+		tus.Upload.mock.results[ 0 ].value._aborted = true;
+		setOnline( true );
+		window.dispatchEvent( new Event( 'online' ) );
+
+		await expect( held ).resolves.toBeUndefined();
 	} );
 } );
 

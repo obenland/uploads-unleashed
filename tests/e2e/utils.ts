@@ -32,6 +32,32 @@ export async function loginAsAdmin( page: Page ): Promise< void > {
 }
 
 /**
+ * Finds attachments through the REST API, as the logged-in user.
+ *
+ * @param page   Playwright `page` fixture, on an admin page that loads the plugin.
+ * @param search Search term, e.g. the file name without its extension.
+ * @return The matching attachments.
+ */
+export async function findAttachments(
+	page: Page,
+	search: string
+): Promise< unknown[] > {
+	return page.evaluate( async ( term ) => {
+		const config = (
+			window as unknown as {
+				uploadsUnleashed: { endpoint: string; nonce: string };
+			}
+		 ).uploadsUnleashed;
+		const url = new URL( config.endpoint, window.location.href );
+		url.searchParams.set( 'search', term );
+		const response = await fetch( url, {
+			headers: { 'X-WP-Nonce': config.nonce },
+		} );
+		return response.json();
+	}, search );
+}
+
+/**
  * Returns a filename that no earlier run or other test has used, so
  * assertions by filename can't match leftover attachments.
  *

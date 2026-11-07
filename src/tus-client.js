@@ -321,11 +321,52 @@ function fingerprint( file, options ) {
 }
 
 /**
+ * Waits until the browser reports a network connection.
+ *
+ * @since 1.2.0
+ *
+ * @return {Promise<void>} Resolves right away while online, otherwise on the next `online` event.
+ */
+function waitForOnline() {
+	if ( false !== window.navigator.onLine ) {
+		return Promise.resolve();
+	}
+
+	return new Promise( ( resolve ) => {
+		window.addEventListener( 'online', () => resolve(), { once: true } );
+	} );
+}
+
+/**
+ * Decides whether tus retries a failed request.
+ *
+ * Unlike tus's default, this also retries while the browser is offline:
+ * the retried request waits for the connection in `onBeforeRequest`.
+ *
+ * @since 1.2.0
+ *
+ * @param {Error} error The error of the failed request.
+ * @return {boolean} Whether to retry.
+ */
+function shouldRetry( error ) {
+	const status = error.originalResponse?.getStatus() || 0;
+
+	// Everything but client errors, except offset conflicts and locked uploads.
+	return status < 400 || status >= 500 || 409 === status || 423 === status;
+}
+
+/**
  * Default options for the TUS uploader.
+ *
+ * The retry counter resets whenever a chunk gets through, so the delays,
+ * capped at a minute, only run out after about four minutes without progress.
  */
 const DEFAULT_TUS_OPTIONS = {
 	chunkSize: 5 * 1024 * 1024, // 5MB chunks
-	retryDelays: [ 0, 1000, 3000, 5000, 10000 ],
+	retryDelays: [
+		0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000, 60000,
+	],
+	onShouldRetry: shouldRetry,
 	removeFingerprintOnSuccess: true,
 	fingerprint,
 	urlStorage: new ExpiringUrlStorage(),
@@ -352,6 +393,17 @@ function createTusUpload( file, callbacks ) {
 		metadata: {
 			filename: file.name,
 			filetype: file.type || 'application/octet-stream',
+		},
+		onBeforeRequest: async ( req ) => {
+			await waitForOnline();
+
+			/*
+			 * tus can't cancel a request that is still waiting here, so drop it if the
+			 * upload was aborted meanwhile. The termination request still goes out.
+			 */
+			if ( tusUpload._aborted && 'DELETE' !== req.getMethod() ) {
+				throw new Error( 'Upload aborted' );
+			}
 		},
 		onProgress: ( bytesUploaded, bytesTotal ) => {
 			if ( tusUpload.url ) {
