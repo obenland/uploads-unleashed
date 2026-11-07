@@ -208,6 +208,8 @@ function fingerprint( file, options ) {
 /**
  * Waits until the browser reports a network connection.
  *
+ * @since 1.2.0
+ *
  * @return {Promise<void>} Resolves right away while online, otherwise on the next `online` event.
  */
 function waitForOnline() {
@@ -225,6 +227,8 @@ function waitForOnline() {
  *
  * Unlike tus's default, this also retries while the browser is offline:
  * the retried request waits for the connection in `onBeforeRequest`.
+ *
+ * @since 1.2.0
  *
  * @param {Error} error The error of the failed request.
  * @return {boolean} Whether to retry.
