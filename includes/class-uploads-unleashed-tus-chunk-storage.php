@@ -266,7 +266,7 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 	 * @return int|false 0 for the chunk directory, the unchanged size otherwise.
 	 */
 	public static function exclude_from_dirsize( $size, $directory ) {
-		if ( ! is_multisite() || untrailingslashit( self::get_base_dir_path() ) !== $directory ) {
+		if ( ! is_multisite() || ! is_string( $directory ) || self::get_dirsize_key() !== wp_normalize_path( $directory ) ) {
 			return $size;
 		}
 
@@ -292,23 +292,39 @@ class Uploads_Unleashed_TUS_Chunk_Storage {
 			return $directory_cache;
 		}
 
-		$path = untrailingslashit( self::get_base_dir_path() );
+		$chunks_dir = self::get_dirsize_key();
 
-		if ( ! isset( $directory_cache[ $path ] ) || 0 === $directory_cache[ $path ] ) {
-			return $directory_cache;
-		}
+		foreach ( $directory_cache as $path => $size ) {
+			if ( 0 === $size || wp_normalize_path( (string) $path ) !== $chunks_dir ) {
+				continue;
+			}
 
-		// Same traversal as core's clean_dirsize_cache().
-		$last_path = null;
-		unset( $directory_cache[ $path ] );
-
-		while ( $last_path !== $path && DIRECTORY_SEPARATOR !== $path && '.' !== $path && '..' !== $path ) {
-			$last_path = $path;
-			$path      = dirname( $path );
+			// Same traversal as core's clean_dirsize_cache().
+			$last_path = null;
 			unset( $directory_cache[ $path ] );
+
+			while ( $last_path !== $path && DIRECTORY_SEPARATOR !== $path && '.' !== $path && '..' !== $path ) {
+				$last_path = $path;
+				$path      = dirname( $path );
+				unset( $directory_cache[ $path ] );
+			}
 		}
 
 		return $directory_cache;
+	}
+
+	/**
+	 * Returns the chunk directory in the form used to compare directory size paths.
+	 *
+	 * Resolved on every call, so it follows the configured chunk directory
+	 * and the current site.
+	 *
+	 * @since 1.2.0
+	 *
+	 * @return string Normalized chunk directory path without a trailing slash.
+	 */
+	private static function get_dirsize_key(): string {
+		return wp_normalize_path( untrailingslashit( self::get_base_dir_path() ) );
 	}
 
 	/**
