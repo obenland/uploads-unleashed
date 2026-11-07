@@ -289,6 +289,86 @@ class Test_Uninstall extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Tests that uninstall.php cleans up every site of a network.
+	 *
+	 * Covers the multisite branch in uninstall.php.
+	 *
+	 * @group ms-required
+	 */
+	public function test_uninstall_script_runs_cleanup_on_every_site() {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Multisite only test.' );
+		}
+
+		wp_set_current_user( self::$admin_id );
+
+		$site_ids = array(
+			get_current_blog_id(),
+			self::factory()->blog->create(),
+			self::factory()->blog->create(),
+		);
+
+		// The storage caches its directory, which differs per site.
+		$base_dir = new ReflectionProperty( Uploads_Unleashed_TUS_Chunk_Storage::class, 'base_dir' );
+		$base_dir->setAccessible( true );
+
+		$chunk_dirs = array();
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+
+			$base_dir->setValue( null, null );
+			$storage = new Uploads_Unleashed_TUS_Chunk_Storage();
+			$storage->append( wp_generate_uuid4(), 'data', 0 );
+
+			$session = new Uploads_Unleashed_TUS_Upload_Session();
+			$session->create(
+				array(
+					'filename' => 'test.txt',
+					'length'   => 100,
+				),
+				new WP_REST_Request( 'POST', '/wp/v2/media' )
+			);
+
+			wp_schedule_event( time(), 'daily', 'uploads_unleashed_cleanup' );
+
+			$chunk_dirs[ $site_id ] = trailingslashit( wp_upload_dir()['basedir'] ) . '.tus-chunks/';
+			$this->assertCount( 1, glob( $chunk_dirs[ $site_id ] . '*.part' ) );
+
+			restore_current_blog();
+		}
+
+		$this->assertCount( 3, array_unique( $chunk_dirs ), 'Each site should store chunks in its own directory.' );
+
+		if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
+			define( 'WP_UNINSTALL_PLUGIN', 'uploads-unleashed/uploads-unleashed.php' );
+		}
+
+		include dirname( __DIR__, 2 ) . '/uninstall.php';
+
+		global $wpdb;
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+
+			$this->assertDirectoryDoesNotExist( $chunk_dirs[ $site_id ], "Chunks of site $site_id should be deleted." );
+			$this->assertFalse( wp_next_scheduled( 'uploads_unleashed_cleanup' ), "Cron event of site $site_id should be cleared." );
+
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$remaining = $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s",
+					$wpdb->esc_like( '_transient_tus_upload_' ) . '%'
+				)
+			);
+			$this->assertSame( '0', $remaining, "Sessions of site $site_id should be deleted." );
+
+			restore_current_blog();
+		}
+
+		// Re-create the directory for subsequent tests.
+		new Uploads_Unleashed_TUS_Chunk_Storage();
+	}
+
+	/**
 	 * Tests that delete_all does not affect other transients.
 	 */
 	public function test_upload_session_delete_all_preserves_other_transients() {
