@@ -417,7 +417,7 @@ function createTusUpload( file, callbacks ) {
 				forgetUploadIfGone( tusUpload );
 			}
 
-			callbacks.onError( new Error( cleanMessage ) );
+			callbacks.onError( new Error( cleanMessage, { cause: error } ) );
 		},
 	} );
 
