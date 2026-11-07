@@ -65,7 +65,7 @@ The main TUS client wrapper built on `tus-js-client`, exposed to other scripts a
 
 **Key Features:**
 - 5MB default chunk size
-- Exponential backoff retry (0, 1s, 3s, 5s, 10s)
+- Retries with a backoff capped at one minute; while the browser is offline, requests wait for the connection to come back
 - Fingerprint-based resume (stored in localStorage)
 - Automatic cleanup on success
 
