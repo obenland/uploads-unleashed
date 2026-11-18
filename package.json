@@ -23,7 +23,7 @@
 		"tus-js-client": "^4.3.1"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.64.1",
+		"@playwright/test": "^1.65.0",
 		"@vitest/coverage-v8": "^5.1.0",
 		"@wordpress/a11y": "^5.1.0",
 		"@wordpress/api-fetch": "^8.1.0",
